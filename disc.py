@@ -275,7 +275,7 @@ def get_all_users_sorted(guild_id):
     cursor.execute('''
         SELECT user_name, current_number, last_command_time, consecutive_plus, jackpot_pity, autoburger_count
         FROM user_fat 
-        ORDER BY current_number ASC
+        ORDER BY current_number DESC
     ''')
     
     results = cursor.fetchall()
@@ -888,7 +888,7 @@ async def fat_leaderboard(ctx):
     
     embed = discord.Embed(
         title=f"🏆 Таблица жиротрясов - {guild_name}",
-        description="Рейтинг пользователей по весу (от самых лёгких до самых тяжёлых)",
+        description="Рейтинг пользователей по весу (от самых худых до самых жирных)",
         color=0xffaa00
     )
     
@@ -1218,3 +1218,4 @@ async def list_guilds(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
