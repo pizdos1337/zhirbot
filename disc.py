@@ -5,16 +5,28 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 import time
+import math
 
 # ===== НАСТРОЙКИ =====
 # Токен берётся из переменных окружения!
-# На хостинге нужно установить переменную DISCORD_BOT_TOKEN
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 
 PREFIX = "!"  # Префикс команд
 DB_FOLDER = "guild_databases"  # Папка для хранения баз данных серверов
-COOLDOWN_HOURS = 6  # Кулдаун на команду !жир в часах
+COOLDOWN_HOURS = 1  # Кулдаун на команду !жир в часах
 TESTER_ROLE_NAME = "тестер"  # Название роли для доступа к тестерским командам
+
+# Настройки вероятностей
+BASE_MINUS_CHANCE = 0.3  # Базовый шанс на минус (30%)
+MAX_MINUS_CHANCE = 0.9   # Максимальный шанс на минус (90%)
+PITY_INCREMENT = 0.15    # На сколько увеличивается шанс за каждый плюс подряд (15%)
+
+# Настройки джекпота
+BASE_JACKPOT_CHANCE = 0.001  # Базовый шанс на джекпот (0.1%)
+JACKPOT_PITY_INCREMENT = 0.001  # Увеличение шанса за каждое использование (0.1%)
+MAX_JACKPOT_CHANCE = 0.05  # Максимальный шанс на джекпот (5%)
+JACKPOT_MIN = 100  # Минимальный джекпот
+JACKPOT_MAX = 500  # Максимальный джекпот
 # =====================
 
 # Проверяем, что токен найден
@@ -90,7 +102,9 @@ def init_guild_database(guild_id):
             user_id TEXT PRIMARY KEY,
             user_name TEXT,
             current_number INTEGER DEFAULT 0,
-            last_command_time TIMESTAMP
+            last_command_time TIMESTAMP,
+            consecutive_plus INTEGER DEFAULT 0,  -- Счётчик плюсов подряд
+            jackpot_pity INTEGER DEFAULT 0       -- Счётчик для джекпота
         )
     ''')
     
@@ -109,25 +123,29 @@ def get_user_data(guild_id, user_id, user_name=None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    cursor.execute('SELECT current_number, last_command_time FROM user_fat WHERE user_id = ?', (str(user_id),))
+    cursor.execute('SELECT current_number, last_command_time, consecutive_plus, jackpot_pity FROM user_fat WHERE user_id = ?', (str(user_id),))
     result = cursor.fetchone()
     
     if result:
         number = result[0]
         last_time = result[1]
+        consecutive_plus = result[2] or 0
+        jackpot_pity = result[3] or 0
     else:
         number = 0
         last_time = None
+        consecutive_plus = 0
+        jackpot_pity = 0
         cursor.execute('''
-            INSERT INTO user_fat (user_id, user_name, current_number, last_command_time)
-            VALUES (?, ?, ?, ?)
-        ''', (str(user_id), user_name or "Unknown", number, last_time))
+            INSERT INTO user_fat (user_id, user_name, current_number, last_command_time, consecutive_plus, jackpot_pity)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (str(user_id), user_name or "Unknown", number, last_time, consecutive_plus, jackpot_pity))
         conn.commit()
     
     conn.close()
-    return number, last_time
+    return number, last_time, consecutive_plus, jackpot_pity
 
-def update_user_data(guild_id, user_id, new_number, user_name=None):
+def update_user_data(guild_id, user_id, new_number, user_name=None, consecutive_plus=None, jackpot_pity=None):
     """Обновляет число пользователя в БД конкретного сервера"""
     init_guild_database(guild_id)
     
@@ -137,17 +155,36 @@ def update_user_data(guild_id, user_id, new_number, user_name=None):
     
     current_time = datetime.now()
     
-    cursor.execute('''
-        UPDATE user_fat 
-        SET current_number = ?, user_name = ?, last_command_time = ?
-        WHERE user_id = ?
-    ''', (new_number, user_name or "Unknown", current_time, str(user_id)))
+    if consecutive_plus is not None and jackpot_pity is not None:
+        cursor.execute('''
+            UPDATE user_fat 
+            SET current_number = ?, user_name = ?, last_command_time = ?, consecutive_plus = ?, jackpot_pity = ?
+            WHERE user_id = ?
+        ''', (new_number, user_name or "Unknown", current_time, consecutive_plus, jackpot_pity, str(user_id)))
+    elif consecutive_plus is not None:
+        cursor.execute('''
+            UPDATE user_fat 
+            SET current_number = ?, user_name = ?, last_command_time = ?, consecutive_plus = ?
+            WHERE user_id = ?
+        ''', (new_number, user_name or "Unknown", current_time, consecutive_plus, str(user_id)))
+    elif jackpot_pity is not None:
+        cursor.execute('''
+            UPDATE user_fat 
+            SET current_number = ?, user_name = ?, last_command_time = ?, jackpot_pity = ?
+            WHERE user_id = ?
+        ''', (new_number, user_name or "Unknown", current_time, jackpot_pity, str(user_id)))
+    else:
+        cursor.execute('''
+            UPDATE user_fat 
+            SET current_number = ?, user_name = ?, last_command_time = ?
+            WHERE user_id = ?
+        ''', (new_number, user_name or "Unknown", current_time, str(user_id)))
     
     if cursor.rowcount == 0:
         cursor.execute('''
-            INSERT INTO user_fat (user_id, user_name, current_number, last_command_time)
-            VALUES (?, ?, ?, ?)
-        ''', (str(user_id), user_name or "Unknown", new_number, current_time))
+            INSERT INTO user_fat (user_id, user_name, current_number, last_command_time, consecutive_plus, jackpot_pity)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (str(user_id), user_name or "Unknown", new_number, current_time, consecutive_plus or 0, jackpot_pity or 0))
     
     conn.commit()
     conn.close()
@@ -176,7 +213,7 @@ def reset_all_weights(guild_id):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    cursor.execute('UPDATE user_fat SET current_number = 0')
+    cursor.execute('UPDATE user_fat SET current_number = 0, consecutive_plus = 0, jackpot_pity = 0')
     affected_rows = cursor.rowcount
     conn.commit()
     conn.close()
@@ -194,7 +231,7 @@ def get_all_users_sorted(guild_id):
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT user_name, current_number, last_command_time 
+        SELECT user_name, current_number, last_command_time, consecutive_plus, jackpot_pity
         FROM user_fat 
         ORDER BY current_number ASC
     ''')
@@ -267,6 +304,50 @@ def has_tester_role(member):
     
     return False
 
+def get_change_with_pity_and_jackpot(consecutive_plus, jackpot_pity):
+    """
+    Определяет изменение веса с учётом "удачи" и джекпота
+    Возвращает (изменение, был_ли_минус, новый_счётчик_плюсов, новый_счётчик_джекпота, был_ли_джекпот, минус_шанс, джекпот_шанс)
+    """
+    # Рассчитываем текущий шанс на минус
+    minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT)
+    minus_chance = min(minus_chance, MAX_MINUS_CHANCE)
+    
+    # Рассчитываем текущий шанс на джекпот
+    jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
+    jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
+    
+    # Сначала проверяем джекпот (самый редкий)
+    jackpot_roll = random.random()
+    if jackpot_roll < jackpot_chance:
+        # ДЖЕКПОТ!
+        change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
+        new_consecutive_plus = consecutive_plus + 1  # Джекпот считается как плюс
+        new_jackpot_pity = 0  # Сбрасываем счётчик джекпота
+        was_minus = False
+        was_jackpot = True
+        return change, was_minus, new_consecutive_plus, new_jackpot_pity, was_jackpot, minus_chance, jackpot_chance
+    
+    # Если не джекпот, проверяем минус/плюс
+    roll = random.random()
+    
+    if roll < minus_chance:
+        # Выпал минус
+        change = random.randint(-20, -1)
+        new_consecutive_plus = 0  # Сбрасываем счётчик плюсов
+        new_jackpot_pity = jackpot_pity + 1  # Увеличиваем счётчик джекпота
+        was_minus = True
+        was_jackpot = False
+    else:
+        # Выпал плюс
+        change = random.randint(1, 20)
+        new_consecutive_plus = consecutive_plus + 1  # Увеличиваем счётчик плюсов
+        new_jackpot_pity = jackpot_pity + 1  # Увеличиваем счётчик джекпота
+        was_minus = False
+        was_jackpot = False
+    
+    return change, was_minus, new_consecutive_plus, new_jackpot_pity, was_jackpot, minus_chance, jackpot_chance
+
 # ===== КОМАНДЫ БОТА =====
 
 @bot.event
@@ -277,6 +358,15 @@ async def on_ready():
     print(f"⏰ Кулдаун на !жир: {COOLDOWN_HOURS} часов")
     print(f"🎭 Роль для тестерских команд: {TESTER_ROLE_NAME}")
     print(f"📁 Базы данных хранятся в папке: {DB_FOLDER}")
+    print(f"🎲 Система вероятностей:")
+    print(f"   - Базовый шанс минуса: {BASE_MINUS_CHANCE*100}%")
+    print(f"   - Макс. шанс минуса: {MAX_MINUS_CHANCE*100}%")
+    print(f"   - Увеличение за плюс: {PITY_INCREMENT*100}%")
+    print(f"💰 Система джекпота:")
+    print(f"   - Базовый шанс: {BASE_JACKPOT_CHANCE*100}%")
+    print(f"   - Макс. шанс: {MAX_JACKPOT_CHANCE*100}%")
+    print(f"   - Увеличение за использование: {JACKPOT_PITY_INCREMENT*100}%")
+    print(f"   - Размер джекпота: {JACKPOT_MIN}-{JACKPOT_MAX} кг")
     print(f"📅 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     print(f"\n📋 Серверы, на которых присутствует бот:")
@@ -311,15 +401,17 @@ async def on_guild_join(guild):
 async def fat_command(ctx):
     """
     Меняет Display Name пользователя на "{число}kg {оригинальный ник}"
-    Число меняется случайно от -20 до +20 относительно текущего значения
+    Число меняется случайно от -20 до +20 с системой "удачи" и шансом на джекпот
     """
     guild_id = ctx.guild.id
     member = ctx.author
     user_id = str(member.id)
     user_name = member.name
     
-    current_number, last_time = get_user_data(guild_id, user_id, user_name)
+    # Получаем данные пользователя
+    current_number, last_time, consecutive_plus, jackpot_pity = get_user_data(guild_id, user_id, user_name)
     
+    # Проверяем кулдаун
     can_use, remaining = check_cooldown(last_time)
     
     if not can_use:
@@ -335,13 +427,15 @@ async def fat_command(ctx):
         await ctx.send(embed=embed)
         return
     
-    change = random.randint(-20, 20)
+    # Получаем изменение с учётом "удачи" и джекпота
+    change, was_minus, new_consecutive_plus, new_jackpot_pity, was_jackpot, minus_chance, jackpot_chance = get_change_with_pity_and_jackpot(consecutive_plus, jackpot_pity)
     new_number = current_number + change
     
-    update_user_data(guild_id, user_id, new_number, user_name)
+    # Обновляем данные пользователя
+    update_user_data(guild_id, user_id, new_number, user_name, new_consecutive_plus, new_jackpot_pity)
     
+    # Получаем чистое имя для ника
     display_name = member.display_name
-    
     clean_name = display_name
     if "kg" in display_name:
         parts = display_name.split("kg", 1)
@@ -366,13 +460,24 @@ async def fat_command(ctx):
         # Получаем звание
         rank_name, rank_emoji = get_rank(new_number)
         
+        # Создаём embed
+        if was_jackpot:
+            embed_color = 0xffd700  # Золотой для джекпота
+            embed_title = "💰 ДЖЕКПОТ! 💰"
+        else:
+            embed_color = 0xff9933 if new_number >= 0 else 0x66ccff
+            embed_title = "🍔 Жирная трансформация"
+        
         embed = discord.Embed(
-            title="🍔 Жирная трансформация",
+            title=embed_title,
             description=f"**{member.mention}** теперь весит **{abs(new_number)}kg** на сервере **{ctx.guild.name}**!",
-            color=0xff9933 if new_number >= 0 else 0x66ccff
+            color=embed_color
         )
         
-        if change > 0:
+        # Информация об изменении
+        if was_jackpot:
+            embed.add_field(name="💰 ДЖЕКПОТ!", value=f"+{change} кг (УДАЧА!)", inline=True)
+        elif change > 0:
             embed.add_field(name="📈 Изменение", value=f"+{change} кг (поправился)", inline=True)
         elif change < 0:
             embed.add_field(name="📉 Изменение", value=f"{change} кг (похудел)", inline=True)
@@ -381,6 +486,22 @@ async def fat_command(ctx):
         
         embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
         embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
+        
+        # Информация о накоплениях
+        pity_info = []
+        
+        if was_jackpot:
+            pity_info.append(f"💰 Джекпот сработал! Шанс был {jackpot_chance*100:.2f}%")
+            pity_info.append(f"✨ Счётчик джекпота сброшен")
+        else:
+            pity_info.append(f"🎲 Шанс минуса: {minus_chance*100:.0f}% (плюсов подряд: {new_consecutive_plus if not was_minus else 0})")
+            pity_info.append(f"💰 Шанс джекпота: {jackpot_chance*100:.3f}% (использований: {new_jackpot_pity})")
+        
+        if was_minus and consecutive_plus > 0:
+            pity_info.append(f"❌ Минус сбросил накопление плюсов (было {consecutive_plus})")
+        
+        embed.add_field(name="📊 Статистика", value="\n".join(pity_info), inline=False)
+        
         embed.add_field(name="⏰ Следующая команда", value=f"через {COOLDOWN_HOURS} часов", inline=True)
         embed.set_footer(text=f"Новый ник: {new_nick}")
         
@@ -391,11 +512,58 @@ async def fat_command(ctx):
     except discord.HTTPException as e:
         await ctx.send(f"❌ Ошибка при смене ника: {e}")
 
+@bot.command(name='жир_стата')
+async def fat_stats(ctx):
+    """
+    Показывает статистику везения пользователя
+    """
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    
+    _, _, consecutive_plus, jackpot_pity = get_user_data(guild_id, user_id, member.name)
+    
+    # Рассчитываем текущие шансы
+    current_minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT)
+    current_minus_chance = min(current_minus_chance, MAX_MINUS_CHANCE)
+    
+    current_jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
+    current_jackpot_chance = min(current_jackpot_chance, MAX_JACKPOT_CHANCE)
+    
+    embed = discord.Embed(
+        title="🎲 Статистика везения",
+        description=f"Для {member.mention}",
+        color=0x3498db
+    )
+    
+    embed.add_field(name="Плюсов подряд", value=str(consecutive_plus), inline=True)
+    embed.add_field(name="Шанс минуса", value=f"{current_minus_chance*100:.0f}%", inline=True)
+    embed.add_field(name="Базовый шанс минуса", value=f"{BASE_MINUS_CHANCE*100}%", inline=True)
+    
+    embed.add_field(name="Использований без джекпота", value=str(jackpot_pity), inline=True)
+    embed.add_field(name="Шанс джекпота", value=f"{current_jackpot_chance*100:.3f}%", inline=True)
+    embed.add_field(name="Базовый шанс джекпота", value=f"{BASE_JACKPOT_CHANCE*100}%", inline=True)
+    
+    # Прогресс до следующего увеличения
+    if consecutive_plus > 0 and current_minus_chance < MAX_MINUS_CHANCE:
+        next_minus = int((current_minus_chance - BASE_MINUS_CHANCE) / PITY_INCREMENT) + 1
+        embed.add_field(name="Прогресс минуса", 
+                       value=f"Ещё {next_minus - consecutive_plus} плюсов до след. увел.", 
+                       inline=False)
+    
+    if jackpot_pity > 0 and current_jackpot_chance < MAX_JACKPOT_CHANCE:
+        next_jackpot = int((current_jackpot_chance - BASE_JACKPOT_CHANCE) / JACKPOT_PITY_INCREMENT) + 1
+        embed.add_field(name="Прогресс джекпота", 
+                       value=f"Ещё {next_jackpot - jackpot_pity} использований до след. увел.", 
+                       inline=False)
+    
+    await ctx.send(embed=embed)
+
+# Остальные команды остаются без изменений
 @bot.command(name='жиротрясы')
 async def fat_leaderboard(ctx):
     """
     Показывает таблицу рекордов всех пользователей на этом сервере со званиями
-    Сортировка по возрастанию (от самых худых до самых толстых)
     """
     guild_id = ctx.guild.id
     guild_name = ctx.guild.name
@@ -413,8 +581,7 @@ async def fat_leaderboard(ctx):
     )
     
     leaderboard_text = ""
-    for i, (user_name, number, last_update) in enumerate(users, 1):
-        # Определяем иконку для топ-3
+    for i, (user_name, number, last_update, consecutive_plus, jackpot_pity) in enumerate(users, 1):
         if i == 1:
             place_icon = "🥇"
         elif i == 2:
@@ -424,10 +591,8 @@ async def fat_leaderboard(ctx):
         else:
             place_icon = "🔹"
         
-        # Получаем звание для текущего веса
         rank_name, rank_emoji = get_rank(number)
         
-        # Форматируем дату последнего обновления
         try:
             if last_update:
                 last_update_dt = datetime.fromisoformat(str(last_update))
@@ -437,8 +602,16 @@ async def fat_leaderboard(ctx):
         except:
             date_str = "неизвестно"
         
-        # Добавляем в список с званием
-        leaderboard_text += f"{place_icon} **{i}.** {user_name} — **{number}kg** {rank_emoji} *{rank_name}*\n"
+        # Добавляем информацию о накоплениях
+        pity_info = []
+        if consecutive_plus and consecutive_plus > 0:
+            pity_info.append(f"{consecutive_plus}🔥")
+        if jackpot_pity and jackpot_pity > 0:
+            pity_info.append(f"{jackpot_pity}💰")
+        
+        pity_str = f" [{', '.join(pity_info)}]" if pity_info else ""
+        
+        leaderboard_text += f"{place_icon} **{i}.** {user_name} — **{number}kg** {rank_emoji} *{rank_name}*{pity_str}\n"
         
         if len(leaderboard_text) > 900:
             leaderboard_text += "... и ещё несколько участников"
@@ -446,9 +619,7 @@ async def fat_leaderboard(ctx):
     
     embed.description = leaderboard_text
     
-    # Статистика по серверу
     stats = get_guild_stats(guild_id)
-    
     embed.add_field(name="📊 Статистика сервера", 
                    value=f"Участников: {stats['total_users']}\n"
                          f"Суммарный вес: {stats['total_weight']}kg\n"
@@ -467,7 +638,7 @@ async def fat_info(ctx, member: discord.Member = None):
     target = member or ctx.author
     user_id = str(target.id)
     
-    number, last_time = get_user_data(guild_id, user_id, target.name)
+    number, last_time, consecutive_plus, jackpot_pity = get_user_data(guild_id, user_id, target.name)
     rank_name, rank_emoji = get_rank(number)
     
     embed = discord.Embed(
@@ -478,6 +649,16 @@ async def fat_info(ctx, member: discord.Member = None):
     embed.add_field(name="Текущий вес", value=f"{number}kg", inline=True)
     embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
     
+    if consecutive_plus > 0:
+        current_minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT)
+        current_minus_chance = min(current_minus_chance, MAX_MINUS_CHANCE)
+        embed.add_field(name="🔥 Накопление минуса", value=f"{consecutive_plus} плюсов подряд (шанс {current_minus_chance*100:.0f}%)", inline=True)
+    
+    if jackpot_pity > 0:
+        current_jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
+        current_jackpot_chance = min(current_jackpot_chance, MAX_JACKPOT_CHANCE)
+        embed.add_field(name="💰 Накопление джекпота", value=f"{jackpot_pity} использований (шанс {current_jackpot_chance*100:.3f}%)", inline=True)
+    
     can_use, remaining = check_cooldown(last_time)
     if can_use:
         cooldown_status = "✅ Можно использовать !жир"
@@ -487,6 +668,9 @@ async def fat_info(ctx, member: discord.Member = None):
     embed.add_field(name="Статус команды", value=cooldown_status, inline=False)
     
     await ctx.send(embed=embed)
+
+# Остальные команды (жир_звания, жир_сброс, сброскд, сбросвсех, жир_кулдаун, жир_серверы)
+# остаются точно такими же как в предыдущей версии
 
 @bot.command(name='жир_звания')
 async def show_ranks(ctx):
@@ -529,7 +713,8 @@ async def fat_reset(ctx, member: discord.Member = None):
     target = member or ctx.author
     user_id = str(target.id)
     
-    update_user_data(guild_id, user_id, 0, target.name)
+    # Сбрасываем вес и накопления
+    update_user_data(guild_id, user_id, 0, target.name, 0, 0)
     
     try:
         new_nick = f"0kg {target.name}"
@@ -606,7 +791,7 @@ async def cooldown_info(ctx):
     member = ctx.author
     user_id = str(member.id)
     
-    number, last_time = get_user_data(guild_id, user_id, member.name)
+    number, last_time, consecutive_plus, jackpot_pity = get_user_data(guild_id, user_id, member.name)
     can_use, remaining = check_cooldown(last_time)
     
     embed = discord.Embed(
@@ -622,6 +807,12 @@ async def cooldown_info(ctx):
     
     embed.add_field(name="Кулдаун", value=f"{COOLDOWN_HOURS} часов", inline=True)
     embed.add_field(name="Текущий вес", value=f"{number}kg", inline=True)
+    
+    if consecutive_plus > 0:
+        embed.add_field(name="🔥 Накопление минуса", value=f"{consecutive_plus} плюсов подряд", inline=True)
+    
+    if jackpot_pity > 0:
+        embed.add_field(name="💰 Накопление джекпота", value=f"{jackpot_pity} использований", inline=True)
     
     if has_tester_role(ctx.author):
         embed.add_field(name="Особые права", value="🎭 Есть роль тестер", inline=True)
