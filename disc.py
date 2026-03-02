@@ -7,7 +7,41 @@ from datetime import datetime, timedelta
 import time
 import math
 import asyncio
+import shutil
+import glob
 
+# ===== ЗАЩИТА БАЗЫ ДАННЫХ =====
+def backup_and_restore_db():
+    """Сохраняет БД при обновлении и восстанавливает при запуске"""
+    main_db_folder = DB_FOLDER
+    backup_folder = "/tmp/guild_databases_backup"  # Временное хранилище
+    
+    # При первом запуске - просто создаём папку
+    if not os.path.exists(main_db_folder):
+        os.makedirs(main_db_folder)
+        print(f"📁 Создана папка для БД: {main_db_folder}")
+        return
+    
+    # Проверяем, есть ли бекап
+    if os.path.exists(backup_folder):
+        # Восстанавливаем из бекапа
+        print("🔄 Восстанавливаю базы данных из бекапа...")
+        for db_file in glob.glob(os.path.join(backup_folder, "*.db")):
+            dest = os.path.join(main_db_folder, os.path.basename(db_file))
+            shutil.copy2(db_file, dest)
+            print(f"  ✅ Восстановлено: {os.path.basename(db_file)}")
+    else:
+        # Создаём бекап
+        print("📦 Создаю бекап баз данных...")
+        os.makedirs(backup_folder, exist_ok=True)
+        for db_file in glob.glob(os.path.join(main_db_folder, "*.db")):
+            dest = os.path.join(backup_folder, os.path.basename(db_file))
+            shutil.copy2(db_file, dest)
+            print(f"  ✅ Сбэкаплено: {os.path.basename(db_file)}")
+
+# Вызываем при старте
+backup_and_restore_db()
+# ==============================
 # ===== НАСТРОЙКИ =====
 # Токен берётся из переменных окружения!
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
@@ -1218,4 +1252,5 @@ async def list_guilds(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
