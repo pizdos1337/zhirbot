@@ -10,44 +10,12 @@ import asyncio
 import shutil
 import glob
 
-# ===== ЗАЩИТА БАЗЫ ДАННЫХ =====
-def backup_and_restore_db():
-    """Сохраняет БД при обновлении и восстанавливает при запуске"""
-    main_db_folder = DB_FOLDER
-    backup_folder = "/tmp/guild_databases_backup"  # Временное хранилище
-    
-    # При первом запуске - просто создаём папку
-    if not os.path.exists(main_db_folder):
-        os.makedirs(main_db_folder)
-        print(f"📁 Создана папка для БД: {main_db_folder}")
-        return
-    
-    # Проверяем, есть ли бекап
-    if os.path.exists(backup_folder):
-        # Восстанавливаем из бекапа
-        print("🔄 Восстанавливаю базы данных из бекапа...")
-        for db_file in glob.glob(os.path.join(backup_folder, "*.db")):
-            dest = os.path.join(main_db_folder, os.path.basename(db_file))
-            shutil.copy2(db_file, dest)
-            print(f"  ✅ Восстановлено: {os.path.basename(db_file)}")
-    else:
-        # Создаём бекап
-        print("📦 Создаю бекап баз данных...")
-        os.makedirs(backup_folder, exist_ok=True)
-        for db_file in glob.glob(os.path.join(main_db_folder, "*.db")):
-            dest = os.path.join(backup_folder, os.path.basename(db_file))
-            shutil.copy2(db_file, dest)
-            print(f"  ✅ Сбэкаплено: {os.path.basename(db_file)}")
-
-# Вызываем при старте
-backup_and_restore_db()
-# ==============================
 # ===== НАСТРОЙКИ =====
 # Токен берётся из переменных окружения!
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 
 PREFIX = "!"  # Префикс команд
-DB_FOLDER = "guild_databases"  # Папка для хранения баз данных серверов
+DB_FOLDER = "guild_databases"  # Папка для хранения баз данных серверов - ОПРЕДЕЛЯЕМ РАНЬШЕ!
 COOLDOWN_HOURS = 1  # Кулдаун на команду !жир в часах
 TESTER_ROLE_NAME = "тестер"  # Название роли для доступа к тестерским командам
 
@@ -98,6 +66,52 @@ if TOKEN is None:
     print("🚫 Бот не может быть запущен без токена")
     exit(1)
 
+# ===== ЗАЩИТА БАЗЫ ДАННЫХ ===== (теперь DB_FOLDER уже определён!)
+def backup_and_restore_db():
+    """Сохраняет БД при обновлении и восстанавливает при запуске"""
+    main_db_folder = DB_FOLDER  # Теперь переменная определена
+    backup_folder = "/tmp/guild_databases_backup"  # Временное хранилище
+    
+    print(f"📁 Основная папка БД: {main_db_folder}")
+    print(f"📁 Папка бекапов: {backup_folder}")
+    
+    # При первом запуске - просто создаём папку
+    if not os.path.exists(main_db_folder):
+        os.makedirs(main_db_folder)
+        print(f"📁 Создана папка для БД: {main_db_folder}")
+        return
+    
+    # Проверяем, есть ли бекап
+    if os.path.exists(backup_folder):
+        # Восстанавливаем из бекапа
+        print("🔄 Восстанавливаю базы данных из бекапа...")
+        restored = 0
+        for db_file in glob.glob(os.path.join(backup_folder, "*.db")):
+            dest = os.path.join(main_db_folder, os.path.basename(db_file))
+            shutil.copy2(db_file, dest)
+            print(f"  ✅ Восстановлено: {os.path.basename(db_file)}")
+            restored += 1
+        if restored == 0:
+            print("  ⚠️ Бекапов не найдено")
+    else:
+        # Создаём бекап
+        print("📦 Создаю бекап баз данных...")
+        os.makedirs(backup_folder, exist_ok=True)
+        backed_up = 0
+        for db_file in glob.glob(os.path.join(main_db_folder, "*.db")):
+            dest = os.path.join(backup_folder, os.path.basename(db_file))
+            shutil.copy2(db_file, dest)
+            print(f"  ✅ Сбэкаплено: {os.path.basename(db_file)}")
+            backed_up += 1
+        if backed_up == 0:
+            print("  📭 Нет файлов для бекапа")
+
+# Вызываем функцию бекапа ПОСЛЕ определения DB_FOLDER
+print("🚀 Запуск системы бекапов...")
+backup_and_restore_db()
+print("✅ Система бекапов инициализирована")
+# ==============================
+
 # ===== СИСТЕМА ЗВАНИЙ =====
 RANKS = [
     {"name": "Задолженность по кг", "min": -999, "max": -51, "emoji": "👻"},
@@ -147,6 +161,9 @@ intents.members = True
 intents.guilds = True
 
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
+
+# ДАЛЬШЕ ВЕСЬ ОСТАЛЬНОЙ КОД БЕЗ ИЗМЕНЕНИЙ...
+# (функции get_db_path, init_guild_database, get_user_data и т.д.)
 
 # ===== РАБОТА С БАЗОЙ ДАННЫХ (для конкретного сервера) =====
 def get_db_path(guild_id):
@@ -1252,5 +1269,6 @@ async def list_guilds(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
