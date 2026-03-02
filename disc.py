@@ -760,7 +760,8 @@ async def fat_case(ctx):
         if interval:
             new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
         
-        prize_description = f"**+1 {prize['emoji}**"
+        # ИСПРАВЛЕНО: добавлена закрывающая кавычка и скобка
+        prize_description = f"**+1 {prize['emoji']}**"
     else:
         # Просто кг
         new_number = current_number + prize["value"]
