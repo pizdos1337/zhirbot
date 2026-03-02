@@ -623,10 +623,6 @@ async def show_ranks(ctx):
         
         ranks_text += f"{rank['emoji']} **{rank['name']}** — {range_str} kg\n"
     
-    # Добавляем особые звания
-    ranks_text += "🌀 **Бесконечность** — 1000+ kg\n"
-    ranks_text += "💀 **Абсолютный ноль** — -1000- kg"
-    
     embed.add_field(name="Доступные звания", value=ranks_text, inline=False)
     
     await ctx.send(embed=embed)
@@ -795,3 +791,4 @@ async def list_guilds(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
