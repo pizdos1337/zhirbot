@@ -24,7 +24,7 @@ BASE_MINUS_CHANCE = 0.3  # Базовый шанс на минус (30%)
 MAX_MINUS_CHANCE = 0.9   # Максимальный шанс на минус (90%)
 PITY_INCREMENT = 0.15    # На сколько увеличивается шанс за каждый плюс подряд (15%)
 
-# НОВОЕ: Настройки накопления на плюс от минусов
+# Настройки накопления на плюс от минусов
 CONSECUTIVE_MINUS_BOOST = 0.2  # Каждый минус подряд даёт +20% к шансу на плюс
 MAX_CONSECUTIVE_MINUS_BOOST = 0.8  # Максимальный бонус 80%
 
@@ -60,7 +60,8 @@ for prize in CASE_PRIZES:
 
 # Настройки Автобургера
 AUTOBURGER_INTERVALS = [6, 4, 2, 1]  # Интервалы в часах для 1,2,3,4+ автобургеров
-AUTOBURGER_BOOST_PER_BURGER = 0.1  # Каждый автобургер даёт +10% к шансу на плюс
+AUTOBURGER_MAX_BONUS = 0.6      # Максимальный бонус к плюсу (60%)
+AUTOBURGER_GROWTH_RATE = 0.03   # Скорость роста (0.03 даёт 60% при 100 бургерах)
 # =====================
 
 # Проверяем, что токен найден
@@ -170,7 +171,6 @@ def init_guild_database(guild_id):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # ДОБАВЛЕНО: поле consecutive_minus
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_fat (
             user_id TEXT PRIMARY KEY,
@@ -178,7 +178,7 @@ def init_guild_database(guild_id):
             current_number INTEGER DEFAULT 0,
             last_command_time TIMESTAMP,
             consecutive_plus INTEGER DEFAULT 0,
-            consecutive_minus INTEGER DEFAULT 0,  -- НОВОЕ: счётчик минусов подряд
+            consecutive_minus INTEGER DEFAULT 0,
             jackpot_pity INTEGER DEFAULT 0,
             autoburger_count INTEGER DEFAULT 0,
             last_case_time TIMESTAMP,
@@ -200,7 +200,6 @@ def get_user_data(guild_id, user_id, user_name=None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # ДОБАВЛЕНО: consecutive_minus
     cursor.execute('SELECT current_number, last_command_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time FROM user_fat WHERE user_id = ?', (str(user_id),))
     result = cursor.fetchone()
     
@@ -208,7 +207,7 @@ def get_user_data(guild_id, user_id, user_name=None):
         number = result[0]
         last_time = result[1]
         consecutive_plus = result[2] or 0
-        consecutive_minus = result[3] or 0  # НОВОЕ
+        consecutive_minus = result[3] or 0
         jackpot_pity = result[4] or 0
         autoburger_count = result[5] or 0
         last_case_time = result[6]
@@ -217,7 +216,7 @@ def get_user_data(guild_id, user_id, user_name=None):
         number = 0
         last_time = None
         consecutive_plus = 0
-        consecutive_minus = 0  # НОВОЕ
+        consecutive_minus = 0
         jackpot_pity = 0
         autoburger_count = 0
         last_case_time = None
@@ -248,7 +247,7 @@ def update_user_data(guild_id, user_id, new_number, user_name=None, consecutive_
         updates.append("consecutive_plus = ?")
         values.append(consecutive_plus)
     
-    if consecutive_minus is not None:  # НОВОЕ
+    if consecutive_minus is not None:
         updates.append("consecutive_minus = ?")
         values.append(consecutive_minus)
     
@@ -414,22 +413,24 @@ def has_tester_role(member):
     
     return False
 
-# ===== ОБНОВЛЁННАЯ функция с учётом минусов подряд =====
 def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count=0):
     """
     Определяет изменение веса с учётом всех механик
-    Теперь учитывает и минусы подряд!
-    Возвращает (изменение, был_ли_минус, новый_счётчик_плюсов, новый_счётчик_минусов, новый_счётчик_джекпота, был_ли_джекпот)
+    Автобургеры: экспоненциальный рост с насыщением
     """
-    # Бонус от автобургеров увеличивает шанс на плюс
-    autoburger_boost = autoburger_count * AUTOBURGER_BOOST_PER_BURGER
+    # Экспоненциальный бонус от автобургеров
+    if autoburger_count > 0:
+        # bonus = MAX_BONUS * (1 - e^(-rate * count))
+        autoburger_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count))
+    else:
+        autoburger_boost = 0
     
-    # НОВОЕ: Бонус от минусов подряд увеличивает шанс на плюс
+    # Бонус от минусов подряд
     minus_boost = min(consecutive_minus * CONSECUTIVE_MINUS_BOOST, MAX_CONSECUTIVE_MINUS_BOOST)
     
-    # Рассчитываем текущий шанс на минус (уменьшаем на все бонусы к плюсу)
+    # Рассчитываем текущий шанс на минус
     minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - autoburger_boost - minus_boost
-    minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))  # Не меньше 10% и не больше 90%
+    minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
     
     # Рассчитываем текущий шанс на джекпот
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
@@ -440,7 +441,7 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     if jackpot_roll < jackpot_chance:
         change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
         new_consecutive_plus = consecutive_plus + 1
-        new_consecutive_minus = 0  # Сбрасываем минусы
+        new_consecutive_minus = 0
         new_jackpot_pity = 0
         was_minus = False
         was_jackpot = True
@@ -452,8 +453,8 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     if roll < minus_chance:
         # Выпал минус
         change = random.randint(-20, -1)
-        new_consecutive_plus = 0  # Сбрасываем плюсы
-        new_consecutive_minus = consecutive_minus + 1  # Увеличиваем счётчик минусов
+        new_consecutive_plus = 0
+        new_consecutive_minus = consecutive_minus + 1
         new_jackpot_pity = jackpot_pity + 1
         was_minus = True
         was_jackpot = False
@@ -461,7 +462,7 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
         # Выпал плюс
         change = random.randint(1, 20)
         new_consecutive_plus = consecutive_plus + 1
-        new_consecutive_minus = 0  # Сбрасываем минусы
+        new_consecutive_minus = 0
         new_jackpot_pity = jackpot_pity + 1
         was_minus = False
         was_jackpot = False
@@ -655,7 +656,6 @@ async def fat_command(ctx):
     user_id = str(member.id)
     user_name = member.name
     
-    # Получаем данные пользователя (теперь с consecutive_minus)
     current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, _, _ = get_user_data(guild_id, user_id, user_name)
     
     can_use, remaining = check_cooldown(last_time, COOLDOWN_HOURS)
@@ -673,7 +673,6 @@ async def fat_command(ctx):
         await ctx.send(embed=embed)
         return
     
-    # Получаем изменение с учётом всех механик
     change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
         consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count
     )
@@ -734,7 +733,6 @@ async def fat_command(ctx):
         embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
         embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
         
-        # Информация о накоплениях (ОБНОВЛЕНО)
         pity_info = []
         if was_jackpot:
             pity_info.append("💰 Джекпот сброшен!")
@@ -753,7 +751,10 @@ async def fat_command(ctx):
         
         if autoburger_count > 0:
             interval = get_autoburger_interval(autoburger_count)
-            embed.add_field(name="🍔 Автобургеры", value=f"{autoburger_count} шт (каждые {interval} ч)", inline=True)
+            current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+            embed.add_field(name="🍔 Автобургеры", 
+                           value=f"{autoburger_count} шт (каждые {interval} ч)\n⚡ Бонус к плюсу: +{current_boost:.1f}%", 
+                           inline=True)
         
         embed.add_field(name="⏰ Следующая команда", value=f"через {COOLDOWN_HOURS} часов", inline=True)
         embed.set_footer(text=f"Новый ник: {new_nick}")
@@ -857,7 +858,7 @@ async def fat_case(ctx):
 ### 📊 Статистика:
 - Всего автобургеров: **{new_autoburger_count}**
 - Интервал: **каждые {get_autoburger_interval(new_autoburger_count)} ч**
-- Бонус к шансу плюса: **+{new_autoburger_count * 10}%**
+- Бонус к шансу плюса: **+{AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100:.1f}%**
 
 *Автобургеры складываются, увеличивая бонус и уменьшая интервал!*
             """,
@@ -948,7 +949,7 @@ async def fat_leaderboard(ctx):
         pity_emojis = []
         if consecutive_plus and consecutive_plus > 0:
             pity_emojis.append("🔥")
-        if consecutive_minus and consecutive_minus > 0:  # НОВОЕ
+        if consecutive_minus and consecutive_minus > 0:
             pity_emojis.append("❄️")
         if jackpot_pity and jackpot_pity > 0:
             pity_emojis.append("💰")
@@ -997,7 +998,7 @@ async def fat_info(ctx, member: discord.Member = None):
     pity_emojis = []
     if consecutive_plus > 0:
         pity_emojis.append(f"🔥{consecutive_plus}")
-    if consecutive_minus > 0:  # НОВОЕ
+    if consecutive_minus > 0:
         pity_emojis.append(f"❄️{consecutive_minus}")
     if jackpot_pity > 0:
         pity_emojis.append(f"💰{jackpot_pity}")
@@ -1007,7 +1008,10 @@ async def fat_info(ctx, member: discord.Member = None):
     
     if autoburger_count > 0:
         interval = get_autoburger_interval(autoburger_count)
-        embed.add_field(name="🍔 Автобургеры", value=f"{autoburger_count} шт (каждые {interval} ч)", inline=True)
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+        embed.add_field(name="🍔 Автобургеры", 
+                       value=f"{autoburger_count} шт (каждые {interval} ч)\n⚡ Бонус: +{current_boost:.1f}%", 
+                       inline=True)
         
         if next_autoburger_time:
             try:
@@ -1223,7 +1227,9 @@ async def list_guilds(ctx):
         )
     
     await ctx.send(embed=embed)
-    
+
+# ===== КОМАНДЫ ДЛЯ ТЕСТЕРОВ (АВТОБУРГЕРЫ) =====
+
 @bot.command(name='автобургер')
 async def give_autoburger(ctx, количество: int = 1):
     """
@@ -1231,17 +1237,14 @@ async def give_autoburger(ctx, количество: int = 1):
     Использование: !автобургер [количество]
     Пример: !автобургер 5 - выдаст 5 автобургеров
     """
-    # Проверяем, есть ли у пользователя роль тестер
     if not has_tester_role(ctx.author):
-        await ctx.send(f"❌ У вас нет прав на использование этой команды! Нужна роль **{TESTER_ROLE_NAME}**")
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
         return
     
-    # Проверяем, что количество положительное
     if количество <= 0:
         await ctx.send("❌ Количество должно быть больше 0!")
         return
     
-    # Ограничиваем разумным пределом (макс 100)
     if количество > 100:
         await ctx.send("⚠️ Слишком много! Максимум 100 автобургеров за раз.")
         количество = 100
@@ -1251,27 +1254,22 @@ async def give_autoburger(ctx, количество: int = 1):
     user_id = str(member.id)
     user_name = member.name
     
-    # Получаем текущие данные пользователя
     current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time = get_user_data(guild_id, user_id, user_name)
     
-    # Добавляем автобургеры
     new_autoburger_count = autoburger_count + количество
     
-    # Обновляем время следующего автобургера
     interval = get_autoburger_interval(new_autoburger_count)
     if interval:
         new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
     else:
         new_next_autoburger_time = None
     
-    # Обновляем данные
     update_user_data(
         guild_id, user_id, current_number, user_name,
         consecutive_plus, consecutive_minus, jackpot_pity,
         new_autoburger_count, last_case_time, new_next_autoburger_time
     )
     
-    # Создаём красивое сообщение
     embed = discord.Embed(
         title="🍔 Выдача автобургеров",
         description=f"**{member.mention}** получил автобургеры!",
@@ -1283,9 +1281,9 @@ async def give_autoburger(ctx, количество: int = 1):
     
     if new_autoburger_count > 0:
         interval = get_autoburger_interval(new_autoburger_count)
-        boost = new_autoburger_count * 10
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100
         embed.add_field(name="⚡ Эффект", 
-                       value=f"Авто-жир каждые {interval} ч\nБонус к плюсу: +{boost}%", 
+                       value=f"Авто-жир каждые {interval} ч\nБонус к плюсу: +{current_boost:.1f}%", 
                        inline=False)
     
     embed.set_footer(text="✨ Удачи в наборе массы!")
@@ -1298,7 +1296,6 @@ async def reset_autoburger(ctx, member: discord.Member = None):
     Сбрасывает количество автобургеров у пользователя (только для тестеров)
     Использование: !автобургер_сброс [@пользователь]
     """
-    # Проверяем права тестера
     if not has_tester_role(ctx.author):
         await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
         return
@@ -1307,14 +1304,12 @@ async def reset_autoburger(ctx, member: discord.Member = None):
     target = member or ctx.author
     user_id = str(target.id)
     
-    # Получаем текущие данные
     current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time = get_user_data(guild_id, user_id, target.name)
     
     if autoburger_count == 0:
         await ctx.send(f"ℹ️ У {target.mention} нет автобургеров!")
         return
     
-    # Сбрасываем автобургеры
     update_user_data(
         guild_id, user_id, current_number, target.name,
         consecutive_plus, consecutive_minus, jackpot_pity,
@@ -1336,7 +1331,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
     """
     Показывает информацию об автобургерах пользователя (только для тестеров)
     """
-    # Проверяем права тестера
     if not has_tester_role(ctx.author):
         await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
         return
@@ -1345,7 +1339,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
     target = member or ctx.author
     user_id = str(target.id)
     
-    # Получаем данные
     current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time = get_user_data(guild_id, user_id, target.name)
     
     embed = discord.Embed(
@@ -1358,9 +1351,9 @@ async def autoburger_info(ctx, member: discord.Member = None):
     
     if autoburger_count > 0:
         interval = get_autoburger_interval(autoburger_count)
-        boost = autoburger_count * 10
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
         embed.add_field(name="Интервал", value=f"каждые {interval} ч", inline=True)
-        embed.add_field(name="Бонус к плюсу", value=f"+{boost}%", inline=True)
+        embed.add_field(name="Бонус к плюсу", value=f"+{current_boost:.1f}%", inline=True)
         
         if next_autoburger_time:
             try:
@@ -1378,8 +1371,8 @@ async def autoburger_info(ctx, member: discord.Member = None):
                 pass
     
     await ctx.send(embed=embed)
+
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
-
