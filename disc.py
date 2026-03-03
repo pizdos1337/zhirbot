@@ -351,6 +351,7 @@ def backup_and_restore_db():
 print("🚀 Запуск системы бекапов...")
 backup_and_restore_db()
 print("✅ Система бекапов инициализирована")
+
 # ===== СИСТЕМА ЗВАНИЙ =====
 RANKS = [
     {"name": "Задолженность по кг", "min": -999, "max": -51, "emoji": "👻"},
@@ -371,6 +372,12 @@ RANKS = [
     {"name": "Арчжирмезис", "min": 5000, "max": 10000, "emoji": "♛"},
     {"name": "ЖИРНАЯ ТОЛСТАЯ ОГРОМНАЯ СВИНЬЯ", "min": 10001, "max": 99999999, "emoji": "🐖"},
 ]
+
+def migrate_database_if_needed(guild_id):
+    """Проверяет и добавляет недостающие колонки в существующую БД"""
+    db_path = get_db_path(guild_id)
+    if not os.path.exists(db_path):
+        return
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -2922,5 +2929,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
