@@ -10,6 +10,78 @@ import asyncio
 import shutil
 import glob
 
+# ===== НАСТРОЙКИ =====
+# Токен берётся из переменных окружения!
+TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
+
+PREFIX = "!"  # Префикс команд
+DB_FOLDER = "/app/data/guild_databases"  # Папка для хранения баз данных серверов
+COOLDOWN_HOURS = 1  # Кулдаун на команду !жир в часах
+TESTER_ROLE_NAME = "тестер"  # Название роли для доступа к тестерским командам
+
+# Настройки вероятностей (более мягкие)
+BASE_MINUS_CHANCE = 0.2  # Базовый шанс на минус - 20%
+MAX_MINUS_CHANCE = 0.6   # Максимальный шанс на минус - 60%
+PITY_INCREMENT = 0.1     # Увеличение за плюс подряд - 10% за каждый плюс
+
+# Настройки накопления на плюс от минусов
+CONSECUTIVE_MINUS_BOOST = 0.2  # Каждый минус подряд даёт +20% к шансу на плюс
+MAX_CONSECUTIVE_MINUS_BOOST = 0.8  # Максимальный бонус 80%
+
+# Настройки джекпота (скрыты от пользователей)
+BASE_JACKPOT_CHANCE = 0.001  # Базовый шанс на джекпот (0.1%)
+JACKPOT_PITY_INCREMENT = 0.001  # Увеличение шанса за каждое использование (0.1%)
+MAX_JACKPOT_CHANCE = 0.05  # Максимальный шанс на джекпот (5%)
+JACKPOT_MIN = 100  # Минимальный джекпот
+JACKPOT_MAX = 500  # Максимальный джекпот
+
+# Настройки кейса
+CASE_COOLDOWN_HOURS = 24  # Кулдаун на !жиркейс (24 часа)
+
+# Призы в кейсе (только плюсы, автобургер 1%)
+CASE_PRIZES = [
+    {"value": 0, "chance": 20.0, "emoji": "🔄", "name": "Ничего"},
+    {"value": 10, "chance": 20.0, "emoji": "📈", "name": "+10 кг"},
+    {"value": 20, "chance": 20.0, "emoji": "⬆️", "name": "+20 кг"},
+    {"value": 50, "chance": 20.0, "emoji": "🚀", "name": "+50 кг"},
+    {"value": 100, "chance": 10.0, "emoji": "🚀", "name": "+100 кг"},
+    {"value": 200, "chance": 5.0, "emoji": "🚀", "name": "+200 кг"},
+    {"value": 300, "chance": 5.0, "emoji": "💫", "name": "+300 кг"},
+    {"value": 400, "chance": 5.0, "emoji": "💫", "name": "+400 кг"},
+    {"value": 500, "chance": 5.0, "emoji": "💫", "name": "+500 кг"},
+    {"value": 1000, "chance": 2.0, "emoji": "⭐", "name": "+1000 кг"},
+    {"value": 1500, "chance": 2.0, "emoji": "⭐", "name": "+1500 кг"},
+    {"value": 2500, "chance": 1.0, "emoji": "💥", "name": "+2500 кг"},
+    {"value": 5000, "chance": 1.0, "emoji": "💥", "name": "+5000 кг"},
+    {"value": "autoburger", "chance": 1.0, "emoji": "🍔✨", "name": "АВТОБУРГЕР"},
+]
+
+# Нормализуем шансы, чтобы сумма была 100%
+total_chance = sum(prize["chance"] for prize in CASE_PRIZES)
+for prize in CASE_PRIZES:
+    prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
+
+# Настройки Автобургера
+AUTOBURGER_INTERVALS = [6, 4, 2, 1]  # Интервалы в часах для 1,2,3,4+ автобургеров
+AUTOBURGER_MAX_BONUS = 0.6      # Максимальный бонус к плюсу (60%)
+AUTOBURGER_GROWTH_RATE = 0.03   # Скорость роста (0.03 даёт 60% при 100 бургерах)
+# =====================
+
+# В самом начале после настроек, перед проверкой токена
+print("="*60)
+print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
+print("="*60)
+print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"📁 Папка БД: {DB_FOLDER}")
+print("="*60)
+
+# Проверяем, что токен найден
+if TOKEN is None:
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не найдена переменная окружения DISCORD_BOT_TOKEN!")
+    print("📌 Убедитесь, что на хостинге установлена переменная окружения с токеном бота")
+    print("🚫 Бот не может быть запущен без токена")
+    exit(1)
+
 # ===== СИСТЕМА ЛОГИРОВАНИЯ ЗАПУСКА =====
 def log_startup():
     """Логирует информацию о запуске и состоянии БД"""
@@ -61,7 +133,7 @@ def log_startup():
     
     print("="*60 + "\n")
 
-# ===== ФУНКЦИЯ БЕЗОПАСНОЙ ИНИЦИАЛИЗАЦИИ БД =====
+# ===== ФУНКЦИИ БЕЗОПАСНОЙ ИНИЦИАЛИЗАЦИИ БД =====
 def repair_database(db_path):
     """Пытается восстановить повреждённую базу данных"""
     if not os.path.exists(db_path):
@@ -128,189 +200,6 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
     conn.commit()
     conn.close()
     return True
-
-def check_databases_on_startup():
-    """Проверяет все базы данных при запуске и логирует результат"""
-    print("\n🔍 ** ПРОВЕРКА БАЗ ДАННЫХ ** 🔍")
-    print("-" * 40)
-    
-    total_guilds = len(bot.guilds)
-    existing_dbs = 0
-    new_dbs = 0
-    corrupted_dbs = 0
-    recovered_dbs = 0
-    
-    for guild in bot.guilds:
-        db_path = get_db_path(guild.id)
-        
-        if os.path.exists(db_path):
-            try:
-                # Пробуем открыть
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute("SELECT count(*) FROM user_fat")
-                user_count = cursor.fetchone()[0]
-                conn.close()
-                existing_dbs += 1
-                print(f"✅ {guild.name}: БД существует, пользователей: {user_count}")
-            except sqlite3.DatabaseError:
-                # Повреждена
-                corrupted_dbs += 1
-                print(f"⚠️ {guild.name}: БД ПОВРЕЖДЕНА - будет восстановлена")
-                if safe_init_guild_database(guild.id, guild.name):
-                    recovered_dbs += 1
-                    print(f"   ✅ Восстановлена")
-        else:
-            new_dbs += 1
-            print(f"📁 {guild.name}: БД отсутствует - будет создана")
-            safe_init_guild_database(guild.id, guild.name)
-    
-    print("-" * 40)
-    print(f"📊 ИТОГИ ПРОВЕРКИ:")
-    print(f"   ✅ Существовало БД: {existing_dbs}")
-    if corrupted_dbs > 0:
-        print(f"   ⚠️  Было повреждено: {corrupted_dbs}")
-        print(f"   🔧 Восстановлено: {recovered_dbs}")
-    if new_dbs > 0:
-        print(f"   📁 Создано новых БД: {new_dbs}")
-    
-    if existing_dbs == 0 and new_dbs == 0:
-        print("   ⚠️  Базы данных не найдены!")
-        print("   📝 Все пользователи начнут с 0")
-    
-    return existing_dbs, new_dbs, corrupted_dbs
-def repair_database(db_path):
-    """Пытается восстановить повреждённую базу данных"""
-    if not os.path.exists(db_path):
-        return False
-    
-    # Создаём бекап повреждённого файла
-    backup_path = db_path + f".corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    shutil.copy2(db_path, backup_path)
-    print(f"⚠️ Создан бекап повреждённой БД: {backup_path}")
-    
-    # Удаляем повреждённый файл
-    os.remove(db_path)
-    print("🗑️ Повреждённая БД удалена")
-    
-    return True
-
-def safe_init_guild_database(guild_id):
-    """Безопасная инициализация БД с обработкой ошибок"""
-    db_path = get_db_path(guild_id)
-    
-    # Проверяем, существует ли файл
-    if os.path.exists(db_path):
-        try:
-            # Пробуем открыть БД для проверки
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT count(*) FROM sqlite_master")
-            conn.close()
-            print(f"✅ База данных для сервера {guild_id} в порядке")
-            return
-        except sqlite3.DatabaseError:
-            # База повреждена - восстанавливаем
-            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_id}")
-            repair_database(db_path)
-    
-    # Создаём новую БД
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_fat (
-            user_id TEXT PRIMARY KEY,
-            user_name TEXT,
-            current_number INTEGER DEFAULT 0,
-            last_command_time TIMESTAMP,
-            consecutive_plus INTEGER DEFAULT 0,
-            consecutive_minus INTEGER DEFAULT 0,
-            jackpot_pity INTEGER DEFAULT 0,
-            autoburger_count INTEGER DEFAULT 0,
-            last_case_time TIMESTAMP,
-            next_autoburger_time TIMESTAMP,
-            total_autoburger_activations INTEGER DEFAULT 0,
-            total_autoburger_gain INTEGER DEFAULT 0,
-            last_autoburger_result TEXT,
-            last_autoburger_time TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    print(f"✅ База данных создана для сервера {guild_id}")
-# ===== НАСТРОЙКИ =====
-# Токен берётся из переменных окружения!
-TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
-
-PREFIX = "!"  # Префикс команд
-DB_FOLDER = "/app/data/guild_databases"  # Папка для хранения баз данных серверов
-COOLDOWN_HOURS = 1  # Кулдаун на команду !жир в часах
-TESTER_ROLE_NAME = "тестер"  # Название роли для доступа к тестерским командам
-
-# Настройки вероятностей (более мягкие)
-BASE_MINUS_CHANCE = 0.2  # Базовый шанс на минус - 20%
-MAX_MINUS_CHANCE = 0.6   # Максимальный шанс на минус - 60%
-PITY_INCREMENT = 0.1     # Увеличение за плюс подряд - 10% за каждый плюс
-
-# Настройки накопления на плюс от минусов
-CONSECUTIVE_MINUS_BOOST = 0.2  # Каждый минус подряд даёт +20% к шансу на плюс
-MAX_CONSECUTIVE_MINUS_BOOST = 0.8  # Максимальный бонус 80%
-
-# Настройки джекпота (скрыты от пользователей)
-BASE_JACKPOT_CHANCE = 0.001  # Базовый шанс на джекпот (0.1%)
-JACKPOT_PITY_INCREMENT = 0.001  # Увеличение шанса за каждое использование (0.1%)
-MAX_JACKPOT_CHANCE = 0.05  # Максимальный шанс на джекпот (5%)
-JACKPOT_MIN = 100  # Минимальный джекпот
-JACKPOT_MAX = 500  # Максимальный джекпот
-
-# Настройки кейса
-CASE_COOLDOWN_HOURS = 24  # Кулдаун на !жиркейс (24 часа)
-
-# Призы в кейсе (ОБНОВЛЕНО: только плюсы, автобургер 1%)
-CASE_PRIZES = [
-    {"value": 0, "chance": 20.0, "emoji": "🔄", "name": "Ничего"},
-    {"value": 10, "chance": 20.0, "emoji": "📈", "name": "+10 кг"},
-    {"value": 20, "chance": 20.0, "emoji": "⬆️", "name": "+20 кг"},
-    {"value": 50, "chance": 20.0, "emoji": "🚀", "name": "+50 кг"},
-    {"value": 100, "chance": 10.0, "emoji": "🚀", "name": "+100 кг"},
-    {"value": 200, "chance": 5.0, "emoji": "🚀", "name": "+200 кг"},
-    {"value": 300, "chance": 5.0, "emoji": "💫", "name": "+300 кг"},
-    {"value": 400, "chance": 5.0, "emoji": "💫", "name": "+400 кг"},
-    {"value": 500, "chance": 5.0, "emoji": "💫", "name": "+500 кг"},
-    {"value": 1000, "chance": 2.0, "emoji": "⭐", "name": "+1000 кг"},
-    {"value": 1500, "chance": 2.0, "emoji": "⭐", "name": "+1500 кг"},
-    {"value": 2500, "chance": 1.0, "emoji": "💥", "name": "+2500 кг"},
-    {"value": 5000, "chance": 1.0, "emoji": "💥", "name": "+5000 кг"},
-    {"value": "autoburger", "chance": 1.0, "emoji": "🍔✨", "name": "АВТОБУРГЕР"},
-]
-
-# Нормализуем шансы, чтобы сумма была 100%
-total_chance = sum(prize["chance"] for prize in CASE_PRIZES)
-for prize in CASE_PRIZES:
-    prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
-
-# Настройки Автобургера
-AUTOBURGER_INTERVALS = [6, 4, 2, 1]  # Интервалы в часах для 1,2,3,4+ автобургеров
-AUTOBURGER_MAX_BONUS = 0.6      # Максимальный бонус к плюсу (60%)
-AUTOBURGER_GROWTH_RATE = 0.03   # Скорость роста (0.03 даёт 60% при 100 бургерах)
-# =====================
-
-# В самом начале после настроек, перед проверкой токена
-print("="*60)
-print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
-print("="*60)
-print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print(f"📁 Папка БД: {DB_FOLDER}")
-print("="*60)
-
-# Проверяем, что токен найден
-if TOKEN is None:
-    print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не найдена переменная окружения DISCORD_BOT_TOKEN!")
-    print("📌 Убедитесь, что на хостинге установлена переменная окружения с токеном бота")
-    print("🚫 Бот не может быть запущен без токена")
-    exit(1)
 
 # ===== ЗАЩИТА БАЗЫ ДАННЫХ =====
 def backup_and_restore_db():
@@ -424,7 +313,6 @@ def init_guild_database(guild_id):
             autoburger_count INTEGER DEFAULT 0,
             last_case_time TIMESTAMP,
             next_autoburger_time TIMESTAMP,
-            -- НОВЫЕ ПОЛЯ ДЛЯ СТАТИСТИКИ
             total_autoburger_activations INTEGER DEFAULT 0,
             total_autoburger_gain INTEGER DEFAULT 0,
             last_autoburger_result TEXT,
@@ -440,7 +328,7 @@ def get_user_data(guild_id, user_id, user_name=None):
     """
     Получает данные пользователя из БД конкретного сервера
     """
-    safe_init_guild_database(guild_id)
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
@@ -916,27 +804,97 @@ async def autoburger_loop():
         
         await asyncio.sleep(60)
 
+# ===== ФУНКЦИЯ ПРОВЕРКИ БАЗ ДАННЫХ ПРИ ЗАПУСКЕ =====
+def check_databases_on_startup():
+    """Проверяет все базы данных при запуске и логирует результат (НЕ асинхронная)"""
+    print("\n🔍 ** ПРОВЕРКА БАЗ ДАННЫХ ** 🔍")
+    print("-" * 40)
+    
+    existing_dbs = 0
+    new_dbs = 0
+    corrupted_dbs = 0
+    recovered_dbs = 0
+    
+    for guild in bot.guilds:
+        db_path = get_db_path(guild.id)
+        
+        if os.path.exists(db_path):
+            try:
+                # Пробуем открыть
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT count(*) FROM user_fat")
+                user_count = cursor.fetchone()[0]
+                conn.close()
+                existing_dbs += 1
+                print(f"✅ {guild.name}: БД существует, пользователей: {user_count}")
+            except sqlite3.DatabaseError:
+                # Повреждена
+                corrupted_dbs += 1
+                print(f"⚠️ {guild.name}: БД ПОВРЕЖДЕНА - будет восстановлена")
+                if safe_init_guild_database(guild.id, guild.name):
+                    recovered_dbs += 1
+                    print(f"   ✅ Восстановлена")
+        else:
+            new_dbs += 1
+            print(f"📁 {guild.name}: БД отсутствует - будет создана")
+            safe_init_guild_database(guild.id, guild.name)
+    
+    print("-" * 40)
+    print(f"📊 ИТОГИ ПРОВЕРКИ:")
+    print(f"   ✅ Существовало БД: {existing_dbs}")
+    if corrupted_dbs > 0:
+        print(f"   ⚠️  Было повреждено: {corrupted_dbs}")
+        print(f"   🔧 Восстановлено: {recovered_dbs}")
+    if new_dbs > 0:
+        print(f"   📁 Создано новых БД: {new_dbs}")
+    
+    if existing_dbs == 0 and new_dbs == 0:
+        print("   ⚠️  Базы данных не найдены!")
+        print("   📝 Все пользователи начнут с 0")
+    
+    return existing_dbs, new_dbs, corrupted_dbs
+
 # ===== КОМАНДЫ БОТА =====
 
 @bot.event
 async def on_ready():
-    print(f"\n{'='*50}")
+    print(f"\n{'='*60}")
     print(f"✅ Бот успешно запущен как {bot.user}")
     print(f"📊 ID бота: {bot.user.id}")
-    print(f"⏰ Кулдаун на !жир: {COOLDOWN_HOURS} часов")
-    print(f"📦 Кулдаун на !жиркейс: {CASE_COOLDOWN_HOURS} часов")
-    print(f"🎭 Роль для тестерских команд: {TESTER_ROLE_NAME}")
-    print(f"📁 Базы данных хранятся в папке: {DB_FOLDER}")
-    print(f"🍔 Система автобургеров активна")
     print(f"📅 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"{'='*60}\n")
+    
+    # Проверяем все базы данных (без await - функция не асинхронная)
+    existing, new, corrupted = check_databases_on_startup()
     
     print(f"\n📋 Серверы, на которых присутствует бот:")
     for guild in bot.guilds:
         print(f"  - {guild.name} (ID: {guild.id}, участников: {guild.member_count})")
-        init_guild_database(guild.id)
     
-    print(f"{'='*50}\n")
+    print(f"\n⚙️ НАСТРОЙКИ БОТА:")
+    print(f"  ⏰ Кулдаун !жир: {COOLDOWN_HOURS} ч")
+    print(f"  📦 Кулдаун кейса: {CASE_COOLDOWN_HOURS} ч")
+    print(f"  🎭 Роль тестера: {TESTER_ROLE_NAME}")
+    print(f"  📁 Папка БД: {DB_FOLDER}")
+    print(f"  🍔 Бонус автобургеров: +{AUTOBURGER_MAX_BONUS*100}% макс")
     
+    # Статус обновления
+    if new > 0 or corrupted > 0:
+        print(f"\n⚠️ ВНИМАНИЕ: Произошли изменения в базах данных!")
+        if new > 0:
+            print(f"   📁 Добавлено новых БД: {new}")
+        if corrupted > 0:
+            print(f"   🔧 Восстановлено повреждённых: {corrupted}")
+        print(f"   📝 Некоторые данные могли быть сброшены")
+    else:
+        print(f"\n✅ Все базы данных в порядке, данные сохранены")
+    
+    print(f"\n{'-'*40}")
+    print(f"🎮 Доступные команды: !жирхелп")
+    print(f"{'='*60}\n")
+    
+    # Запускаем фоновый цикл автобургеров
     bot.loop.create_task(autoburger_loop())
 
 @bot.event
@@ -1879,6 +1837,3 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
-
-
-
