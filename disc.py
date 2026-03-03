@@ -371,7 +371,56 @@ RANKS = [
     {"name": "Арчжирмезис", "min": 5000, "max": 10000, "emoji": "♛"},
     {"name": "ЖИРНАЯ ТОЛСТАЯ ОГРОМНАЯ СВИНЬЯ", "min": 10001, "max": 99999999, "emoji": "🐖"},
 ]
-
+def migrate_database_if_needed(guild_id):
+    """Проверяет и добавляет недостающие колонки в существующую БД"""
+    db_path = get_db_path(guild_id)
+    if not os.path.exists(db_path):
+        return
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Получаем список существующих колонок
+    cursor.execute("PRAGMA table_info(user_fat)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    # Добавляем недостающие колонки
+    if 'legendary_burger' not in columns:
+        print(f"📦 Добавляю колонку legendary_burger для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN legendary_burger INTEGER DEFAULT -1")
+    
+    if 'item_counts' not in columns:
+        print(f"📦 Добавляю колонку item_counts для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN item_counts TEXT DEFAULT '{}'")
+    
+    if 'last_command' not in columns:
+        print(f"📦 Добавляю колонку last_command для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command TEXT")
+    
+    if 'last_command_target' not in columns:
+        print(f"📦 Добавляю колонку last_command_target для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command_target TEXT")
+    
+    if 'last_command_use_time' not in columns:
+        print(f"📦 Добавляю колонку last_command_use_time для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command_use_time TIMESTAMP")
+    
+    # Проверяем таблицу shop
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shop'")
+    if not cursor.fetchone():
+        print(f"📦 Создаю таблицу shop для сервера {guild_id}")
+        cursor.execute('''
+            CREATE TABLE shop (
+                guild_id TEXT PRIMARY KEY,
+                slots TEXT,
+                last_update TIMESTAMP,
+                next_update TIMESTAMP
+            )
+        ''')
+    
+    conn.commit()
+    conn.close()
+    
 def get_rank(weight):
     for rank in RANKS:
         if rank["min"] <= weight <= rank["max"]:
@@ -418,12 +467,7 @@ def init_guild_database(guild_id):
             total_autoburger_activations INTEGER DEFAULT 0,
             total_autoburger_gain INTEGER DEFAULT 0,
             last_autoburger_result TEXT,
-            last_autoburger_time TIMESTAMP,
-            legendary_burger INTEGER DEFAULT -1,
-            item_counts TEXT DEFAULT '{}',
-            last_command TEXT,
-            last_command_target TEXT,
-            last_command_use_time TIMESTAMP
+            last_autoburger_time TIMESTAMP
         )
     ''')
     
@@ -438,6 +482,62 @@ def init_guild_database(guild_id):
     
     conn.commit()
     conn.close()
+    
+    # ВАЖНО: Вызываем миграцию для добавления новых колонок
+    migrate_database_if_needed(guild_id)
+    
+    print(f"✅ База данных инициализирована для сервера {guild_id}")
+    
+def migrate_database_if_needed(guild_id):
+    """Проверяет и добавляет недостающие колонки в существующую БД"""
+    db_path = get_db_path(guild_id)
+    if not os.path.exists(db_path):
+        return
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Получаем список существующих колонок
+    cursor.execute("PRAGMA table_info(user_fat)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    # Добавляем недостающие колонки
+    if 'legendary_burger' not in columns:
+        print(f"📦 Добавляю колонку legendary_burger для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN legendary_burger INTEGER DEFAULT -1")
+    
+    if 'item_counts' not in columns:
+        print(f"📦 Добавляю колонку item_counts для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN item_counts TEXT DEFAULT '{}'")
+    
+    if 'last_command' not in columns:
+        print(f"📦 Добавляю колонку last_command для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command TEXT")
+    
+    if 'last_command_target' not in columns:
+        print(f"📦 Добавляю колонку last_command_target для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command_target TEXT")
+    
+    if 'last_command_use_time' not in columns:
+        print(f"📦 Добавляю колонку last_command_use_time для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command_use_time TIMESTAMP")
+    
+    # Проверяем таблицу shop
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shop'")
+    if not cursor.fetchone():
+        print(f"📦 Создаю таблицу shop для сервера {guild_id}")
+        cursor.execute('''
+            CREATE TABLE shop (
+                guild_id TEXT PRIMARY KEY,
+                slots TEXT,
+                last_update TIMESTAMP,
+                next_update TIMESTAMP
+            )
+        ''')
+    
+    conn.commit()
+    conn.close()
+    
     print(f"✅ База данных инициализирована для сервера {guild_id}")
 
 def get_user_data(guild_id, user_id, user_name=None):
@@ -529,6 +629,8 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
             cursor = conn.cursor()
             cursor.execute("SELECT count(*) FROM sqlite_master")
             conn.close()
+            # База существует - проверяем и добавляем недостающие колонки
+            migrate_database_if_needed(guild_id)
             return True
         except sqlite3.DatabaseError:
             print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
@@ -556,12 +658,7 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
             total_autoburger_activations INTEGER DEFAULT 0,
             total_autoburger_gain INTEGER DEFAULT 0,
             last_autoburger_result TEXT,
-            last_autoburger_time TIMESTAMP,
-            legendary_burger INTEGER DEFAULT -1,
-            item_counts TEXT DEFAULT '{}',
-            last_command TEXT,
-            last_command_target TEXT,
-            last_command_use_time TIMESTAMP
+            last_autoburger_time TIMESTAMP
         )
     ''')
     
@@ -576,6 +673,10 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
     
     conn.commit()
     conn.close()
+    
+    # Добавляем новые колонки
+    migrate_database_if_needed(guild_id)
+    
     return True
 def update_user_data(guild_id, user_id, new_number, user_name=None,
                      consecutive_plus=None, consecutive_minus=None,
@@ -2765,3 +2866,4 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
