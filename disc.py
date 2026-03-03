@@ -371,11 +371,6 @@ RANKS = [
     {"name": "Арчжирмезис", "min": 5000, "max": 10000, "emoji": "♛"},
     {"name": "ЖИРНАЯ ТОЛСТАЯ ОГРОМНАЯ СВИНЬЯ", "min": 10001, "max": 99999999, "emoji": "🐖"},
 ]
-def migrate_database_if_needed(guild_id):
-    """Проверяет и добавляет недостающие колонки в существующую БД"""
-    db_path = get_db_path(guild_id)
-    if not os.path.exists(db_path):
-        return
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -623,28 +618,48 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
     """Безопасная инициализация БД с обработкой ошибок"""
     db_path = get_db_path(guild_id)
     
+    # Проверяем существует ли файл БД
     if os.path.exists(db_path):
         try:
+            # Пробуем открыть БД для проверки
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT count(*) FROM sqlite_master")
+            # Проверяем есть ли таблица user_fat
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_fat'")
+            if not cursor.fetchone():
+                # Таблицы нет - создаём заново
+                conn.close()
+                os.remove(db_path)
+                print(f"⚠️ Таблица user_fat не найдена в БД сервера {guild_name}, создаю заново")
+                return create_new_database(db_path, guild_id, guild_name)
+            
+            # Проверяем есть ли нужные колонки
+            cursor.execute("PRAGMA table_info(user_fat)")
+            columns = [col[1] for col in cursor.fetchall()]
             conn.close()
-            # База существует - проверяем и добавляем недостающие колонки
-            migrate_database_if_needed(guild_id)
+            
+            # Добавляем недостающие колонки
+            add_missing_columns(db_path, columns)
+            
+            print(f"✅ База данных для сервера {guild_name} в порядке")
             return True
+            
         except sqlite3.DatabaseError:
             print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
             repair_database(db_path)
-            print(f"✅ Создана новая БД для сервера {guild_name}")
-            return False
+            return create_new_database(db_path, guild_id, guild_name)
     else:
         print(f"📁 Создаю новую БД для сервера {guild_name} (ID: {guild_id})")
-    
+        return create_new_database(db_path, guild_id, guild_name)
+
+def create_new_database(db_path, guild_id, guild_name):
+    """Создаёт новую базу данных со всеми полями"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
+    # Создаём таблицу СРАЗУ со всеми нужными полями
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_fat (
+        CREATE TABLE user_fat (
             user_id TEXT PRIMARY KEY,
             user_name TEXT,
             current_number INTEGER DEFAULT 0,
@@ -658,7 +673,12 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
             total_autoburger_activations INTEGER DEFAULT 0,
             total_autoburger_gain INTEGER DEFAULT 0,
             last_autoburger_result TEXT,
-            last_autoburger_time TIMESTAMP
+            last_autoburger_time TIMESTAMP,
+            legendary_burger INTEGER DEFAULT -1,
+            item_counts TEXT DEFAULT '{}',
+            last_command TEXT,
+            last_command_target TEXT,
+            last_command_use_time TIMESTAMP
         )
     ''')
     
@@ -673,11 +693,47 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
     
     conn.commit()
     conn.close()
-    
-    # Добавляем новые колонки
-    migrate_database_if_needed(guild_id)
-    
+    print(f"✅ Новая база данных создана для сервера {guild_name}")
     return True
+
+def add_missing_columns(db_path, existing_columns):
+    """Добавляет недостающие колонки в существующую таблицу"""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Список всех нужных колонок
+    required_columns = {
+        'legendary_burger': "INTEGER DEFAULT -1",
+        'item_counts': "TEXT DEFAULT '{}'",
+        'last_command': "TEXT",
+        'last_command_target': "TEXT",
+        'last_command_use_time': "TIMESTAMP"
+    }
+    
+    for col_name, col_type in required_columns.items():
+        if col_name not in existing_columns:
+            try:
+                print(f"📦 Добавляю колонку {col_name}")
+                cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} {col_type}")
+            except Exception as e:
+                print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
+    
+    # Проверяем таблицу shop
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shop'")
+    if not cursor.fetchone():
+        print(f"📦 Создаю таблицу shop")
+        cursor.execute('''
+            CREATE TABLE shop (
+                guild_id TEXT PRIMARY KEY,
+                slots TEXT,
+                last_update TIMESTAMP,
+                next_update TIMESTAMP
+            )
+        ''')
+    
+    conn.commit()
+    conn.close()
+    
 def update_user_data(guild_id, user_id, new_number, user_name=None,
                      consecutive_plus=None, consecutive_minus=None,
                      jackpot_pity=None, autoburger_count=None,
@@ -2866,4 +2922,5 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
