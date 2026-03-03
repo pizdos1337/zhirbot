@@ -947,7 +947,7 @@ def get_shop_data(guild_id):
     result = cursor.fetchone()
     conn.close()
     
-    return result
+    return result  # Возвращаем как есть (строки)
 
 def update_shop_data(guild_id, slots, last_update, next_update):
     """Обновляет данные магазина для сервера"""
@@ -957,10 +957,14 @@ def update_shop_data(guild_id, slots, last_update, next_update):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
+    # Преобразуем datetime объекты в строки для хранения
+    last_update_str = last_update.isoformat() if last_update else None
+    next_update_str = next_update.isoformat() if next_update else None
+    
     cursor.execute('''
         INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update)
         VALUES (?, ?, ?, ?)
-    ''', (str(guild_id), json.dumps(slots), last_update, next_update))
+    ''', (str(guild_id), json.dumps(slots), last_update_str, next_update_str))
     
     conn.commit()
     conn.close()
@@ -2058,7 +2062,20 @@ async def ensure_shop_updated(guild_id):
     
     if result:
         slots_json, last_update_str, next_update_str = result
-        next_update = datetime.fromisoformat(next_update_str) if next_update_str else None
+        
+        # Преобразуем строки обратно в datetime объекты
+        last_update = None
+        next_update = None
+        if last_update_str:
+            try:
+                last_update = datetime.fromisoformat(last_update_str)
+            except:
+                last_update = None
+        if next_update_str:
+            try:
+                next_update = datetime.fromisoformat(next_update_str)
+            except:
+                next_update = None
         
         if next_update and current_time >= next_update:
             # Время обновлять магазин
@@ -2069,7 +2086,8 @@ async def ensure_shop_updated(guild_id):
             return new_slots, last_update, next_update
         else:
             # Магазин ещё актуален
-            return json.loads(slots_json) if slots_json else [], last_update_str, next_update_str
+            slots = json.loads(slots_json) if slots_json else []
+            return slots, last_update, next_update
     else:
         # Первое создание магазина
         new_slots = generate_shop_items()
@@ -2929,6 +2947,5 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
-
 
 
