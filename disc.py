@@ -15,7 +15,7 @@ import glob
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 
 PREFIX = "!"  # Префикс команд
-DB_FOLDER = "guild_databases"  # Папка для хранения баз данных серверов
+DB_FOLDER = "/app/data/guild_databases"  # Папка для хранения баз данных серверов
 COOLDOWN_HOURS = 1  # Кулдаун на команду !жир в часах
 TESTER_ROLE_NAME = "тестер"  # Название роли для доступа к тестерским командам
 
@@ -1641,3 +1641,4 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
