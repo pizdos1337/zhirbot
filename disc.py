@@ -9,8 +9,176 @@ import math
 import asyncio
 import shutil
 import glob
-import os
 
+# ===== СИСТЕМА ЛОГИРОВАНИЯ ЗАПУСКА =====
+def log_startup():
+    """Логирует информацию о запуске и состоянии БД"""
+    print("\n" + "="*60)
+    print(f"🚀 ** ЗАПУСК БОТА ** 🚀")
+    print("="*60)
+    print(f"📅 Дата и время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🆔 Версия бота: 3.0 (Жирный бот с автобургерами)")
+    print(f"📁 Папка с БД: {DB_FOLDER}")
+    
+    # Проверяем существование папки
+    if os.path.exists(DB_FOLDER):
+        print(f"✅ Папка с БД существует")
+        
+        # Проверяем файлы в папке
+        db_files = [f for f in os.listdir(DB_FOLDER) if f.endswith('.db')]
+        if db_files:
+            print(f"📊 Найдено файлов БД: {len(db_files)}")
+            total_size = sum(os.path.getsize(os.path.join(DB_FOLDER, f)) for f in db_files)
+            print(f"💾 Общий размер: {total_size / 1024:.2f} KB")
+            
+            # Показываем первые 5 файлов
+            if len(db_files) > 0:
+                print("📋 Первые 5 файлов:")
+                for i, f in enumerate(sorted(db_files)[:5]):
+                    size = os.path.getsize(os.path.join(DB_FOLDER, f)) / 1024
+                    print(f"   {i+1}. {f} ({size:.1f} KB)")
+                if len(db_files) > 5:
+                    print(f"   ... и ещё {len(db_files) - 5} файлов")
+        else:
+            print("⚠️ ВНИМАНИЯ: Файлов БД не найдено!")
+            print("   - Будут созданы новые базы данных")
+            print("   - Все пользователи начнут с 0 кг")
+            print("   - Все автобургеры и статистика обнулятся")
+    else:
+        print(f"⚠️ Папка с БД не существует - будет создана")
+        print("   - Будут созданы новые базы данных")
+        print("   - Все пользователи начнут с 0 кг")
+        print("   - Все автобургеры и статистика обнулятся")
+    
+    # Проверяем бекапы
+    backup_folder = "/tmp/guild_databases_backup"
+    if os.path.exists(backup_folder):
+        backup_files = [f for f in os.listdir(backup_folder) if f.endswith('.db')]
+        if backup_files:
+            print(f"📦 Найдено бекапов: {len(backup_files)}")
+    else:
+        print("📦 Папка бекапов не существует")
+    
+    print("="*60 + "\n")
+
+# ===== ФУНКЦИЯ БЕЗОПАСНОЙ ИНИЦИАЛИЗАЦИИ БД =====
+def repair_database(db_path):
+    """Пытается восстановить повреждённую базу данных"""
+    if not os.path.exists(db_path):
+        return False
+    
+    # Создаём бекап повреждённого файла
+    backup_path = db_path + f".corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    shutil.copy2(db_path, backup_path)
+    print(f"⚠️ Создан бекап повреждённой БД: {backup_path}")
+    
+    # Удаляем повреждённый файл
+    os.remove(db_path)
+    print("🗑️ Повреждённая БД удалена")
+    
+    return True
+
+def safe_init_guild_database(guild_id, guild_name="Unknown"):
+    """Безопасная инициализация БД с обработкой ошибок"""
+    db_path = get_db_path(guild_id)
+    
+    # Проверяем, существует ли файл
+    if os.path.exists(db_path):
+        try:
+            # Пробуем открыть БД для проверки
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT count(*) FROM sqlite_master")
+            conn.close()
+            # База в порядке
+            return True
+        except sqlite3.DatabaseError:
+            # База повреждена
+            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
+            repair_database(db_path)
+            print(f"✅ Создана новая БД для сервера {guild_name}")
+            return False
+    else:
+        # Базы нет - создаём новую
+        print(f"📁 Создаю новую БД для сервера {guild_name} (ID: {guild_id})")
+    
+    # Создаём новую БД
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_fat (
+            user_id TEXT PRIMARY KEY,
+            user_name TEXT,
+            current_number INTEGER DEFAULT 0,
+            last_command_time TIMESTAMP,
+            consecutive_plus INTEGER DEFAULT 0,
+            consecutive_minus INTEGER DEFAULT 0,
+            jackpot_pity INTEGER DEFAULT 0,
+            autoburger_count INTEGER DEFAULT 0,
+            last_case_time TIMESTAMP,
+            next_autoburger_time TIMESTAMP,
+            total_autoburger_activations INTEGER DEFAULT 0,
+            total_autoburger_gain INTEGER DEFAULT 0,
+            last_autoburger_result TEXT,
+            last_autoburger_time TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def check_databases_on_startup():
+    """Проверяет все базы данных при запуске и логирует результат"""
+    print("\n🔍 ** ПРОВЕРКА БАЗ ДАННЫХ ** 🔍")
+    print("-" * 40)
+    
+    total_guilds = len(bot.guilds)
+    existing_dbs = 0
+    new_dbs = 0
+    corrupted_dbs = 0
+    recovered_dbs = 0
+    
+    for guild in bot.guilds:
+        db_path = get_db_path(guild.id)
+        
+        if os.path.exists(db_path):
+            try:
+                # Пробуем открыть
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT count(*) FROM user_fat")
+                user_count = cursor.fetchone()[0]
+                conn.close()
+                existing_dbs += 1
+                print(f"✅ {guild.name}: БД существует, пользователей: {user_count}")
+            except sqlite3.DatabaseError:
+                # Повреждена
+                corrupted_dbs += 1
+                print(f"⚠️ {guild.name}: БД ПОВРЕЖДЕНА - будет восстановлена")
+                if safe_init_guild_database(guild.id, guild.name):
+                    recovered_dbs += 1
+                    print(f"   ✅ Восстановлена")
+        else:
+            new_dbs += 1
+            print(f"📁 {guild.name}: БД отсутствует - будет создана")
+            safe_init_guild_database(guild.id, guild.name)
+    
+    print("-" * 40)
+    print(f"📊 ИТОГИ ПРОВЕРКИ:")
+    print(f"   ✅ Существовало БД: {existing_dbs}")
+    if corrupted_dbs > 0:
+        print(f"   ⚠️  Было повреждено: {corrupted_dbs}")
+        print(f"   🔧 Восстановлено: {recovered_dbs}")
+    if new_dbs > 0:
+        print(f"   📁 Создано новых БД: {new_dbs}")
+    
+    if existing_dbs == 0 and new_dbs == 0:
+        print("   ⚠️  Базы данных не найдены!")
+        print("   📝 Все пользователи начнут с 0")
+    
+    return existing_dbs, new_dbs, corrupted_dbs
 def repair_database(db_path):
     """Пытается восстановить повреждённую базу данных"""
     if not os.path.exists(db_path):
@@ -128,6 +296,14 @@ AUTOBURGER_INTERVALS = [6, 4, 2, 1]  # Интервалы в часах для 1
 AUTOBURGER_MAX_BONUS = 0.6      # Максимальный бонус к плюсу (60%)
 AUTOBURGER_GROWTH_RATE = 0.03   # Скорость роста (0.03 даёт 60% при 100 бургерах)
 # =====================
+
+# В самом начале после настроек, перед проверкой токена
+print("="*60)
+print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
+print("="*60)
+print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"📁 Папка БД: {DB_FOLDER}")
+print("="*60)
 
 # Проверяем, что токен найден
 if TOKEN is None:
@@ -1703,5 +1879,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
