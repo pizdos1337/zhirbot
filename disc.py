@@ -1223,8 +1223,163 @@ async def list_guilds(ctx):
         )
     
     await ctx.send(embed=embed)
+    
+@bot.command(name='автобургер')
+async def give_autoburger(ctx, количество: int = 1):
+    """
+    Выдаёт автобургеры (только для тестеров)
+    Использование: !автобургер [количество]
+    Пример: !автобургер 5 - выдаст 5 автобургеров
+    """
+    # Проверяем, есть ли у пользователя роль тестер
+    if not has_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав на использование этой команды! Нужна роль **{TESTER_ROLE_NAME}**")
+        return
+    
+    # Проверяем, что количество положительное
+    if количество <= 0:
+        await ctx.send("❌ Количество должно быть больше 0!")
+        return
+    
+    # Ограничиваем разумным пределом (макс 100)
+    if количество > 100:
+        await ctx.send("⚠️ Слишком много! Максимум 100 автобургеров за раз.")
+        количество = 100
+    
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    # Получаем текущие данные пользователя
+    current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time = get_user_data(guild_id, user_id, user_name)
+    
+    # Добавляем автобургеры
+    new_autoburger_count = autoburger_count + количество
+    
+    # Обновляем время следующего автобургера
+    interval = get_autoburger_interval(new_autoburger_count)
+    if interval:
+        new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
+    else:
+        new_next_autoburger_time = None
+    
+    # Обновляем данные
+    update_user_data(
+        guild_id, user_id, current_number, user_name,
+        consecutive_plus, consecutive_minus, jackpot_pity,
+        new_autoburger_count, last_case_time, new_next_autoburger_time
+    )
+    
+    # Создаём красивое сообщение
+    embed = discord.Embed(
+        title="🍔 Выдача автобургеров",
+        description=f"**{member.mention}** получил автобургеры!",
+        color=0xffaa00
+    )
+    
+    embed.add_field(name="📦 Получено", value=f"+{количество} 🍔", inline=True)
+    embed.add_field(name="📊 Всего", value=f"{new_autoburger_count} 🍔", inline=True)
+    
+    if new_autoburger_count > 0:
+        interval = get_autoburger_interval(new_autoburger_count)
+        boost = new_autoburger_count * 10
+        embed.add_field(name="⚡ Эффект", 
+                       value=f"Авто-жир каждые {interval} ч\nБонус к плюсу: +{boost}%", 
+                       inline=False)
+    
+    embed.set_footer(text="✨ Удачи в наборе массы!")
+    
+    await ctx.send(embed=embed)
 
+@bot.command(name='автобургер_сброс')
+async def reset_autoburger(ctx, member: discord.Member = None):
+    """
+    Сбрасывает количество автобургеров у пользователя (только для тестеров)
+    Использование: !автобургер_сброс [@пользователь]
+    """
+    # Проверяем права тестера
+    if not has_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
+        return
+    
+    guild_id = ctx.guild.id
+    target = member or ctx.author
+    user_id = str(target.id)
+    
+    # Получаем текущие данные
+    current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time = get_user_data(guild_id, user_id, target.name)
+    
+    if autoburger_count == 0:
+        await ctx.send(f"ℹ️ У {target.mention} нет автобургеров!")
+        return
+    
+    # Сбрасываем автобургеры
+    update_user_data(
+        guild_id, user_id, current_number, target.name,
+        consecutive_plus, consecutive_minus, jackpot_pity,
+        0, last_case_time, None
+    )
+    
+    embed = discord.Embed(
+        title="🔄 Сброс автобургеров",
+        description=f"**{ctx.author.name}** сбросил автобургеры у {target.mention}",
+        color=0xff5500
+    )
+    embed.add_field(name="Было", value=f"{autoburger_count} 🍔", inline=True)
+    embed.add_field(name="Стало", value="0 🍔", inline=True)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='автобургер_инфо')
+async def autoburger_info(ctx, member: discord.Member = None):
+    """
+    Показывает информацию об автобургерах пользователя (только для тестеров)
+    """
+    # Проверяем права тестера
+    if not has_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
+        return
+    
+    guild_id = ctx.guild.id
+    target = member or ctx.author
+    user_id = str(target.id)
+    
+    # Получаем данные
+    current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, last_case_time, next_autoburger_time = get_user_data(guild_id, user_id, target.name)
+    
+    embed = discord.Embed(
+        title=f"🍔 Информация об автобургерах",
+        description=f"Для {target.mention}",
+        color=0x3498db
+    )
+    
+    embed.add_field(name="Количество", value=f"{autoburger_count} 🍔", inline=True)
+    
+    if autoburger_count > 0:
+        interval = get_autoburger_interval(autoburger_count)
+        boost = autoburger_count * 10
+        embed.add_field(name="Интервал", value=f"каждые {interval} ч", inline=True)
+        embed.add_field(name="Бонус к плюсу", value=f"+{boost}%", inline=True)
+        
+        if next_autoburger_time:
+            try:
+                if isinstance(next_autoburger_time, str):
+                    next_time = datetime.fromisoformat(next_autoburger_time)
+                else:
+                    next_time = next_autoburger_time
+                
+                time_diff = next_time - datetime.now()
+                if time_diff.total_seconds() > 0:
+                    embed.add_field(name="⏰ Следующий", 
+                                   value=f"через {format_time(time_diff.total_seconds())}", 
+                                   inline=True)
+            except:
+                pass
+    
+    await ctx.send(embed=embed)
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
