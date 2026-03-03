@@ -9,7 +9,69 @@ import math
 import asyncio
 import shutil
 import glob
+import os
 
+def repair_database(db_path):
+    """Пытается восстановить повреждённую базу данных"""
+    if not os.path.exists(db_path):
+        return False
+    
+    # Создаём бекап повреждённого файла
+    backup_path = db_path + f".corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    shutil.copy2(db_path, backup_path)
+    print(f"⚠️ Создан бекап повреждённой БД: {backup_path}")
+    
+    # Удаляем повреждённый файл
+    os.remove(db_path)
+    print("🗑️ Повреждённая БД удалена")
+    
+    return True
+
+def safe_init_guild_database(guild_id):
+    """Безопасная инициализация БД с обработкой ошибок"""
+    db_path = get_db_path(guild_id)
+    
+    # Проверяем, существует ли файл
+    if os.path.exists(db_path):
+        try:
+            # Пробуем открыть БД для проверки
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT count(*) FROM sqlite_master")
+            conn.close()
+            print(f"✅ База данных для сервера {guild_id} в порядке")
+            return
+        except sqlite3.DatabaseError:
+            # База повреждена - восстанавливаем
+            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_id}")
+            repair_database(db_path)
+    
+    # Создаём новую БД
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_fat (
+            user_id TEXT PRIMARY KEY,
+            user_name TEXT,
+            current_number INTEGER DEFAULT 0,
+            last_command_time TIMESTAMP,
+            consecutive_plus INTEGER DEFAULT 0,
+            consecutive_minus INTEGER DEFAULT 0,
+            jackpot_pity INTEGER DEFAULT 0,
+            autoburger_count INTEGER DEFAULT 0,
+            last_case_time TIMESTAMP,
+            next_autoburger_time TIMESTAMP,
+            total_autoburger_activations INTEGER DEFAULT 0,
+            total_autoburger_gain INTEGER DEFAULT 0,
+            last_autoburger_result TEXT,
+            last_autoburger_time TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print(f"✅ База данных создана для сервера {guild_id}")
 # ===== НАСТРОЙКИ =====
 # Токен берётся из переменных окружения!
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
@@ -202,7 +264,7 @@ def get_user_data(guild_id, user_id, user_name=None):
     """
     Получает данные пользователя из БД конкретного сервера
     """
-    init_guild_database(guild_id)
+    safe_init_guild_database(guild_id)
     
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
@@ -1641,4 +1703,5 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
