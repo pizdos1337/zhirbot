@@ -2174,7 +2174,18 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
      autoburger_count, last_case_time, next_autoburger_time,
      total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, last_command_use_time) = get_user_data(guild_id, user_id, member.name)
+     legendary_burger, item_counts, last_command, last_command_target, last_command_use_time_str) = get_user_data(guild_id, user_id, member.name)
+    
+    # ПРЕОБРАЗУЕМ СТРОКУ В DATETIME, ЕСЛИ НУЖНО
+    last_command_use_time = None
+    if last_command_use_time_str:
+        try:
+            if isinstance(last_command_use_time_str, str):
+                last_command_use_time = datetime.fromisoformat(last_command_use_time_str)
+            else:
+                last_command_use_time = last_command_use_time_str
+        except:
+            last_command_use_time = None
     
     # Проверяем, что пользователь использовал !магазин недавно (в течение 5 минут)
     if last_command != "shop" or not last_command_use_time:
