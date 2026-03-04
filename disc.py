@@ -1391,6 +1391,7 @@ async def fat_command(ctx):
     )
     new_number = current_number + change
     
+    # ВСЕГДА обновляем данные в БД, независимо от смены ника
     update_user_data(
         guild_id, user_id, new_number, user_name,
         new_consecutive_plus, new_consecutive_minus, new_jackpot_pity,
@@ -1399,95 +1400,115 @@ async def fat_command(ctx):
         legendary_burger, item_counts
     )
     
-    display_name = member.display_name
-    clean_name = display_name
-    if "kg" in display_name:
-        parts = display_name.split("kg", 1)
-        if len(parts) > 1:
-            clean_name = parts[1].strip()
-            if not clean_name:
-                clean_name = user_name
-    else:
-        clean_name = display_name
-    
-    if not clean_name or len(clean_name) > 30:
-        clean_name = user_name
-    
-    new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
-    if len(new_nick) > 32:
-        new_nick = new_nick[:32]
-    
+    # ПЫТАЕМСЯ обновить ник, но не прерываем выполнение если не получилось
+    nick_updated = False
     try:
+        display_name = member.display_name
+        clean_name = display_name
+        if "kg" in display_name:
+            parts = display_name.split("kg", 1)
+            if len(parts) > 1:
+                clean_name = parts[1].strip()
+                if not clean_name:
+                    clean_name = user_name
+        else:
+            clean_name = display_name
+        
+        if not clean_name or len(clean_name) > 30:
+            clean_name = user_name
+        
+        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        
         await member.edit(nick=new_nick)
-        
-        rank_name, rank_emoji = get_rank(new_number)
-        
-        if was_jackpot:
-            embed_color = 0xffd700
-            embed_title = "💰 ДЖЕКПОТ! 💰"
-        else:
-            embed_color = 0xff9933 if new_number >= 0 else 0x66ccff
-            embed_title = "🍔 Жирная трансформация"
-        
-        embed = discord.Embed(
-            title=embed_title,
-            description=f"**{member.mention}** теперь весит **{abs(new_number)}kg** на сервере **{ctx.guild.name}**!",
-            color=embed_color
-        )
-        
-        if was_jackpot:
-            embed.add_field(name="💰 ДЖЕКПОТ!", value=f"+{change} кг", inline=True)
-        elif change > 0:
-            embed.add_field(name="📈 Изменение", value=f"+{change} кг", inline=True)
-        elif change < 0:
-            embed.add_field(name="📉 Изменение", value=f"{change} кг", inline=True)
-        else:
-            embed.add_field(name="⚖️ Изменение", value="0 кг", inline=True)
-        
-        embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
-        embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
-        
-        pity_info = []
-        if was_jackpot:
-            pity_info.append("💰 Джекпот сброшен!")
-        elif was_minus:
-            if consecutive_plus > 0:
-                pity_info.append(f"❌ Серия плюсов ({consecutive_plus}) прервана!")
-            pity_info.append(f"📉 Минусов подряд: {new_consecutive_minus}")
-        else:
-            if new_consecutive_plus > 0:
-                pity_info.append(f"🔥 Плюсов подряд: {new_consecutive_plus}")
-            if consecutive_minus > 0:
-                pity_info.append(f"✅ Серия минусов ({consecutive_minus}) прервана!")
-        
-        if pity_info:
-            embed.add_field(name="📊 Статистика", value="\n".join(pity_info), inline=False)
-        
-        if autoburger_count > 0:
-            interval = get_autoburger_interval(autoburger_count)
-            current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
-            embed.add_field(name="🍔 Автобургеры", 
-                           value=f"{autoburger_count} шт (каждые {interval} ч)\n⚡ Бонус к плюсу: +{current_boost:.1f}%", 
-                           inline=True)
-        
-        available, burger_idx, burger_name, req_weight, chance = check_ascension_available(new_number, legendary_burger)
-        if available:
-            embed.add_field(
-                name="✨ **ВОЗВЫШЕНИЕ ДОСТУПНО!** ✨",
-                value=f"Вы достигли {req_weight}кг! Используйте `!возвышение`\n"
-                      f"Шанс получить {BURGER_RANKS[burger_idx]['emoji']} {burger_name}: {chance*100:.0f}%",
-                inline=False
-            )
-        
-        embed.add_field(name="⏰ Следующая команда", value=f"через {actual_cooldown*60:.0f} мин", inline=True)
-        embed.set_footer(text=f"Новый ник: {new_nick}")
-        
-        await ctx.send(embed=embed)
-        
+        nick_updated = True
     except discord.Forbidden:
-        await ctx.send(f"❌ У меня нет прав менять никнейм для {member.mention} на этом сервере!")
-    except discord.HTTPException as e:
-        await ctx.send(f"❌ Ошибка при смене ника: {e}")
+        # Не хватает прав - просто логируем и продолжаем
+        print(f"⚠️ Не удалось сменить ник для {user_name} (недостаточно прав)")
+    except Exception as e:
+        # Другие ошибки тоже не критичны
+        print(f"⚠️ Ошибка при смене ника для {user_name}: {e}")
+    
+    # ВСЕГДА показываем сообщение о результате
+    rank_name, rank_emoji = get_rank(new_number)
+    
+    if was_jackpot:
+        embed_color = 0xffd700
+        embed_title = "💰 ДЖЕКПОТ! 💰"
+    else:
+        embed_color = 0xff9933 if new_number >= 0 else 0x66ccff
+        embed_title = "🍔 Жирная трансформация"
+    
+    embed = discord.Embed(
+        title=embed_title,
+        description=f"**{member.mention}** теперь весит **{abs(new_number)}kg** на сервере **{ctx.guild.name}**!",
+        color=embed_color
+    )
+    
+    if was_jackpot:
+        embed.add_field(name="💰 ДЖЕКПОТ!", value=f"+{change} кг", inline=True)
+    elif change > 0:
+        embed.add_field(name="📈 Изменение", value=f"+{change} кг", inline=True)
+    elif change < 0:
+        embed.add_field(name="📉 Изменение", value=f"{change} кг", inline=True)
+    else:
+        embed.add_field(name="⚖️ Изменение", value="0 кг", inline=True)
+    
+    embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
+    embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
+    
+    pity_info = []
+    if was_jackpot:
+        pity_info.append("💰 Джекпот сброшен!")
+    elif was_minus:
+        if consecutive_plus > 0:
+            pity_info.append(f"❌ Серия плюсов ({consecutive_plus}) прервана!")
+        pity_info.append(f"📉 Минусов подряд: {new_consecutive_minus}")
+    else:
+        if new_consecutive_plus > 0:
+            pity_info.append(f"🔥 Плюсов подряд: {new_consecutive_plus}")
+        if consecutive_minus > 0:
+            pity_info.append(f"✅ Серия минусов ({consecutive_minus}) прервана!")
+    
+    if pity_info:
+        embed.add_field(name="📊 Статистика", value="\n".join(pity_info), inline=False)
+    
+    if autoburger_count > 0:
+        interval = get_autoburger_interval(autoburger_count)
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+        embed.add_field(name="🍔 Автобургеры", 
+                       value=f"{autoburger_count} шт (каждые {interval} ч)\n⚡ Бонус к плюсу: +{current_boost:.1f}%", 
+                       inline=True)
+    
+    # Добавляем информацию о возвышении если доступно
+    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(new_number, legendary_burger)
+    if available:
+        embed.add_field(
+            name="✨ **ВОЗВЫШЕНИЕ ДОСТУПНО!** ✨",
+            value=f"Вы достигли {req_weight}кг! Используйте `!возвышение`\n"
+                  f"Шанс получить {BURGER_RANKS[burger_idx]['emoji']} {burger_name}: {chance*100:.0f}%",
+            inline=False
+        )
+    
+    # Если ник не обновился, добавляем предупреждение
+    if not nick_updated:
+        embed.add_field(
+            name="⚠️ **ВНИМАНИЕ**",
+            value="Не удалось обновить ник (недостаточно прав).\n"
+                  "Вес в базе данных обновлён, но в нике не отображается.",
+            inline=False
+        )
+    
+    embed.add_field(name="⏰ Следующая команда", value=f"через {actual_cooldown*60:.0f} мин", inline=True)
+    
+    # Если ник обновился, показываем его, иначе показываем сообщение об ошибке
+    if nick_updated:
+        embed.set_footer(text=f"Новый ник: {new_nick}")
+    else:
+        embed.set_footer(text="⚡ Вес обновлён в БД, но ник не изменён")
+    
+    await ctx.send(embed=embed)
 
 @bot.command(name='жиркейс')
 async def fat_case(ctx):
