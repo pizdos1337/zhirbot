@@ -2447,13 +2447,16 @@ async def give_fat(ctx, target: discord.Member, amount: int):
     await ctx.send(embed=embed)
 
 @bot.command(name='датьпредмет')
-async def give_item(ctx, target: discord.Member, item_type: str, amount: int = 1):
-    """Передаёт предметы другому пользователю"""
+async def give_item(ctx, target: discord.Member, item_name: str, amount: int = 1):
+    """
+    Передаёт предметы другому пользователю
+    Использование: !датьпредмет @пользователь "название предмета" количество
+    Пример: !датьпредмет @friend "Горелый бекон" 5
+    """
+    # Проверяем, что количество положительное
     if amount <= 0:
         await ctx.send("❌ Количество должно быть больше 0!")
         return
-    
-    item_type = item_type.lower()
     
     guild_id = ctx.guild.id
     giver = ctx.author
@@ -2462,64 +2465,109 @@ async def give_item(ctx, target: discord.Member, item_type: str, amount: int = 1
     target_id = str(target.id)
     target_name = target.name
     
+    # Нельзя передавать самому себе
     if giver_id == target_id:
         await ctx.send("❌ Нельзя передавать предметы самому себе!")
         return
     
+    # Получаем данные обоих пользователей
     (giver_number, giver_last_time, giver_plus, giver_minus, giver_jackpot,
      giver_burgers, giver_case_time, giver_next_burger,
      giver_acts, giver_gain, giver_last_res, giver_last_time,
-     giver_legendary, giver_items, _, _, _) = get_user_data(guild_id, giver_id, giver_name)
+     giver_legendary, giver_items_str, _, _, _) = get_user_data(guild_id, giver_id, giver_name)
     
     (target_number, target_last_time, target_plus, target_minus, target_jackpot,
      target_burgers, target_case_time, target_next_burger,
      target_acts, target_gain, target_last_res, target_last_time,
-     target_legendary, target_items, _, _, _) = get_user_data(guild_id, target_id, target_name)
+     target_legendary, target_items_str, _, _, _) = get_user_data(guild_id, target_id, target_name)
     
-    giver_items_dict = get_user_items(giver_items)
-    target_items_dict = get_user_items(target_items)
+    # Преобразуем JSON строки в словари
+    giver_items = get_user_items(giver_items_str)
+    target_items = get_user_items(target_items_str)
     
-    # Проверяем, можно ли передавать этот предмет
-    if item_type in ["автобургер", "бургер", "autoburger"]:
-        item_name = "🍔 Автобургер"
-        if giver_burgers < amount:
-            await ctx.send(f"❌ У вас недостаточно автобургеров! Есть: {giver_burgers}, нужно: {amount}")
+    # Проверяем, есть ли у отправителя такой предмет
+    if item_name not in giver_items:
+        # Ищем предмет без учёта регистра
+        found = False
+        for key in giver_items.keys():
+            if key.lower() == item_name.lower():
+                item_name = key
+                found = True
+                break
+        
+        if not found:
+            # Показываем список доступных предметов
+            available_items = list(giver_items.keys())
+            if available_items:
+                items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
+                await ctx.send(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
+            else:
+                await ctx.send("❌ У вас нет предметов в инвентаре!")
             return
-        
-        new_giver_burgers = giver_burgers - amount
-        new_target_burgers = target_burgers + amount
-        
-        update_user_data(guild_id, giver_id, giver_number, giver_name,
-                        giver_plus, giver_minus, giver_jackpot, new_giver_burgers,
-                        giver_case_time, giver_next_burger,
-                        giver_acts, giver_gain, giver_last_res, giver_last_time,
-                        giver_legendary, giver_items)
-        
-        update_user_data(guild_id, target_id, target_number, target_name,
-                        target_plus, target_minus, target_jackpot, new_target_burgers,
-                        target_case_time, target_next_burger,
-                        target_acts, target_gain, target_last_res, target_last_time,
-                        target_legendary, target_items)
-        
-        embed = discord.Embed(
-            title="🎁 Передача предмета",
-            description=f"**{giver.mention}** передал {item_name} **{target.mention}**!",
-            color=0xffaa00
-        )
-        
-        embed.add_field(name="📤 Отправитель", 
-                       value=f"{giver.mention}\nБыло: {giver_burgers}\nСтало: {new_giver_burgers}", 
-                       inline=True)
-        
-        embed.add_field(name="📥 Получатель", 
-                       value=f"{target.mention}\nБыло: {target_burgers}\nСтало: {new_target_burgers}", 
-                       inline=True)
-        
-        embed.add_field(name="📦 Количество", value=f"{amount} шт", inline=True)
-        
-        await ctx.send(embed=embed)
-    else:
-        await ctx.send(f"❌ Неизвестный предмет! Доступно: автобургер")
+    
+    # Проверяем, хватает ли количества
+    if giver_items[item_name] < amount:
+        await ctx.send(f"❌ У вас недостаточно '{item_name}'! Есть: {giver_items[item_name]}, нужно: {amount}")
+        return
+    
+    # Проверяем, можно ли передавать этот предмет (легендарные бургеры нельзя)
+    legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
+    if item_name in legendary_burger_names:
+        await ctx.send(f"❌ Легендарные бургеры нельзя передавать!")
+        return
+    
+    # Выполняем передачу
+    giver_items[item_name] -= amount
+    if giver_items[item_name] <= 0:
+        del giver_items[item_name]
+    
+    target_items[item_name] = target_items.get(item_name, 0) + amount
+    
+    # Обновляем данные в БД
+    update_user_data(
+        guild_id, giver_id, giver_number, giver_name,
+        giver_plus, giver_minus, giver_jackpot, giver_burgers,
+        giver_case_time, giver_next_burger,
+        giver_acts, giver_gain, giver_last_res, giver_last_time,
+        giver_legendary, save_user_items(giver_items),
+        None, None, None
+    )
+    
+    update_user_data(
+        guild_id, target_id, target_number, target_name,
+        target_plus, target_minus, target_jackpot, target_burgers,
+        target_case_time, target_next_burger,
+        target_acts, target_gain, target_last_res, target_last_time,
+        target_legendary, save_user_items(target_items),
+        None, None, None
+    )
+    
+    # Создаём красивое сообщение
+    embed = discord.Embed(
+        title="🎁 Передача предмета",
+        description=f"**{giver.mention}** передал предмет **{target.mention}**!",
+        color=0xffaa00
+    )
+    
+    # Информация о предмете
+    item_display = f"**{item_name}** x{amount}"
+    embed.add_field(name="📦 Предмет", value=item_display, inline=False)
+    
+    # Инвентарь отправителя после передачи
+    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
+    if len(giver_items) > 5:
+        giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
+    embed.add_field(name="📤 Ваш инвентарь", value=giver_inv or "Пусто", inline=True)
+    
+    # Инвентарь получателя после передачи
+    target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
+    if len(target_items) > 5:
+        target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
+    embed.add_field(name="📥 Инвентарь получателя", value=target_inv or "Пусто", inline=True)
+    
+    embed.set_footer(text="✨ Предметы переданы!")
+    
+    await ctx.send(embed=embed)
 
 @bot.command(name='инвентарь')
 async def show_inventory(ctx, member: discord.Member = None):
