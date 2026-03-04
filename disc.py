@@ -1527,6 +1527,7 @@ async def fat_command(ctx):
         embed.set_footer(text="⚡ Вес обновлён в БД, но ник не изменён")
     
     await ctx.send(embed=embed)
+
 @bot.command(name='жиркейс')
 async def fat_case(ctx):
     """Открывает кейс с анимацией в стиле CS:GO"""
@@ -1625,21 +1626,21 @@ async def fat_case(ctx):
             last_command, last_command_target, last_command_use_time
         )
         
-        # ПРОКРУТКА С ИЗМЕНЯЕМОЙ СКОРОСТЬЮ
+        # ПРОКРУТКА - ОДНА ЛИНИЯ С ВЫДЕЛЕННОЙ СЕРЕДИНОЙ
         scroll_embed = discord.Embed(
             title="🎰 **ПРОКРУТКА** 🎰",
             description="",
             color=0xffaa00
         )
         
-        # Создаём длинный ряд эмодзи
+        # Создаём длинный ряд эмодзи (50 штук)
         scroll_line = []
         for i in range(50):
             scroll_line.append(random.choice(prize_emojis))
         
-        # Вставляем реальный приз где-то в середине
-        insert_pos = 25
-        scroll_line[insert_pos] = prize['emoji']
+        # Вставляем реальный приз примерно в середину
+        target_pos = 25
+        scroll_line[target_pos] = prize['emoji']
         
         total_steps = 25  # Общее количество кадров
         
@@ -1647,56 +1648,60 @@ async def fat_case(ctx):
             # Прогресс от 0 до 1
             progress = step / (total_steps - 1)
             
-            # Определяем сколько эмодзи пропустить
-            skip_count = max(1, int(6 * (1 - progress)))
+            # Определяем сколько эмодзи пропустить (от 5 до 1)
+            skip_count = max(1, int(5 * (1 - progress)))
             
             # Пропускаем эмодзи
             for _ in range(skip_count):
                 scroll_line.append(random.choice(prize_emojis))
                 scroll_line.pop(0)
             
-            # Скорость анимации
+            # Скорость анимации (начинаем быстро, заканчиваем медленно)
             if step < total_steps * 0.3:
-                speed = 0.4
+                speed = 0.3
             elif step < total_steps * 0.6:
-                speed = 0.6
+                speed = 0.5
             elif step < total_steps * 0.8:
                 speed = 0.8
             else:
                 speed = 1.2
             
-            # Показываем 7 эмодзи в ряд (с запасом по краям)
-            visible = " ".join(scroll_line[20:27])
+            # Берём 9 эмодзи для отображения (4 слева, 1 центр, 4 справа)
+            center_idx = len(scroll_line) // 2
+            display = scroll_line[center_idx-4:center_idx+5]
             
-            # ФИКСИРОВАННЫЙ РАЗМЕР "КОРОБОЧКИ"
-            scroll_embed.description = (
-                f"┌─────────────────────┐\n"
-                f"│  {visible:<21}  │\n"
-                f"│        ↓ ВЫПАДЕТ ↓       │\n"
-                f"│  {visible:<21}  │\n"
-                f"└─────────────────────┘"
-            )
+            # Формируем строку с выделенной серединой
+            left_part = "".join(display[:4])
+            center = display[4]
+            right_part = "".join(display[5:])
+            
+            # Собираем всё вместе с разделителями
+            display_line = f"{left_part}|{center}|{right_part}"
+            
+            scroll_embed.description = f"**{display_line}**"
             
             await case_msg.edit(embed=scroll_embed)
             await asyncio.sleep(speed)
         
-        # ФИНАЛ - показываем результат с задержкой
+        # ФИНАЛ - показываем результат с выделением на 2 секунды
+        # Сначала показываем финальный кадр с выделенным призом
+        final_display = []
+        for i in range(9):
+            if i == 4:  # Центральная позиция
+                final_display.append(f"**{prize['emoji']}**")  # Жирный шрифт для выделения
+            else:
+                final_display.append(prize['emoji'])
+        
+        final_line = "".join(final_display[:4]) + "|" + "".join(final_display[4:5]) + "|" + "".join(final_display[5:])
+        
         result_embed = discord.Embed(
-            title="✨ **РЕЗУЛЬТАТ** ✨",
-            description=(
-                f"┌─────────────────────┐\n"
-                f"│                       │\n"
-                f"│    {prize['emoji']*3}         │\n"
-                f"│  {result_display:^21}  │\n"
-                f"│    {prize['emoji']*3}         │\n"
-                f"│                       │\n"
-                f"└─────────────────────┘"
-            ),
+            title="🎯 **РЕЗУЛЬТАТ** 🎯",
+            description=f"**{final_line}**\n\n**{result_display}**",
             color=0xffd700 if prize["value"] == "autoburger" or (isinstance(prize["value"], int) and prize["value"] >= 1000) else 0xffaa00
         )
         await case_msg.edit(embed=result_embed)
         
-        # Небольшая пауза, чтобы пользователь увидел результат
+        # Держим результат 2 секунды
         await asyncio.sleep(2)
         
         # Обновляем ник, если изменился вес
