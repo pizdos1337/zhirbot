@@ -1866,6 +1866,13 @@ async def fat_leaderboard(ctx):
         
         rank_name, rank_emoji = get_rank(number)
         
+        # ФОРМИРУЕМ НИК С ЭМОДЗИ БУРГЕРА В НАЧАЛЕ
+        display_name = user_name
+        if legendary_burger is not None and legendary_burger >= 0:
+            burger_emoji = BURGER_RANKS[legendary_burger]["emoji"]
+            display_name = f"{burger_emoji}{user_name}"
+        
+        # Добавляем информацию о накоплениях (в конец)
         pity_emojis = []
         if consecutive_plus and consecutive_plus > 0:
             pity_emojis.append("🔥")
@@ -1877,12 +1884,11 @@ async def fat_leaderboard(ctx):
             pity_emojis.append(f"🍔{autoburger_count}")
         if total_acts and total_acts > 0:
             pity_emojis.append(f"⚡{total_acts}")
-        if legendary_burger is not None and legendary_burger >= 0:
-            pity_emojis.append(BURGER_RANKS[legendary_burger]["emoji"])
         
         pity_str = f" {' '.join(pity_emojis)}" if pity_emojis else ""
         
-        leaderboard_text += f"{place_icon} **{i}.** {user_name} — **{number}kg** {rank_emoji} *{rank_name}*{pity_str}\n"
+        # ТЕПЕРЬ БУРГЕР В НАЧАЛЕ, А НАКОПЛЕНИЯ В КОНЦЕ
+        leaderboard_text += f"{place_icon} **{i}.** {display_name} — **{number}kg** {rank_emoji} *{rank_name}*{pity_str}\n"
         
         if len(leaderboard_text) > 900:
             leaderboard_text += "... и ещё несколько участников"
@@ -1891,12 +1897,25 @@ async def fat_leaderboard(ctx):
     embed.description = leaderboard_text
     
     stats = get_guild_stats(guild_id)
+    
+    # Статистика по бургерам
+    burger_stats = ""
+    for i, count in enumerate(stats['burger_counts']):
+        if count > 0:
+            burger_stats += f"{BURGER_RANKS[i]['emoji']} {BURGER_RANKS[i]['name']}: {count}\n"
+    
     embed.add_field(name="📊 Статистика сервера", 
                    value=f"Участников: {stats['total_users']}\n"
                          f"Суммарный вес: {stats['total_weight']}kg\n"
                          f"Средний вес: {stats['avg_weight']:.1f}kg\n"
-                         f"🔼 Толстых: {stats['positive']} | 🔽 Худых: {stats['negative']} | ⚖️ Нулевых: {stats['zero']}", 
+                         f"🔼 Толстых: {stats['positive']} | 🔽 Худых: {stats['negative']} | ⚖️ Нулевых: {stats['zero']}\n"
+                         f"🍔 Всего автобургеров: {stats['total_autoburgers']}\n"
+                         f"⚡ Всего срабатываний: {stats['total_activations']}\n"
+                         f"📈 Всего набрано: {stats['total_gain']} кг", 
                    inline=False)
+    
+    if burger_stats:
+        embed.add_field(name="✨ Легендарные бургеры", value=burger_stats, inline=False)
     
     await ctx.send(embed=embed)
 
