@@ -2586,13 +2586,11 @@ async def give_fat(ctx, target: discord.Member, amount: int):
     await ctx.send(embed=embed)
 
 @bot.command(name='датьпредмет')
-async def give_item(ctx, target: discord.Member, item_name: str, amount: int = 1):
+async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str):
     """
     Передаёт предметы другому пользователю
-    Использование: !датьпредмет @пользователь "название предмета" количество
-    Пример: !датьпредмет @friend "Горелый бекон" 5
+    Использование: !датьпредмет @пользователь количество "название предмета"
     """
-    # Проверяем, что количество положительное
     if amount <= 0:
         await ctx.send("❌ Количество должно быть больше 0!")
         return
@@ -2604,7 +2602,6 @@ async def give_item(ctx, target: discord.Member, item_name: str, amount: int = 1
     target_id = str(target.id)
     target_name = target.name
     
-    # Нельзя передавать самому себе
     if giver_id == target_id:
         await ctx.send("❌ Нельзя передавать предметы самому себе!")
         return
@@ -2620,49 +2617,98 @@ async def give_item(ctx, target: discord.Member, item_name: str, amount: int = 1
      target_acts, target_gain, target_last_res, target_last_time,
      target_legendary, target_items_str, _, _, _) = get_user_data(guild_id, target_id, target_name)
     
-    # Преобразуем JSON строки в словари
+    # ПРОВЕРЯЕМ, НЕ АВТОБУРГЕР ЛИ ЭТО
+    item_lower = item_name.lower()
+    is_autoburger = any(word in item_lower for word in ["автобургер", "бургер", "autoburger"])
+    
+    if is_autoburger:
+        # Передаём автобургеры
+        if giver_burgers < amount:
+            await ctx.send(f"❌ У вас недостаточно автобургеров! Есть: {giver_burgers}, нужно: {amount}")
+            return
+        
+        # Выполняем передачу
+        new_giver_burgers = giver_burgers - amount
+        new_target_burgers = target_burgers + amount
+        
+        # Обновляем время следующего автобургера для получателя
+        new_target_next_burger = None
+        if new_target_burgers > 0:
+            interval = get_autoburger_interval(new_target_burgers)
+            if interval:
+                new_target_next_burger = datetime.now() + timedelta(hours=interval)
+        
+        # Обновляем данные
+        update_user_data(
+            guild_id, giver_id, giver_number, giver_name,
+            giver_plus, giver_minus, giver_jackpot, new_giver_burgers,
+            giver_case_time, giver_next_burger,
+            giver_acts, giver_gain, giver_last_res, giver_last_time,
+            giver_legendary, giver_items_str,
+            None, None, None
+        )
+        
+        update_user_data(
+            guild_id, target_id, target_number, target_name,
+            target_plus, target_minus, target_jackpot, new_target_burgers,
+            target_case_time, new_target_next_burger,
+            target_acts, target_gain, target_last_res, target_last_time,
+            target_legendary, target_items_str,
+            None, None, None
+        )
+        
+        embed = discord.Embed(
+            title="🍔 Передача автобургера",
+            description=f"**{giver.mention}** передал автобургер **{target.mention}**!",
+            color=0xffaa00
+        )
+        
+        embed.add_field(name="📦 Количество", value=f"{amount} шт", inline=True)
+        embed.add_field(name="📤 У вас осталось", value=f"{new_giver_burgers} 🍔", inline=True)
+        embed.add_field(name="📥 У получателя", value=f"{new_target_burgers} 🍔", inline=True)
+        
+        await ctx.send(embed=embed)
+        return
+    
+    # Если не автобургер - работаем с обычными предметами
     giver_items = get_user_items(giver_items_str)
     target_items = get_user_items(target_items_str)
     
-    # Проверяем, есть ли у отправителя такой предмет
-    if item_name not in giver_items:
-        # Ищем предмет без учёта регистра
-        found = False
-        for key in giver_items.keys():
-            if key.lower() == item_name.lower():
-                item_name = key
-                found = True
-                break
-        
-        if not found:
-            # Показываем список доступных предметов
-            available_items = list(giver_items.keys())
-            if available_items:
-                items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
-                await ctx.send(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
-            else:
-                await ctx.send("❌ У вас нет предметов в инвентаре!")
-            return
+    item_name = item_name.strip()
     
-    # Проверяем, хватает ли количества
-    if giver_items[item_name] < amount:
-        await ctx.send(f"❌ У вас недостаточно '{item_name}'! Есть: {giver_items[item_name]}, нужно: {amount}")
+    # Ищем предмет
+    found_item = None
+    for key in giver_items.keys():
+        if key.lower() == item_name.lower():
+            found_item = key
+            break
+    
+    if not found_item:
+        available_items = list(giver_items.keys())
+        if available_items:
+            items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
+            await ctx.send(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
+        else:
+            await ctx.send("❌ У вас нет предметов в инвентаре!")
         return
     
-    # Проверяем, можно ли передавать этот предмет (легендарные бургеры нельзя)
+    if giver_items[found_item] < amount:
+        await ctx.send(f"❌ У вас недостаточно '{found_item}'! Есть: {giver_items[found_item]}, нужно: {amount}")
+        return
+    
+    # Проверяем легендарные бургеры
     legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
-    if item_name in legendary_burger_names:
+    if found_item in legendary_burger_names:
         await ctx.send(f"❌ Легендарные бургеры нельзя передавать!")
         return
     
     # Выполняем передачу
-    giver_items[item_name] -= amount
-    if giver_items[item_name] <= 0:
-        del giver_items[item_name]
+    giver_items[found_item] -= amount
+    if giver_items[found_item] <= 0:
+        del giver_items[found_item]
     
-    target_items[item_name] = target_items.get(item_name, 0) + amount
+    target_items[found_item] = target_items.get(found_item, 0) + amount
     
-    # Обновляем данные в БД
     update_user_data(
         guild_id, giver_id, giver_number, giver_name,
         giver_plus, giver_minus, giver_jackpot, giver_burgers,
@@ -2681,30 +2727,25 @@ async def give_item(ctx, target: discord.Member, item_name: str, amount: int = 1
         None, None, None
     )
     
-    # Создаём красивое сообщение
     embed = discord.Embed(
         title="🎁 Передача предмета",
         description=f"**{giver.mention}** передал предмет **{target.mention}**!",
         color=0xffaa00
     )
     
-    # Информация о предмете
-    item_display = f"**{item_name}** x{amount}"
-    embed.add_field(name="📦 Предмет", value=item_display, inline=False)
+    embed.add_field(name="📦 Предмет", value=f"**{found_item}** x{amount}", inline=False)
     
-    # Инвентарь отправителя после передачи
+    # Инвентарь отправителя
     giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
     if len(giver_items) > 5:
         giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
     embed.add_field(name="📤 Ваш инвентарь", value=giver_inv or "Пусто", inline=True)
     
-    # Инвентарь получателя после передачи
+    # Инвентарь получателя
     target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
     if len(target_items) > 5:
         target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
     embed.add_field(name="📥 Инвентарь получателя", value=target_inv or "Пусто", inline=True)
-    
-    embed.set_footer(text="✨ Предметы переданы!")
     
     await ctx.send(embed=embed)
 
