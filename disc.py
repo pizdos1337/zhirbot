@@ -1592,38 +1592,10 @@ async def fat_case(ctx):
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
         
-        # АНИМАЦИЯ ОТКРЫТИЯ
-        anim_embed = discord.Embed(
-            title="🔓 **ОТКРЫТИЕ КЕЙСА** 🔓",
-            description="▰▰▰▰▰▰▰▰▰▰ 0%",
-            color=0xffaa00
-        )
-        await case_msg.edit(embed=anim_embed)
+        # Убираем реакцию сразу
         await case_msg.clear_reactions()
-        await asyncio.sleep(0.3)
         
-        # Анимация прокрутки счётчика
-        stages = [
-            "▰▰▰▰▰▰▰▰▰▰ 10%",
-            "▰▰▰▰▰▰▰▰▰▰ 20%", 
-            "▰▰▰▰▰▰▰▰▰▰ 30%",
-            "▰▰▰▰▰▰▰▰▰▰ 40%",
-            "▰▰▰▰▰▰▰▰▰▰ 50%",
-            "▰▰▰▰▰▰▰▰▰▰ 60%",
-            "▰▰▰▰▰▰▰▰▰▰ 70%",
-            "▰▰▰▰▰▰▰▰▰▰ 80%",
-            "▰▰▰▰▰▰▰▰▰▰ 90%",
-            "▰▰▰▰▰▰▰▰▰▰ 100%",
-        ]
-        
-        for stage in stages:
-            anim_embed.description = stage
-            await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(0.2)
-        
-        await asyncio.sleep(0.3)
-        
-        # ВТОРАЯ ЧАСТЬ - ПРОКРУТКА ОДНОГО РЯДА (как в CS:GO)
+        # ПРОКРУТКА ОДНОГО РЯДА (как в CS:GO) - ПЛАВНАЯ И МЕДЛЕННАЯ
         scroll_embed = discord.Embed(
             title="🎰 **ПРОКРУТКА** 🎰",
             description="",
@@ -1632,17 +1604,17 @@ async def fat_case(ctx):
         
         # Создаём длинный ряд эмодзи для прокрутки
         scroll_line = []
-        for i in range(20):  # 20 случайных эмодзи для прокрутки
+        for i in range(30):  # Увеличили до 30 для более длинной прокрутки
             scroll_line.append(random.choice(prize_emojis))
         
-        # Анимируем прокрутку - 15 кадров
-        for i in range(15):
+        # Анимируем прокрутку - меньше кадров, но медленнее
+        for i in range(12):  # Уменьшили количество кадров с 15 до 12
             # Сдвигаем ряд влево
             scroll_line.append(random.choice(prize_emojis))
             scroll_line.pop(0)
             
             # Показываем текущее окно из 7 эмодзи
-            visible = " ".join(scroll_line[6:13])  # Центральные 7 эмодзи
+            visible = " ".join(scroll_line[11:18])  # Центральные 7 эмодзи
             
             scroll_embed.description = (
                 f"┌─────────────────────┐\n"
@@ -1652,7 +1624,9 @@ async def fat_case(ctx):
                 f"└─────────────────────┘"
             )
             await case_msg.edit(embed=scroll_embed)
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.25)  # Увеличили задержку для плавности
+        
+        await asyncio.sleep(0.3)  # Небольшая пауза перед результатом
         
         # ФИНАЛ - получаем реальный приз
         prize = get_case_prize(legendary_burger)
