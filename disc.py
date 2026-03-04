@@ -1595,7 +1595,7 @@ async def fat_case(ctx):
         # Убираем реакцию сразу
         await case_msg.clear_reactions()
         
-        # ПОЛУЧАЕМ ПРИЗ ЗАРАНЕЕ (чтобы он точно работал)
+        # ПОЛУЧАЕМ ПРИЗ ЗАРАНЕЕ
         prize = get_case_prize(legendary_burger)
         
         # Рассчитываем изменения ДО анимации
@@ -1608,12 +1608,12 @@ async def fat_case(ctx):
             interval = get_autoburger_interval(new_autoburger_count)
             if interval:
                 new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
-            result_value = f"+1 {prize['emoji']}"
-            result_display = f"🎉 **АВТОБУРГЕР!**"
+            result_display = f"🎉 **АВТОБУРГЕР!** 🍔✨"
+            result_color = 0xffd700
         else:
             new_number = current_number + prize["value"]
-            result_value = f"{prize['value']:+d} кг"
             result_display = f"🎉 **{prize['value']:+d} кг** {prize['emoji']}"
+            result_color = 0xffaa00
         
         # ОБНОВЛЯЕМ ДАННЫЕ В БД ДО АНИМАЦИИ
         current_time = datetime.now()
@@ -1626,78 +1626,69 @@ async def fat_case(ctx):
             last_command, last_command_target, last_command_use_time
         )
         
-        # ПРОКРУТКА - ОДНА ЛИНИЯ С ВЫДЕЛЕННОЙ СЕРЕДИНОЙ
-        scroll_embed = discord.Embed(
+        # ГЕНЕРИРУЕМ ЛИНИЮ ИЗ 50 ЭМОДЗИ
+        line = []
+        for i in range(50):
+            line.append(random.choice(prize_emojis))
+        
+        # СТАВИМ ПРИЗ НА 39 МЕСТО (индекс 38)
+        line[38] = prize['emoji']
+        
+        # ТЕКУЩАЯ ПОЗИЦИЯ ПРОКРУТКИ (начинаем с 0)
+        position = 0
+        
+        # Embed для анимации
+        anim_embed = discord.Embed(
             title="🎰 **ПРОКРУТКА** 🎰",
             description="",
             color=0xffaa00
         )
         
-        # Создаём длинный ряд эмодзи (50 штук)
-        scroll_line = []
-        for i in range(50):
-            scroll_line.append(random.choice(prize_emojis))
+        # КАДР 1-2: прокручиваем по 10 эмодзи за кадр (всего 20)
+        for frame in range(1, 3):
+            position += 10
+            # Показываем 9 эмодзи так, чтобы текущая позиция была в центре (позиция 5)
+            visible = line[position-4:position+5]
+            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+            anim_embed.description = f"**{display_line}**"
+            await case_msg.edit(embed=anim_embed)
+            await asyncio.sleep(1)
         
-        # Вставляем реальный приз примерно в середину
-        target_pos = 25
-        scroll_line[target_pos] = prize['emoji']
+        # КАДР 3-5: прокручиваем по 5 эмодзи за кадр (всего 15)
+        for frame in range(3, 6):
+            position += 5
+            visible = line[position-4:position+5]
+            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+            anim_embed.description = f"**{display_line}**"
+            await case_msg.edit(embed=anim_embed)
+            await asyncio.sleep(1)
         
-        total_steps = 25  # Общее количество кадров
+        # КАДР 6-8: прокручиваем по 1 эмодзи за кадр (всего 3)
+        for frame in range(6, 9):
+            position += 1
+            visible = line[position-4:position+5]
+            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+            anim_embed.description = f"**{display_line}**"
+            await case_msg.edit(embed=anim_embed)
+            await asyncio.sleep(1)
         
-        for step in range(total_steps):
-            # Прогресс от 0 до 1
-            progress = step / (total_steps - 1)
-            
-            # Определяем сколько эмодзи пропустить (от 5 до 1)
-            skip_count = max(1, int(5 * (1 - progress)))
-            
-            # Пропускаем эмодзи
-            for _ in range(skip_count):
-                scroll_line.append(random.choice(prize_emojis))
-                scroll_line.pop(0)
-            
-            # Скорость анимации (начинаем быстро, заканчиваем медленно)
-            if step < total_steps * 0.3:
-                speed = 0.3
-            elif step < total_steps * 0.6:
-                speed = 0.5
-            elif step < total_steps * 0.8:
-                speed = 0.8
-            else:
-                speed = 1.2
-            
-            # Берём 9 эмодзи для отображения (4 слева, 1 центр, 4 справа)
-            center_idx = len(scroll_line) // 2
-            display = scroll_line[center_idx-4:center_idx+5]
-            
-            # Формируем строку с выделенной серединой
-            left_part = "".join(display[:4])
-            center = display[4]
-            right_part = "".join(display[5:])
-            
-            # Собираем всё вместе с разделителями
-            display_line = f"{left_part}|{center}|{right_part}"
-            
-            scroll_embed.description = f"**{display_line}**"
-            
-            await case_msg.edit(embed=scroll_embed)
-            await asyncio.sleep(speed)
+        # КАДР 9-10: СТОП - принудительно ставим приз в центр (позиция 38)
+        position = 38
+        visible = line[position-4:position+5]
+        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        anim_embed.description = f"**{display_line}**"
+        await case_msg.edit(embed=anim_embed)
+        await asyncio.sleep(1)  # Кадр 9
         
-        # ФИНАЛ - показываем результат с выделением на 2 секунды
-        # Сначала показываем финальный кадр с выделенным призом
-        final_display = []
-        for i in range(9):
-            if i == 4:  # Центральная позиция
-                final_display.append(f"**{prize['emoji']}**")  # Жирный шрифт для выделения
-            else:
-                final_display.append(prize['emoji'])
+        # Кадр 10 - показываем тот же результат (стоп)
+        await case_msg.edit(embed=anim_embed)
+        await asyncio.sleep(1)  # Кадр 10
         
-        final_line = "".join(final_display[:4]) + "|" + "".join(final_display[4:5]) + "|" + "".join(final_display[5:])
-        
+        # ПОКАЗЫВАЕМ РЕЗУЛЬТАТ
         result_embed = discord.Embed(
             title="🎯 **РЕЗУЛЬТАТ** 🎯",
-            description=f"**{final_line}**\n\n**{result_display}**",
-            color=0xffd700 if prize["value"] == "autoburger" or (isinstance(prize["value"], int) and prize["value"] >= 1000) else 0xffaa00
+            description=f"**{display_line}**\n\n**{result_display}**",
+            color=result_color
         )
         await case_msg.edit(embed=result_embed)
         
@@ -1782,6 +1773,67 @@ async def fat_case(ctx):
             color=0xff0000
         )
         await case_msg.edit(embed=timeout_embed)
+
+@bot.command(name='жиркейс_шансы')
+async def fat_case_chances(ctx):
+    """
+    Показывает шансы выпадения призов в кейсе
+    """
+    embed = discord.Embed(
+        title="📊 **ШАНСЫ В КЕЙСЕ** 📊",
+        description="Вероятность выпадения каждого приза:",
+        color=0xffaa00
+    )
+    
+    # Сортируем призы по редкости (самые редкие внизу)
+    sorted_prizes = sorted(CASE_PRIZES, key=lambda x: x['chance'] if x['chance'] > 0 else 999, reverse=True)
+    
+    chances_text = ""
+    rare_text = ""
+    legendary_text = ""
+    
+    for prize in sorted_prizes:
+        if prize["value"] == "autoburger":
+            legendary_text += f"{prize['emoji']} **{prize['name']}** — {prize['chance']:.5f}%\n"
+        elif prize["value"] >= 1000:
+            rare_text += f"{prize['emoji']} **{prize['name']}** — {prize['chance']}%\n"
+        else:
+            chances_text += f"{prize['emoji']} **{prize['name']}** — {prize['chance']}%\n"
+    
+    if chances_text:
+        embed.add_field(name="📦 **Обычные призы**", value=chances_text, inline=False)
+    
+    if rare_text:
+        embed.add_field(name="✨ **Редкие призы**", value=rare_text, inline=False)
+    
+    if legendary_text:
+        embed.add_field(name="🌟 **Легендарные призы**", value=legendary_text, inline=False)
+    
+    # Добавляем информацию о кулдауне
+    embed.add_field(
+        name="⏰ **Информация**",
+        value=(
+            f"• Кулдаун кейса: **{CASE_COOLDOWN_HOURS} часов**\n"
+            f"• Команда: `!жиркейс`\n"
+            f"• Для открытия нажмите на 🖱️ после использования команды"
+        ),
+        inline=False
+    )
+    
+    # Добавляем информацию о бонусах от алмазного бургера
+    embed.add_field(
+        name="💎 **Бонус алмазного бургера**",
+        value=(
+            f"• Шансы на редкие призы **x2**\n"
+            f"• Шанс на автобургер: **{CASE_PRIZES[-1]['chance'] * 2:.5f}%**\n"
+            f"• Шанс на +5000кг: **{CASE_PRIZES[-2]['chance'] * 2}%**"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="🎰 Удачи в открытии кейсов!")
+    
+    await ctx.send(embed=embed)
 
 @bot.command(name='жиротрясы')
 async def fat_leaderboard(ctx):
