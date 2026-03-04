@@ -1562,7 +1562,7 @@ async def fat_case(ctx):
     
     # СОЗДАЁМ КРАСИВЫЙ КЕЙС С РЕАКЦИЯМИ
     case_embed = discord.Embed(
-        title="📦 **КЕЙС 1** 📦",
+        title="📦 **КЕЙС ЖИРНОСТИ** 📦",
         description=(
             f"{member.mention}, у вас есть кейс!\n\n"
             f"**Нажмите на 🖱️ чтобы открыть**\n\n"
@@ -1585,9 +1585,6 @@ async def fat_case(ctx):
     for prize in CASE_PRIZES:
         if prize["emoji"] not in prize_emojis:
             prize_emojis.append(prize["emoji"])
-    # Добавляем ещё несколько для разнообразия
-    extra_emojis = ["🔄", "📈", "⬆️", "🚀", "💫", "⭐", "💥"]
-    prize_emojis.extend(extra_emojis)
     
     def check(reaction, user):
         return user == ctx.author and str(reaction.emoji) == "🖱️" and reaction.message.id == case_msg.id
@@ -1605,7 +1602,7 @@ async def fat_case(ctx):
         await case_msg.clear_reactions()
         await asyncio.sleep(0.3)
         
-        # Анимация прокрутки предметов (как в CS:GO)
+        # Анимация прокрутки счётчика
         stages = [
             "▰▰▰▰▰▰▰▰▰▰ 10%",
             "▰▰▰▰▰▰▰▰▰▰ 20%", 
@@ -1619,7 +1616,6 @@ async def fat_case(ctx):
             "▰▰▰▰▰▰▰▰▰▰ 100%",
         ]
         
-        # Первая часть - прокрутка счётчика
         for stage in stages:
             anim_embed.description = stage
             await case_msg.edit(embed=anim_embed)
@@ -1627,25 +1623,33 @@ async def fat_case(ctx):
         
         await asyncio.sleep(0.3)
         
-        # Вторая часть - прокрутка предметов
+        # ВТОРАЯ ЧАСТЬ - ПРОКРУТКА ОДНОГО РЯДА (как в CS:GO)
         scroll_embed = discord.Embed(
             title="🎰 **ПРОКРУТКА** 🎰",
             description="",
             color=0xffaa00
         )
         
-        # Показываем 3 ряда прокручивающихся предметов
-        for i in range(12):  # 12 кадров анимации
-            line1 = " ".join(random.choice(prize_emojis) for _ in range(5))
-            line2 = " ".join(random.choice(prize_emojis) for _ in range(5))
-            line3 = " ".join(random.choice(prize_emojis) for _ in range(5))
+        # Создаём длинный ряд эмодзи для прокрутки
+        scroll_line = []
+        for i in range(20):  # 20 случайных эмодзи для прокрутки
+            scroll_line.append(random.choice(prize_emojis))
+        
+        # Анимируем прокрутку - 15 кадров
+        for i in range(15):
+            # Сдвигаем ряд влево
+            scroll_line.append(random.choice(prize_emojis))
+            scroll_line.pop(0)
+            
+            # Показываем текущее окно из 7 эмодзи
+            visible = " ".join(scroll_line[6:13])  # Центральные 7 эмодзи
             
             scroll_embed.description = (
-                f"┌─────────────────┐\n"
-                f"│  {line1}  │\n"
-                f"│  {line2}  │ ← [ ВЫПАДЕТ ]\n"
-                f"│  {line3}  │\n"
-                f"└─────────────────┘"
+                f"┌─────────────────────┐\n"
+                f"│  {visible}  │\n"
+                f"│        ↓ ВЫПАДЕТ ↓       │\n"
+                f"│  {visible}  │\n"
+                f"└─────────────────────┘"
             )
             await case_msg.edit(embed=scroll_embed)
             await asyncio.sleep(0.15)
@@ -1657,7 +1661,6 @@ async def fat_case(ctx):
         new_autoburger_count = autoburger_count
         new_number = current_number
         new_next_autoburger_time = next_autoburger_time
-        prize_description = ""
         
         if prize["value"] == "autoburger":
             new_autoburger_count = autoburger_count + 1
@@ -1666,24 +1669,26 @@ async def fat_case(ctx):
                 new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
             prize_description = f"+1 {prize['emoji']}"
             result_line = f"🎉 **{prize['emoji']} АВТОБУРГЕР!**"
+            result_color = 0xffd700
         else:
             new_number = current_number + prize["value"]
             prize_description = f"{prize['value']:+d} кг {prize['emoji']}"
             result_line = f"🎉 **{prize['value']:+d} кг** {prize['emoji']}"
+            result_color = 0xffaa00
         
         # ПОКАЗЫВАЕМ РЕЗУЛЬТАТ
         result_embed = discord.Embed(
             title="✨ **РЕЗУЛЬТАТ** ✨",
             description=(
-                f"┌─────────────────┐\n"
-                f"│                 │\n"
-                f"│    {prize['emoji']*3}    │\n"
-                f"│  {result_line:^15}  │\n"
-                f"│    {prize['emoji']*3}    │\n"
-                f"│                 │\n"
-                f"└─────────────────┘"
+                f"┌─────────────────────┐\n"
+                f"│                       │\n"
+                f"│    {prize['emoji']*3}         │\n"
+                f"│  {result_line:^21}  │\n"
+                f"│    {prize['emoji']*3}         │\n"
+                f"│                       │\n"
+                f"└─────────────────────┘"
             ),
-            color=0xffd700 if prize["value"] == "autoburger" or prize["value"] >= 1000 else 0xffaa00
+            color=result_color
         )
         await case_msg.edit(embed=result_embed)
         await asyncio.sleep(1)
@@ -1777,6 +1782,7 @@ async def fat_case(ctx):
             color=0xff0000
         )
         await case_msg.edit(embed=timeout_embed)
+
 @bot.command(name='жиркейс_шансы')
 async def fat_case_chances(ctx):
     """Показывает шансы в кейсе"""
