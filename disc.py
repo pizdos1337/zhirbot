@@ -1025,12 +1025,23 @@ def has_high_tester_role(member):
     
     return False
 
-def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count=0, legendary_burger=-1):
-    """Определяет изменение веса с учётом всех механик"""
+def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count=0, legendary_burger=-1, items_dict=None):
+    """
+    Определяет изменение веса с учётом всех механик
+    Теперь учитывает особые предметы из инвентаря
+    """
+    if items_dict is None:
+        items_dict = {}
+    
     # Множитель от легендарного бургера
     multiplier = 1.0
     if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
         multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+    
+    # Проверяем наличие особых предметов
+    has_rotten_leg = items_dict.get("Гнилая ножка KFC", 0) > 0
+    has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
+    has_water = items_dict.get("Стакан воды", 0) > 0
     
     # Экспоненциальный бонус от автобургеров
     if autoburger_count > 0:
@@ -1053,13 +1064,18 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     # Рассчитываем текущий шанс на джекпот
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
     if legendary_burger == DIAMOND_BURGER:
-        jackpot_chance *= 2  # Удвоение шанса для алмазного бургера
+        jackpot_chance *= 2
+    if has_holy_sandwich:
+        sandwich_count = items_dict.get("Святой сэндвич", 0)
+        jackpot_chance = max(jackpot_chance, 0.3 * sandwich_count)
     jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
     
     # Проверяем джекпот
     jackpot_roll = random.random()
     if jackpot_roll < jackpot_chance:
         change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
+        if has_water:
+            change = change // 3
         change = int(change * multiplier)
         new_consecutive_plus = consecutive_plus + 1
         new_consecutive_minus = 0
@@ -1071,9 +1087,10 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     # Проверяем минус/плюс
     roll = random.random()
     
-    if roll < minus_chance:
-        # Выпал минус
+    if roll < minus_chance and not has_water:
         change = random.randint(-20, -1)
+        if has_water:
+            change = change // 3
         change = int(change * multiplier)
         new_consecutive_plus = 0
         new_consecutive_minus = consecutive_minus + 1
@@ -1081,8 +1098,9 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
         was_minus = True
         was_jackpot = False
     else:
-        # Выпал плюс
         change = random.randint(1, 20)
+        if has_water:
+            change = change // 3
         change = int(change * multiplier)
         new_consecutive_plus = consecutive_plus + 1
         new_consecutive_minus = 0
