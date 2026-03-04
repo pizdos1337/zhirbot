@@ -16,7 +16,8 @@ TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 PREFIX = "!"
 DB_FOLDER = "/app/data/guild_databases"
 COOLDOWN_HOURS = 1
-TESTER_ROLE_NAME = "тестер"
+TESTER_ROLE_NAME = "тестер"  # Название роли для доступа к обычным тестерским командам
+HIGH_TESTER_ROLE_NAME = "Высший тестер"  # Название роли для доступа к расширенным командам
 
 # Настройки вероятностей
 BASE_MINUS_CHANCE = 0.2
@@ -1003,6 +1004,7 @@ def format_time(seconds):
         return f"{seconds} сек"
 
 def has_tester_role(member):
+    """Проверяет, есть ли у участника роль "тестер" """
     if not member:
         return False
     
@@ -1011,6 +1013,18 @@ def has_tester_role(member):
             return True
     
     return False
+
+def has_high_tester_role(member):
+    """Проверяет, есть ли у участника роль "Высший тестер" """
+    if not member:
+        return False
+    
+    for role in member.roles:
+        if role.name.lower() == HIGH_TESTER_ROLE_NAME.lower():
+            return True
+    
+    return False
+
 def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count=0, legendary_burger=-1):
     """Определяет изменение веса с учётом всех механик"""
     # Множитель от легендарного бургера
@@ -2568,20 +2582,64 @@ async def fat_reset(ctx, member: discord.Member = None):
 
 @bot.command(name='сброскд')
 async def reset_cooldowns(ctx):
-    """Сброс кулдаунов (только тестеры)"""
-    if not has_tester_role(ctx.author):
-        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
+    """
+    Сброс кулдаунов
+    Для обычных тестеров: сброс !жир
+    Для Высших тестеров: сброс !жир, !жиркейс и обновление магазина
+    """
+    guild_id = ctx.guild.id
+    member = ctx.author
+    
+    is_high_tester = has_high_tester_role(member)
+    is_regular_tester = has_tester_role(member)
+    
+    # Проверяем права
+    if not is_regular_tester and not is_high_tester:
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}** или **{HIGH_TESTER_ROLE_NAME}**")
         return
     
-    guild_id = ctx.guild.id
-    affected = reset_all_cooldowns(guild_id)
+    if is_high_tester:
+        # ВЫСШИЙ ТЕСТЕР: полный сброс
+        
+        # 1. Сбрасываем кулдаун !жир для всех
+        fat_affected = reset_all_cooldowns(guild_id)
+        
+        # 2. Сбрасываем кулдаун !жиркейс для всех
+        db_path = get_db_path(guild_id)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE user_fat SET last_case_time = NULL')
+        case_affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        # 3. Обновляем магазин принудительно
+        current_time = datetime.now()
+        new_slots = generate_shop_items()
+        last_update = current_time
+        next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
+        update_shop_data(guild_id, new_slots, last_update, next_update)
+        
+        embed = discord.Embed(
+            title="🔄 **ПОЛНЫЙ СБРОС** 🔄",
+            description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!",
+            color=0xff5500
+        )
+        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+        embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
+        
+    else:
+        # ОБЫЧНЫЙ ТЕСТЕР: только сброс !жир
+        affected = reset_all_cooldowns(guild_id)
+        
+        embed = discord.Embed(
+            title="🔄 Кулдаун сброшен",
+            description=f"**{ctx.author.name}** сбросил кулдаун !жир для всех!",
+            color=0x00ff00
+        )
+        embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
     
-    embed = discord.Embed(
-        title="🔄 Кулдаун сброшен",
-        description=f"**{ctx.author.name}** сбросил кулдаун для всех!",
-        color=0x00ff00
-    )
-    embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
     await ctx.send(embed=embed)
 
 @bot.command(name='сбросвсех')
@@ -2958,5 +3016,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
