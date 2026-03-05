@@ -10,6 +10,11 @@ import asyncio
 import shutil
 import glob
 import json
+import imageio
+import io
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+import platform
 
 # ===== НАСТРОЙКИ =====
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
@@ -252,6 +257,133 @@ if TOKEN is None:
     print("📌 Убедитесь, что на хостинге установлена переменная окружения с токеном бота")
     exit(1)
 # ===== ФУНКЦИИ ДЛЯ РАБОТЫ С JSON ПРЕДМЕТАМИ =====
+
+async def generate_case_gif(prize_emoji, prize_value, prize_name, is_autoburger=False):
+    """
+    Генерирует GIF с анимацией открытия кейса в стиле CS:GO
+    Возвращает discord.File объект готового GIF
+    """
+    # Настройки
+    width, height = 400, 300
+    bg_color = (20, 20, 30)
+    accent_color = (255, 215, 0)  # Золотой
+    
+    # Попытка загрузить шрифт с поддержкой эмодзи
+    emoji_font = None
+    try:
+        if platform.system() == 'Windows':
+            font_path = "C:/Windows/Fonts/seguiemj.ttf"
+        else:
+            # Для Linux (часто на хостингах)
+            font_path = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
+        if os.path.exists(font_path):
+            emoji_font = ImageFont.truetype(font_path, 40)
+    except:
+        emoji_font = None
+    
+    frames = []
+    
+    # КАДР 1-3: Кейс закрыт (пульсация)
+    for i in range(3):
+        img = Image.new('RGB', (width, height), color=bg_color)
+        draw = ImageDraw.Draw(img)
+        
+        # Рисуем кейс
+        border_color = (accent_color[0], accent_color[1], accent_color[2])
+        
+        draw.rectangle([100, 100, 300, 200], outline=border_color, width=3)
+        draw.rectangle([120, 120, 280, 180], outline=border_color, width=1)
+        draw.rectangle([180, 80, 220, 100], fill=border_color)
+        
+        if emoji_font:
+            draw.text((200, 150), "📦", fill=(255, 255, 255), font=emoji_font, anchor="mm")
+        else:
+            draw.text((200, 150), "📦", fill=(255, 255, 255), anchor="mm")
+        
+        draw.text((200, 220), "НАЖМИТЕ ДЛЯ ОТКРЫТИЯ", fill=(150, 150, 150), anchor="mm")
+        frames.append(np.array(img))
+    
+    # КАДР 4-20: Прокрутка эмодзи
+    emojis = ["🔄", "📈", "⬆️", "🚀", "💫", "⭐", "💥", "🍔", "🎰", "💰", "🎲", "✨"]
+    
+    for i in range(20):
+        img = Image.new('RGB', (width, height), color=bg_color)
+        draw = ImageDraw.Draw(img)
+        
+        draw.rectangle([50, 120, 350, 180], outline=accent_color, width=2)
+        draw.rectangle([52, 122, 348, 178], outline=(100, 100, 100), width=1)
+        
+        scroll_pos = i * 2
+        for j in range(5):
+            emoji = emojis[(scroll_pos + j) % len(emojis)]
+            x_pos = 100 + j * 60
+            if emoji_font:
+                draw.text((x_pos, 150), emoji, fill=(255, 255, 255), font=emoji_font, anchor="mm")
+            else:
+                draw.text((x_pos, 150), emoji, fill=(255, 255, 255), anchor="mm")
+        
+        draw.rectangle([190, 125, 210, 175], outline=accent_color, width=2)
+        
+        progress = i / 20
+        bar_width = int(250 * progress)
+        draw.rectangle([75, 200, 75 + bar_width, 215], fill=accent_color)
+        draw.text((200, 230), f"ПРОКРУТКА {int(progress * 100)}%", fill=(200, 200, 200), anchor="mm")
+        
+        frames.append(np.array(img))
+    
+    # КАДР 21-25: Замедление
+    for i in range(5):
+        img = Image.new('RGB', (width, height), color=bg_color)
+        draw = ImageDraw.Draw(img)
+        
+        draw.rectangle([50, 120, 350, 180], outline=accent_color, width=2)
+        
+        if emoji_font:
+            draw.text((200, 150), prize_emoji, fill=(255, 255, 255), font=emoji_font, anchor="mm")
+        else:
+            draw.text((200, 150), prize_emoji, fill=(255, 255, 255), anchor="mm")
+        
+        draw.text((200, 230), "🎯 ФИКСАЦИЯ ПРИЗА", fill=(accent_color), anchor="mm")
+        frames.append(np.array(img))
+    
+    # КАДР 26-30: Результат
+    for i in range(5):
+        img = Image.new('RGB', (width, height), color=bg_color)
+        draw = ImageDraw.Draw(img)
+        
+        if is_autoburger:
+            glow = int(100 * (0.5 + 0.5 * np.sin(i * 2)))
+            
+            for g in range(3):
+                offset = g * 2
+                draw.rectangle([50-offset, 80-offset, 350+offset, 220+offset], 
+                              outline=(255, 215, 0, glow//(g+1)), width=2)
+            
+            if emoji_font:
+                draw.text((200, 120), "🍔", fill=(255, 255, 0), font=emoji_font, anchor="mm")
+            else:
+                draw.text((200, 120), "🍔", fill=(255, 255, 0), anchor="mm")
+            
+            draw.text((200, 160), "АВТОБУРГЕР!", fill=(255, 255, 255), anchor="mm")
+            draw.text((200, 190), "ПОЗДРАВЛЯЕМ!", fill=accent_color, anchor="mm")
+        else:
+            draw.rectangle([50, 80, 350, 220], outline=accent_color, width=3)
+            
+            if emoji_font:
+                draw.text((200, 120), prize_emoji, fill=(255, 255, 255), font=emoji_font, anchor="mm")
+            else:
+                draw.text((200, 120), prize_emoji, fill=(255, 255, 255), anchor="mm")
+            
+            draw.text((200, 160), f"{prize_value:+d} кг", fill=accent_color, anchor="mm")
+            draw.text((200, 190), prize_name, fill=(255, 255, 255), anchor="mm")
+        
+        frames.append(np.array(img))
+    
+    gif_buffer = io.BytesIO()
+    imageio.mimsave(gif_buffer, frames, format='GIF', duration=0.1, loop=0)
+    gif_buffer.seek(0)
+    
+    return discord.File(gif_buffer, filename='case_open.gif')
 
 def get_user_items(item_counts_str):
     """Получает словарь с предметами пользователя из JSON строки"""
@@ -1707,19 +1839,18 @@ async def fat_command(ctx):
 
 @bot.command(name='жиркейс')
 async def fat_case(ctx):
-    """Открывает кейс с анимацией в стиле CS:GO"""
+    """Открывает кейс с GIF-анимацией в стиле CS:GO"""
     guild_id = ctx.guild.id
     member = ctx.author
     user_id = str(member.id)
     user_name = member.name
     
-    # Получаем данные пользователя
+    # Получаем данные пользователя (18 значений!)
     (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
      autoburger_count, last_case_time, next_autoburger_time,
      total_activations, total_gain, last_result, last_activation_time,
      legendary_burger, item_counts, last_command, last_command_target, last_command_use_time, fat_cooldown_time) = get_user_data(guild_id, user_id, user_name)
     
-    # Определяем актуальный кулдаун с учётом бургера
     actual_case_cooldown = CASE_COOLDOWN_HOURS
     if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
         actual_case_cooldown = BURGER_RANKS[legendary_burger]["case_cooldown"]
@@ -1737,18 +1868,18 @@ async def fat_case(ctx):
         await ctx.send(embed=embed)
         return
     
-    # СОЗДАЁМ КРАСИВЫЙ КЕЙС С РЕАКЦИЯМИ
+    # Кейс с реакцией
     case_embed = discord.Embed(
         title="📦 **ЖИРКЕЙС** 📦",
         description=(
             f"{member.mention}, у вас есть кейс!\n\n"
-            f"**Нажмите на 🖱️ чтобы открыть**\n\n"
-            f"┌───────────────┐\n"
-            f"│    🍔🥤🍟     │\n"
-            f"│    Ж И Р      │\n"
-            f"│    К Е Й С    │\n"
-            f"│    🍕🌭🍗     │\n"
-            f"└───────────────┘"
+            f"┌─────────────────┐\n"
+            f"│     🍔🥤🍟      │\n"
+            f"│     Ж И Р       │\n"
+            f"│     К Е Й С     │\n"
+            f"│     🍕🌭🍗      │\n"
+            f"└─────────────────┘\n\n"
+            f"**Нажмите на 🖱️ чтобы открыть**"
         ),
         color=0xffaa00
     )
@@ -1757,58 +1888,40 @@ async def fat_case(ctx):
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
     
-    # Собираем эмодзи из возможных призов для анимации
-    prize_emojis = []
-    for prize in CASE_PRIZES:
-        if prize["emoji"] not in prize_emojis:
-            prize_emojis.append(prize["emoji"])
-    
     def check(reaction, user):
         return user == ctx.author and str(reaction.emoji) == "🖱️" and reaction.message.id == case_msg.id
     
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
         
-        # ПЫТАЕМСЯ УДАЛИТЬ РЕАКЦИИ, НО НЕ ПАДАЕМ, ЕСЛИ НЕТ ПРАВ
         try:
             await case_msg.clear_reactions()
-        except discord.Forbidden:
-            print(f"⚠️ Нет прав на удаление реакций на сервере {ctx.guild.name}")
-        except Exception as e:
-            print(f"⚠️ Ошибка при удалении реакций: {e}")
+        except:
+            pass
         
-        # ПОЛУЧАЕМ ПРИЗ ЗАРАНЕЕ
         prize = get_case_prize(legendary_burger)
-        
-        # Проверяем наличие стакана воды у пользователя
         items_dict = get_user_items(item_counts)
         has_water = items_dict.get("Стакан воды", 0) > 0
         
-        # Рассчитываем изменения ДО анимации с учётом стакана воды
         new_autoburger_count = autoburger_count
         new_number = current_number
         new_next_autoburger_time = next_autoburger_time
         actual_prize_value = prize["value"]
+        is_autoburger = False
         
         if prize["value"] == "autoburger":
             new_autoburger_count = autoburger_count + 1
             interval = get_autoburger_interval(new_autoburger_count)
             if interval:
                 new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
-            result_display = f"🎉 **АВТОБУРГЕР!** 🍔✨"
-            result_color = 0xffd700
+            is_autoburger = True
         else:
-            # Применяем эффект стакана воды если есть
             if has_water:
                 actual_prize_value = prize["value"] // 3
                 new_number = current_number + actual_prize_value
             else:
                 new_number = current_number + prize["value"]
-            
-            result_display = f"🎉 **{actual_prize_value:+d} кг** {prize['emoji']}"
-            result_color = 0xffaa00
         
-        # ОБНОВЛЯЕМ ДАННЫЕ В БД ДО АНИМАЦИИ
         current_time = datetime.now()
         update_user_data(
             guild_id, user_id, new_number, user_name,
@@ -1820,89 +1933,27 @@ async def fat_case(ctx):
             fat_cooldown_time
         )
         
-        # ГЕНЕРИРУЕМ ЛИНИЮ ИЗ 50 ЭМОДЗИ
-        line = []
-        for i in range(50):
-            line.append(random.choice(prize_emojis))
+        # Сообщение о генерации
+        wait_msg = await ctx.send("🎮 **ГЕНЕРАЦИЯ АНИМАЦИИ...**")
         
-        # СТАВИМ ПРИЗ НА 39 МЕСТО (индекс 38)
-        line[38] = prize['emoji']
-        
-        # ТЕКУЩАЯ ПОЗИЦИЯ ПРОКРУТКИ (начинаем с 0)
-        position = 0
-        
-        # Embed для анимации
-        anim_embed = discord.Embed(
-            title="🎰 **ЖИРКЕЙС** 🎰",
-            description="",
-            color=0xffaa00
+        # Генерация GIF
+        gif_file = await generate_case_gif(
+            prize['emoji'], 
+            actual_prize_value, 
+            prize['name'],
+            is_autoburger
         )
         
-        # ОПТИМИЗИРОВАННАЯ АНИМАЦИЯ (7 секунд)
-        animation_frames = [
-            (12, 0.3),  # Кадр 1 - быстро
-            (8, 0.4),   # Кадр 2 - средне-быстро
-            (5, 0.5),   # Кадр 3 - средне
-            (3, 0.6),   # Кадр 4 - средне-медленно
-            (2, 0.7),   # Кадр 5 - медленно
-            (1, 0.8),   # Кадр 6 - очень медленно
-            (0, 1.2),   # Кадр 7 - стоп
-        ]
+        await wait_msg.delete()
+        await case_msg.delete()
         
-        for skip, speed in animation_frames:
-            if skip > 0:
-                # Пропускаем эмодзи
-                for _ in range(skip):
-                    position += 1
-                    # Добавляем случайный эмодзи в конец для бесконечности
-                    line.append(random.choice(prize_emojis))
-                    line.pop(0)
-            
-            # Показываем 9 эмодзи
-            visible = line[position:position+9]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            
-            anim_embed.description = f"**{display_line}**"
-            await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(speed)
-        
-        # ПОКАЗЫВАЕМ РЕЗУЛЬТАТ
-        result_embed = discord.Embed(
-            title="🎯 **РЕЗУЛЬТАТ** 🎯",
-            description=f"**{display_line}**\n\n**{result_display}**",
-            color=result_color
+        # Отправка GIF
+        await ctx.send(
+            content=f"{member.mention} открыл кейс!",
+            file=gif_file
         )
-        await case_msg.edit(embed=result_embed)
         
-        # Держим результат 1.5 секунды
-        await asyncio.sleep(1.5)
-        
-        # Обновляем ник, если изменился вес
-        if prize["value"] != "autoburger" and prize["value"] != 0:
-            try:
-                display_name = member.display_name
-                clean_name = display_name
-                if "kg" in display_name:
-                    parts = display_name.split("kg", 1)
-                    if len(parts) > 1:
-                        clean_name = parts[1].strip()
-                        if not clean_name:
-                            clean_name = user_name
-                else:
-                    clean_name = display_name
-                
-                if not clean_name or len(clean_name) > 30:
-                    clean_name = user_name
-                
-                new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
-                if len(new_nick) > 32:
-                    new_nick = new_nick[:32]
-                
-                await member.edit(nick=new_nick)
-            except:
-                pass
-        
-        # Финальный embed с детальной информацией
+        # Финальный embed
         rank_name, rank_emoji = get_rank(new_number)
         
         if prize["value"] == "autoburger":
@@ -1943,7 +1994,6 @@ async def fat_case(ctx):
             if new_autoburger_count > autoburger_count:
                 final_embed.add_field(name="🍔 Автобургеры", value=f"+1! Теперь: {new_autoburger_count}", inline=True)
             
-            # Добавляем информацию о стакане воды если применимо
             if has_water and prize["value"] != "autoburger":
                 final_embed.add_field(
                     name="💧 Эффект стакана воды",
@@ -1952,7 +2002,6 @@ async def fat_case(ctx):
                 )
         
         final_embed.add_field(name="⏰ Следующий кейс", value=f"через {actual_case_cooldown} часов", inline=False)
-        
         await ctx.send(embed=final_embed)
         
     except asyncio.TimeoutError:
