@@ -541,12 +541,14 @@ def get_user_data(guild_id, user_id, user_name=None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
+    # ДОБАВЛЯЕМ fat_cooldown_time в SELECT
     cursor.execute('''
         SELECT current_number, last_command_time, consecutive_plus, consecutive_minus,
                jackpot_pity, autoburger_count, last_case_time, next_autoburger_time,
                total_autoburger_activations, total_autoburger_gain,
                last_autoburger_result, last_autoburger_time,
-               legendary_burger, item_counts, last_command, last_command_target, last_command_use_time
+               legendary_burger, item_counts, last_command, last_command_target, last_command_use_time,
+               fat_cooldown_time
         FROM user_fat WHERE user_id = ?
     ''', (str(user_id),))
     result = cursor.fetchone()
@@ -569,6 +571,7 @@ def get_user_data(guild_id, user_id, user_name=None):
         last_command = result[14]
         last_command_target = result[15]
         last_command_use_time = result[16]
+        fat_cooldown_time = result[17]  # НОВОЕ ПОЛЕ
     else:
         number = 0
         last_time = None
@@ -587,7 +590,9 @@ def get_user_data(guild_id, user_id, user_name=None):
         last_command = None
         last_command_target = None
         last_command_use_time = None
+        fat_cooldown_time = None  # НОВОЕ ПОЛЕ
         
+        # ДОБАВЛЯЕМ fat_cooldown_time в INSERT
         cursor.execute('''
             INSERT INTO user_fat (
                 user_id, user_name, current_number, last_command_time,
@@ -596,21 +601,25 @@ def get_user_data(guild_id, user_id, user_name=None):
                 total_autoburger_activations, total_autoburger_gain,
                 last_autoburger_result, last_autoburger_time,
                 legendary_burger, item_counts,
-                last_command, last_command_target, last_command_use_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_command, last_command_target, last_command_use_time,
+                fat_cooldown_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (str(user_id), user_name or "Unknown", number, last_time,
               consecutive_plus, consecutive_minus, jackpot_pity,
               autoburger_count, last_case_time, next_autoburger_time,
               total_activations, total_gain, last_result, last_activation_time,
               legendary_burger, item_counts,
-              last_command, last_command_target, last_command_use_time))
+              last_command, last_command_target, last_command_use_time,
+              fat_cooldown_time))
         conn.commit()
     
     conn.close()
+    # ВОЗВРАЩАЕМ 18 ЗНАЧЕНИЙ
     return (number, last_time, consecutive_plus, consecutive_minus,
             jackpot_pity, autoburger_count, last_case_time, next_autoburger_time,
             total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, item_counts, last_command, last_command_target, last_command_use_time)
+            legendary_burger, item_counts, last_command, last_command_target, last_command_use_time,
+            fat_cooldown_time)
 
 def safe_init_guild_database(guild_id, guild_name="Unknown"):
     """Безопасная инициализация БД с обработкой ошибок"""
@@ -677,6 +686,7 @@ def create_new_database(db_path, guild_id, guild_name):
             last_command TEXT,
             last_command_target TEXT,
             last_command_use_time TIMESTAMP
+            fat_cooldown_time TIMESTAMP
         )
     ''')
     
@@ -706,6 +716,7 @@ def add_missing_columns(db_path, existing_columns):
         'last_command': "TEXT",
         'last_command_target': "TEXT",
         'last_command_use_time': "TIMESTAMP"
+        'fat_cooldown_time': "TIMESTAMP"
     }
     
     for col_name, col_type in required_columns.items():
