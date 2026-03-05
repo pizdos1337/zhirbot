@@ -1565,7 +1565,6 @@ change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity
     consecutive_plus, consecutive_minus, jackpot_pity, 
     autoburger_count, legendary_burger, items_dict, current_number  # 7 параметров
 )
-    )
     new_number = current_number + change
     
     # ВСЕГДА обновляем данные в БД, независимо от смены ника
@@ -3488,7 +3487,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
-
 
 
 
