@@ -1052,7 +1052,7 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - autoburger_boost - minus_boost - diamond_bonus
     minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
     
-    # Рассчитываем текущий шанс на джекпот
+        # Рассчитываем текущий шанс на джекпот
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
     
     # Применяем бонус от алмазного бургера (x2 к шансу)
@@ -1062,12 +1062,14 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     # Применяем бонус от Святого сэндвича (+30% за каждый)
     if has_holy_sandwich:
         sandwich_count = items_dict.get("Святой сэндвич", 0)
-        # Добавляем фиксированные 30% за каждый сэндвич
+        # Для святого сэндвича игнорируем обычный лимит
         sandwich_bonus = 0.3 * sandwich_count
-        jackpot_chance = max(jackpot_chance, sandwich_bonus)  # Берём максимум
-    
-    # Ограничиваем максимальный шанс
-    jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
+        jackpot_chance = max(jackpot_chance, sandwich_bonus)
+        # Ограничиваем только до 90% (чтобы не было 100% гарантии)
+        jackpot_chance = min(jackpot_chance, 0.9)
+    else:
+        # Обычный лимит для всех остальных случаев
+        jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
     
     # Обработка в зависимости от активного легендарного предмета
     if active_legendary_item == "water":
@@ -1096,15 +1098,15 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
             was_jackpot = False
             return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
     
-    elif active_legendary_item == "rotten_leg":
-        # ГНИЛАЯ НОЖКА KFC: 1/3 потеря 30% массы, 2/3 джекпот
-        if random.random() < 0.33:  # 33% шанс на потерю
-            # Потеря 30% массы
+        elif active_legendary_item == "rotten_leg":
+        # ГНИЛАЯ НОЖКА KFC: 60% потерять 50% массы, 40% обычный джекпот
+          if random.random() < 0.6:  # 60% шанс на потерю
+            # Потеря 50% массы
             if current_weight is not None:
-                loss = int(current_weight * 0.3)
+                loss = int(current_weight * 0.5)  # 50% массы
                 change = -loss
             else:
-                change = -int(consecutive_plus * 0.3)  # Запасной вариант
+                change = -int(consecutive_plus * 0.5)  # Запасной вариант
             new_consecutive_plus = 0
             new_consecutive_minus = consecutive_minus + 1
             new_jackpot_pity = jackpot_pity + 1
@@ -1112,8 +1114,8 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
             was_jackpot = False
             return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
         else:
-            # Гарантированный джекпот
-            change = random.randint(JACKPOT_MIN, JACKPOT_MAX) * 3  # Увеличенный джекпот
+            # 40% шанс на обычный джекпот (без умножения)
+            change = random.randint(JACKPOT_MIN, JACKPOT_MAX)  # Обычный джекпот
             change = int(change * multiplier)
             new_consecutive_plus = consecutive_plus + 1
             new_consecutive_minus = 0
