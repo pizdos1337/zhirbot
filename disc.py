@@ -387,7 +387,10 @@ def migrate_database_if_needed(guild_id):
     cursor.execute("PRAGMA table_info(user_fat)")
     columns = [col[1] for col in cursor.fetchall()]
     
-    # Добавляем недостающие колонки
+    if 'fat_cooldown_time' not in columns:
+        print(f"📦 Добавляю колонку fat_cooldown_time для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN fat_cooldown_time TIMESTAMP")
+
     if 'legendary_burger' not in columns:
         print(f"📦 Добавляю колонку legendary_burger для сервера {guild_id}")
         cursor.execute("ALTER TABLE user_fat ADD COLUMN legendary_burger INTEGER DEFAULT -1")
@@ -732,7 +735,7 @@ def update_user_data(guild_id, user_id, new_number, user_name=None,
                      total_activations=None, total_gain=None,
                      last_result=None, last_activation_time=None,
                      legendary_burger=None, item_counts=None,
-                     last_command=None, last_command_target=None, last_command_use_time=None):
+                     last_command=None, last_command_target=None, last_command_use_time=None, fat_cooldown_time=None):
     """Обновляет данные пользователя в БД"""
     init_guild_database(guild_id)
     
@@ -745,6 +748,10 @@ def update_user_data(guild_id, user_id, new_number, user_name=None,
     updates = ["current_number = ?", "user_name = ?", "last_command_time = ?"]
     values = [new_number, user_name or "Unknown", current_time]
     
+    if fat_cooldown_time is not None:
+        updates.append("fat_cooldown_time = ?")
+        values.append(fat_cooldown_time)
+
     if consecutive_plus is not None:
         updates.append("consecutive_plus = ?")
         values.append(consecutive_plus)
@@ -843,11 +850,12 @@ def update_user_data(guild_id, user_id, new_number, user_name=None,
     return current_time
 
 def reset_all_cooldowns(guild_id):
+    """Сбрасывает кулдаун для всех пользователей"""
     init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute('UPDATE user_fat SET last_command_time = NULL')
+    cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')  # Только это поле
     affected_rows = cursor.rowcount
     conn.commit()
     conn.close()
@@ -1531,14 +1539,14 @@ async def fat_command(ctx):
     
     (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
      autoburger_count, _, _, total_activations, total_gain, _, _,
-     legendary_burger, item_counts, _, _, _) = get_user_data(guild_id, user_id, user_name)
+     legendary_burger, item_counts, _, _, _, fat_cooldown_time) = get_user_data(guild_id, user_id, user_name)
     
     # Определяем актуальный кулдаун с учётом бургера
     actual_cooldown = COOLDOWN_HOURS
     if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
         actual_cooldown = BURGER_RANKS[legendary_burger]["fat_cooldown"] / 60  # переводим минуты в часы
     
-    can_use, remaining = check_cooldown(last_time, actual_cooldown)
+    can_use, remaining = check_cooldown(fat_cooldown_time, actual_cooldown)
     
     if not can_use:
         embed = discord.Embed(
@@ -1567,7 +1575,8 @@ async def fat_command(ctx):
         new_consecutive_plus, new_consecutive_minus, new_jackpot_pity,
         autoburger_count, None, None,
         total_activations, total_gain, None, None,
-        legendary_burger, item_counts
+        legendary_burger, item_counts, None, None, None,
+        datetime.now()  # Это и есть fat_cooldown_time
     )
     
     # ПЫТАЕМСЯ обновить ник, но не прерываем выполнение если не получилось
@@ -1797,7 +1806,7 @@ async def fat_case(ctx):
             last_command, last_command_target, last_command_use_time
         )
         
-        # ГЕНЕРИРУЕМ ЛИНИЮ ИЗ 50 ЭМОДЗИ
+                # ГЕНЕРИРУЕМ ЛИНИЮ ИЗ 50 ЭМОДЗИ
         line = []
         for i in range(50):
             line.append(random.choice(prize_emojis))
@@ -1815,45 +1824,34 @@ async def fat_case(ctx):
             color=0xffaa00
         )
         
-        # КАДР 1-2: прокручиваем по 10 эмодзи за кадр (всего 20)
-        for frame in range(1, 3):
-            position += 10
-            # Показываем 9 эмодзи так, чтобы текущая позиция была в центре (позиция 5)
-            visible = line[position-4:position+5]
+        # ОПТИМИЗИРОВАННАЯ АНИМАЦИЯ (7 секунд)
+        animation_frames = [
+            # (пропуск, скорость)
+            (12, 0.3),  # Кадр 1 - быстро
+            (8, 0.4),   # Кадр 2 - средне-быстро
+            (5, 0.5),   # Кадр 3 - средне
+            (3, 0.6),   # Кадр 4 - средне-медленно
+            (2, 0.7),   # Кадр 5 - медленно
+            (1, 0.8),   # Кадр 6 - очень медленно
+            (0, 1.2),   # Кадр 7 - стоп
+        ]
+        
+        for skip, speed in animation_frames:
+            if skip > 0:
+                # Пропускаем эмодзи
+                for _ in range(skip):
+                    position += 1
+                    # Добавляем случайный эмодзи в конец для бесконечности
+                    line.append(random.choice(prize_emojis))
+                    line.pop(0)
+            
+            # Показываем 9 эмодзи
+            visible = line[position:position+9]
             display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+            
             anim_embed.description = f"**{display_line}**"
             await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(1)
-        
-        # КАДР 3-5: прокручиваем по 5 эмодзи за кадр (всего 15)
-        for frame in range(3, 6):
-            position += 5
-            visible = line[position-4:position+5]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{display_line}**"
-            await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(1)
-        
-        # КАДР 6-8: прокручиваем по 1 эмодзи за кадр (всего 3)
-        for frame in range(6, 9):
-            position += 1
-            visible = line[position-4:position+5]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{display_line}**"
-            await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(1)
-        
-        # КАДР 9-10: СТОП - принудительно ставим приз в центр (позиция 38)
-        position = 38
-        visible = line[position-4:position+5]
-        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-        anim_embed.description = f"**{display_line}**"
-        await case_msg.edit(embed=anim_embed)
-        await asyncio.sleep(1)  # Кадр 9
-        
-        # Кадр 10 - показываем тот же результат (стоп)
-        await case_msg.edit(embed=anim_embed)
-        await asyncio.sleep(1)  # Кадр 10
+            await asyncio.sleep(speed)
         
         # ПОКАЗЫВАЕМ РЕЗУЛЬТАТ
         result_embed = discord.Embed(
@@ -1863,8 +1861,8 @@ async def fat_case(ctx):
         )
         await case_msg.edit(embed=result_embed)
         
-        # Держим результат 2 секунды
-        await asyncio.sleep(2)
+        # Держим результат 1.5 секунды
+        await asyncio.sleep(1.5)
         
         # Обновляем ник, если изменился вес
         if prize["value"] != "autoburger" and prize["value"] != 0:
@@ -3709,6 +3707,7 @@ async def global_leaderboard(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
 
