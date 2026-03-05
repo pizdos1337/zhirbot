@@ -3483,6 +3483,94 @@ async def autoburger_info(ctx, member: discord.Member = None):
     
     await ctx.send(embed=embed)
 
+@bot.command(name='выдатьпредмет')
+async def give_shop_item(ctx, amount: int, *, item_name: str):
+    """
+    Выдаёт себе предмет из магазина (только для Высших тестеров)
+    Использование: !выдатьпредмет количество "название предмета"
+    Пример: !выдатьпредмет 5 "Горелый бекон"
+    """
+    # Проверяем, есть ли у пользователя роль Высший тестер
+    if not has_high_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{HIGH_TESTER_ROLE_NAME}**")
+        return
+    
+    if amount <= 0:
+        await ctx.send("❌ Количество должно быть больше 0!")
+        return
+    
+    if amount > 1000:
+        await ctx.send("⚠️ Слишком много! Максимум 1000 предметов за раз.")
+        amount = 1000
+    
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    # Получаем данные пользователя
+    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
+     autoburger_count, last_case_time, next_autoburger_time,
+     total_activations, total_gain, last_result, last_activation_time,
+     legendary_burger, item_counts_str, last_command, last_command_target, last_command_use_time) = get_user_data(guild_id, user_id, user_name)
+    
+    # Очищаем название предмета от лишних пробелов
+    item_name = item_name.strip()
+    
+    # Ищем предмет в списке магазина
+    found_item = None
+    for shop_item in SHOP_ITEMS:
+        if shop_item["name"].lower() == item_name.lower():
+            found_item = shop_item
+            break
+    
+    if not found_item:
+        # Показываем список доступных предметов
+        items_list = "\n".join([f"• {item['name']}" for item in SHOP_ITEMS[:10]])
+        if len(SHOP_ITEMS) > 10:
+            items_list += f"\n... и ещё {len(SHOP_ITEMS) - 10} предметов"
+        await ctx.send(f"❌ Предмет '{item_name}' не найден в магазине!\n\n📦 **Доступные предметы:**\n{items_list}")
+        return
+    
+    # Преобразуем JSON строку в словарь
+    items_dict = get_user_items(item_counts_str)
+    
+    # Добавляем предмет
+    items_dict[found_item["name"]] = items_dict.get(found_item["name"], 0) + amount
+    
+    # Обновляем данные в БД
+    update_user_data(
+        guild_id, user_id, current_number, user_name,
+        consecutive_plus, consecutive_minus, jackpot_pity,
+        autoburger_count, last_case_time, next_autoburger_time,
+        total_activations, total_gain, last_result, last_activation_time,
+        legendary_burger, save_user_items(items_dict),
+        last_command, last_command_target, last_command_use_time
+    )
+    
+    # Создаём красивое сообщение
+    embed = discord.Embed(
+        title="🎁 Выдача предмета",
+        description=f"**{member.mention}** выдал себе предмет!",
+        color=0xffaa00
+    )
+    
+    embed.add_field(name="📦 Предмет", value=f"**{found_item['name']}** x{amount}", inline=True)
+    
+    # Показываем описание предмета
+    embed.add_field(name="📝 Описание", value=found_item['description'], inline=False)
+    
+    # Показываем текущий инвентарь
+    items_list = "\n".join([f"• {item}: {count} шт" for item, count in list(items_dict.items())[:8]])
+    if len(items_dict) > 8:
+        items_list += f"\n... и ещё {len(items_dict) - 8} предметов"
+    
+    embed.add_field(name="📊 Ваш инвентарь", value=items_list or "Пусто", inline=False)
+    
+    embed.set_footer(text="✨ Только для высших тестеров!")
+    
+    await ctx.send(embed=embed)
+
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
