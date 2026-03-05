@@ -3574,10 +3574,119 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     
     await ctx.send(embed=embed)
 
+@bot.command(name='жирглобал')
+async def global_leaderboard(ctx):
+    """
+    Показывает топ серверов по общей жирности
+    """
+    guild_data = []
+    
+    for guild in bot.guilds:
+        try:
+            stats = get_guild_stats(guild.id)
+            
+            # Получаем только нужные данные
+            guild_data.append({
+                'name': guild.name,
+                'members': stats['total_users'],
+                'total_weight': stats['total_weight'],
+                'avg_weight': stats['avg_weight'],
+                'autoburgers': stats['total_autoburgers'],
+                'activations': stats['total_activations'],
+                'burger_counts': stats['burger_counts']
+            })
+        except Exception as e:
+            print(f"❌ Ошибка при получении статистики для сервера {guild.name}: {e}")
+            continue
+    
+    if not guild_data:
+        await ctx.send("📭 Нет данных по серверам!")
+        return
+    
+    # Сортируем по общей массе (убывание)
+    guild_data.sort(key=lambda x: x['total_weight'], reverse=True)
+    
+    embed = discord.Embed(
+        title="🌍 **ГЛОБАЛЬНЫЙ РЕЙТИНГ СЕРВЕРОВ** 🌍",
+        description="Топ серверов по общей массе жира",
+        color=0xffaa00
+    )
+    
+    # Формируем топ-10 серверов
+    leaderboard_text = ""
+    for i, guild in enumerate(guild_data[:10], 1):
+        if i == 1:
+            place_icon = "🥇"
+        elif i == 2:
+            place_icon = "🥈"
+        elif i == 3:
+            place_icon = "🥉"
+        else:
+            place_icon = "🔹"
+        
+        # Считаем общее количество легендарных бургеров
+        total_burgers = sum(guild['burger_counts'])
+        
+        # Форматируем массу (в тоннах для больших чисел)
+        if guild['total_weight'] >= 1000:
+            weight_display = f"{guild['total_weight']/1000:.1f}т"
+        else:
+            weight_display = f"{guild['total_weight']}кг"
+        
+        leaderboard_text += f"{place_icon} **{i}.** {guild['name'][:30]}\n"
+        leaderboard_text += f"   📦 **{weight_display}** | 👥 {guild['members']} уч.\n"
+        leaderboard_text += f"   📊 Средний вес: {guild['avg_weight']:.0f}кг\n"
+        
+        # Добавляем информацию о легендарных бургерах если есть
+        if total_burgers > 0:
+            burger_icons = []
+            for idx, count in enumerate(guild['burger_counts']):
+                if count > 0:
+                    burger_icons.append(f"{BURGER_RANKS[idx]['emoji']}{count}")
+            leaderboard_text += f"   ✨ {' '.join(burger_icons)}\n"
+        
+        leaderboard_text += "\n"
+        
+        if len(leaderboard_text) > 1900:
+            leaderboard_text += "... и ещё несколько серверов"
+            break
+    
+    embed.description = leaderboard_text
+    
+    # Общая статистика по всем серверам
+    total_servers = len(guild_data)
+    total_global_weight = sum(g['total_weight'] for g in guild_data)
+    total_global_members = sum(g['members'] for g in guild_data)
+    total_global_burgers = sum(sum(g['burger_counts']) for g in guild_data)
+    
+    if total_global_weight >= 1000000:
+        global_display = f"{total_global_weight/1000000:.1f}млн кг"
+    elif total_global_weight >= 1000:
+        global_display = f"{total_global_weight/1000:.1f}т"
+    else:
+        global_display = f"{total_global_weight}кг"
+    
+    embed.add_field(
+        name="📊 **ГЛОБАЛЬНАЯ СТАТИСТИКА**",
+        value=(
+            f"🌍 Серверов: **{total_servers}**\n"
+            f"👥 Участников: **{total_global_members}**\n"
+            f"⚖️ Всего жира: **{global_display}**\n"
+            f"🍔 Автобургеров: **{sum(g['autoburgers'] for g in guild_data)}**\n"
+            f"✨ Легендарных бургеров: **{total_global_burgers}**"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="🏆 Только топ-10 серверов")
+    
+    await ctx.send(embed=embed)
+    
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
 
