@@ -1558,13 +1558,14 @@ async def fat_command(ctx):
         embed.set_footer(text="Приходите взвешиваться позже!")
         await ctx.send(embed=embed)
         return
-    # Получите items_dict перед вызовом
-items_dict = get_user_items(item_counts)
-
-change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-    consecutive_plus, consecutive_minus, jackpot_pity, 
-    autoburger_count, legendary_burger, items_dict, current_number  # 7 параметров
-)
+    
+    # Получаем предметы пользователя для обработки легендарных предметов
+    items_dict = get_user_items(item_counts)
+    
+    change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
+        consecutive_plus, consecutive_minus, jackpot_pity, 
+        autoburger_count, legendary_burger, items_dict, current_number
+    )
     new_number = current_number + change
     
     # ВСЕГДА обновляем данные в БД, независимо от смены ника
@@ -3575,6 +3576,7 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
 
