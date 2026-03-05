@@ -1025,23 +1025,31 @@ def has_high_tester_role(member):
     
     return False
 
-def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count=0, legendary_burger=-1, items_dict=None):
+def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count=0, legendary_burger=-1, items_dict=None, current_weight=None):
     """
     Определяет изменение веса с учётом всех механик
-    Теперь учитывает особые предметы из инвентаря
+    Приоритет легендарных предметов: Стакан воды > Гнилая ножка KFC
+    Святой сэндвич работает всегда (не конфликтует)
     """
     if items_dict is None:
         items_dict = {}
+    
+    # Проверяем наличие легендарных предметов
+    has_rotten_leg = items_dict.get("Гнилая ножка KFC", 0) > 0
+    has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
+    has_water = items_dict.get("Стакан воды", 0) > 0
+    
+    # Определяем активный легендарный предмет (по приоритету)
+    active_legendary_item = None
+    if has_water:
+        active_legendary_item = "water"
+    elif has_rotten_leg:
+        active_legendary_item = "rotten_leg"
     
     # Множитель от легендарного бургера
     multiplier = 1.0
     if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
         multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
-    
-    # Проверяем наличие особых предметов
-    has_rotten_leg = items_dict.get("Гнилая ножка KFC", 0) > 0
-    has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
-    has_water = items_dict.get("Стакан воды", 0) > 0
     
     # Экспоненциальный бонус от автобургеров
     if autoburger_count > 0:
@@ -1061,7 +1069,7 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - autoburger_boost - minus_boost - diamond_bonus
     minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
     
-    # Рассчитываем текущий шанс на джекпот
+    # Рассчитываем текущий шанс на джекпот (Святой сэндвич работает всегда)
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
     if legendary_burger == DIAMOND_BURGER:
         jackpot_chance *= 2
@@ -1070,45 +1078,94 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
         jackpot_chance = max(jackpot_chance, 0.3 * sandwich_count)
     jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
     
-    # Проверяем джекпот
-    jackpot_roll = random.random()
-    if jackpot_roll < jackpot_chance:
-        change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
-        if has_water:
-            change = change // 3
-        change = int(change * multiplier)
-        new_consecutive_plus = consecutive_plus + 1
-        new_consecutive_minus = 0
-        new_jackpot_pity = 0
-        was_minus = False
-        was_jackpot = True
-        return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
+    # Обработка в зависимости от активного легендарного предмета
+    if active_legendary_item == "water":
+        # СТАКАН ВОДЫ: нет минусов, весь прирост в 3 раза меньше
+        # Проверяем джекпот
+        jackpot_roll = random.random()
+        if jackpot_roll < jackpot_chance:
+            change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
+            change = change // 3  # В 3 раза меньше
+            change = int(change * multiplier)
+            new_consecutive_plus = consecutive_plus + 1
+            new_consecutive_minus = 0
+            new_jackpot_pity = 0
+            was_minus = False
+            was_jackpot = True
+            return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
+        else:
+            # Обычный плюс (минусов нет)
+            change = random.randint(1, 20)
+            change = change // 3  # В 3 раза меньше
+            change = int(change * multiplier)
+            new_consecutive_plus = consecutive_plus + 1
+            new_consecutive_minus = 0
+            new_jackpot_pity = jackpot_pity + 1
+            was_minus = False
+            was_jackpot = False
+            return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
     
-    # Проверяем минус/плюс
-    roll = random.random()
+    elif active_legendary_item == "rotten_leg":
+        # ГНИЛАЯ НОЖКА KFC: 1/3 потеря 30% массы, 2/3 джекпот
+        if random.random() < 0.33:  # 33% шанс на потерю
+            # Потеря 30% массы
+            if current_weight is not None:
+                loss = int(current_weight * 0.3)
+                change = -loss
+            else:
+                change = -int(consecutive_plus * 0.3)  # Запасной вариант
+            new_consecutive_plus = 0
+            new_consecutive_minus = consecutive_minus + 1
+            new_jackpot_pity = jackpot_pity + 1
+            was_minus = True
+            was_jackpot = False
+            return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
+        else:
+            # Гарантированный джекпот
+            change = random.randint(JACKPOT_MIN, JACKPOT_MAX) * 3  # Увеличенный джекпот
+            change = int(change * multiplier)
+            new_consecutive_plus = consecutive_plus + 1
+            new_consecutive_minus = 0
+            new_jackpot_pity = 0
+            was_minus = False
+            was_jackpot = True
+            return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
     
-    if roll < minus_chance and not has_water:
-        change = random.randint(-20, -1)
-        if has_water:
-            change = change // 3
-        change = int(change * multiplier)
-        new_consecutive_plus = 0
-        new_consecutive_minus = consecutive_minus + 1
-        new_jackpot_pity = jackpot_pity + 1
-        was_minus = True
-        was_jackpot = False
     else:
-        change = random.randint(1, 20)
-        if has_water:
-            change = change // 3
-        change = int(change * multiplier)
-        new_consecutive_plus = consecutive_plus + 1
-        new_consecutive_minus = 0
-        new_jackpot_pity = jackpot_pity + 1
-        was_minus = False
-        was_jackpot = False
-    
-    return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
+        # НЕТ АКТИВНЫХ ЛЕГЕНДАРНЫХ ПРЕДМЕТОВ - обычная обработка
+        # Проверяем джекпот
+        jackpot_roll = random.random()
+        if jackpot_roll < jackpot_chance:
+            change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
+            change = int(change * multiplier)
+            new_consecutive_plus = consecutive_plus + 1
+            new_consecutive_minus = 0
+            new_jackpot_pity = 0
+            was_minus = False
+            was_jackpot = True
+            return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
+        
+        # Проверяем минус/плюс
+        roll = random.random()
+        
+        if roll < minus_chance:
+            change = random.randint(-20, -1)
+            change = int(change * multiplier)
+            new_consecutive_plus = 0
+            new_consecutive_minus = consecutive_minus + 1
+            new_jackpot_pity = jackpot_pity + 1
+            was_minus = True
+            was_jackpot = False
+        else:
+            change = random.randint(1, 20)
+            change = int(change * multiplier)
+            new_consecutive_plus = consecutive_plus + 1
+            new_consecutive_minus = 0
+            new_jackpot_pity = jackpot_pity + 1
+            was_minus = False
+            was_jackpot = False
+        
+        return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
 
 def get_case_prize(legendary_burger=-1):
     """Определяет приз из кейса с учётом бонуса алмазного бургера"""
@@ -1162,7 +1219,7 @@ async def apply_autoburger(user_id, guild_id, user_name):
          legendary_burger, item_counts, _, _, _) = get_user_data(guild_id, user_id, user_name)
         
         change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-            consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, legendary_burger
+            consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, legendary_burger, items_dict, current_number
         )
         
         new_number = current_number + change
@@ -1507,7 +1564,7 @@ async def fat_command(ctx):
         return
     
     change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-        consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, legendary_burger
+        consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, legendary_burger, items_dict, current_number
     )
     new_number = current_number + change
     
@@ -1669,10 +1726,10 @@ async def fat_case(ctx):
             f"{member.mention}, у вас есть кейс!\n\n"
             f"**Нажмите на 🖱️ чтобы открыть**\n\n"
             f"┌───────────────┐\n"
-            f"│    🍔🥤🍟     │\n"
-            f"│    Ж И Р      │\n"
-            f"│    К Е Й С    │\n"
-            f"│    🍕🌭🍗     │\n"
+            f"│----🍔🥤🍟------│\n"
+            f"│----Ж И Р------│\n"
+            f"│----К Е Й С----│\n"
+            f"│----🍕🌭🍗------│\n"
             f"└───────────────┘"
         ),
         color=0xffaa00
@@ -1694,16 +1751,26 @@ async def fat_case(ctx):
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
         
-        # Убираем реакцию сразу
-        await case_msg.clear_reactions()
+        # ПЫТАЕМСЯ УДАЛИТЬ РЕАКЦИИ, НО НЕ ПАДАЕМ, ЕСЛИ НЕТ ПРАВ
+        try:
+            await case_msg.clear_reactions()
+        except discord.Forbidden:
+            print(f"⚠️ Нет прав на удаление реакций на сервере {ctx.guild.name}")
+        except Exception as e:
+            print(f"⚠️ Ошибка при удалении реакций: {e}")
         
         # ПОЛУЧАЕМ ПРИЗ ЗАРАНЕЕ
         prize = get_case_prize(legendary_burger)
         
-        # Рассчитываем изменения ДО анимации
+        # Проверяем наличие стакана воды у пользователя
+        items_dict = get_user_items(item_counts)
+        has_water = items_dict.get("Стакан воды", 0) > 0
+        
+        # Рассчитываем изменения ДО анимации с учётом стакана воды
         new_autoburger_count = autoburger_count
         new_number = current_number
         new_next_autoburger_time = next_autoburger_time
+        actual_prize_value = prize["value"]
         
         if prize["value"] == "autoburger":
             new_autoburger_count = autoburger_count + 1
@@ -1712,9 +1779,18 @@ async def fat_case(ctx):
                 new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
             result_display = f"🎉 **АВТОБУРГЕР!** 🍔✨"
             result_color = 0xffd700
+            
+            # Автобургер тоже уменьшается от стакана воды? Нет, это отдельный предмет
+            # Но сам автобургер будет давать кг позже через apply_autoburger
         else:
-            new_number = current_number + prize["value"]
-            result_display = f"🎉 **{prize['value']:+d} кг** {prize['emoji']}"
+            # Применяем эффект стакана воды если есть
+            if has_water:
+                actual_prize_value = prize["value"] // 3
+                new_number = current_number + actual_prize_value
+            else:
+                new_number = current_number + prize["value"]
+            
+            result_display = f"🎉 **{actual_prize_value:+d} кг** {prize['emoji']}"
             result_color = 0xffaa00
         
         # ОБНОВЛЯЕМ ДАННЫЕ В БД ДО АНИМАЦИИ
@@ -1856,12 +1932,20 @@ async def fat_case(ctx):
                 color=0xffaa00
             )
             
-            final_embed.add_field(name="🎁 Приз", value=f"**{prize['value']:+d} кг** {prize['emoji']}", inline=False)
+            final_embed.add_field(name="🎁 Приз", value=f"**{actual_prize_value:+d} кг** {prize['emoji']}", inline=False)
             final_embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
             final_embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
             
             if new_autoburger_count > autoburger_count:
                 final_embed.add_field(name="🍔 Автобургеры", value=f"+1! Теперь: {new_autoburger_count}", inline=True)
+            
+            # Добавляем информацию о стакане воды если применимо
+            if has_water and prize["value"] != "autoburger":
+                final_embed.add_field(
+                    name="💧 Эффект стакана воды",
+                    value=f"Исходный приз: {prize['value']:+d} кг\nУменьшен в 3 раза",
+                    inline=False
+                )
         
         final_embed.add_field(name="⏰ Следующий кейс", value=f"через {actual_case_cooldown} часов", inline=False)
         
