@@ -483,14 +483,6 @@ def init_guild_database(guild_id):
         )
     ''')
     
-    conn.commit()
-    conn.close()
-    
-    # ВАЖНО: Вызываем миграцию для добавления новых колонок
-    migrate_database_if_needed(guild_id)
-    
-    print(f"✅ База данных инициализирована для сервера {guild_id}")
-    
     # Получаем список существующих колонок
     cursor.execute("PRAGMA table_info(user_fat)")
     columns = [col[1] for col in cursor.fetchall()]
@@ -3576,6 +3568,7 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
 
