@@ -491,6 +491,10 @@ def init_guild_database(guild_id):
     columns = [col[1] for col in cursor.fetchall()]
     
     # Добавляем недостающие колонки
+    if 'fat_cooldown_time' not in columns:  # ДОБАВЬТЕ ЭТОТ БЛОК
+        print(f"📦 Добавляю колонку fat_cooldown_time для сервера {guild_id}")
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN fat_cooldown_time TIMESTAMP")
+
     if 'legendary_burger' not in columns:
         print(f"📦 Добавляю колонку legendary_burger для сервера {guild_id}")
         cursor.execute("ALTER TABLE user_fat ADD COLUMN legendary_burger INTEGER DEFAULT -1")
