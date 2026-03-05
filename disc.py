@@ -715,8 +715,8 @@ def add_missing_columns(db_path, existing_columns):
         'item_counts': "TEXT DEFAULT '{}'",
         'last_command': "TEXT",
         'last_command_target': "TEXT",
-        'last_command_use_time': "TIMESTAMP"
-        'fat_cooldown_time': "TIMESTAMP"
+        'last_command_use_time': "TIMESTAMP",
+        'fat_cooldown_time': "TIMESTAMP",
     }
     
     for col_name, col_type in required_columns.items():
