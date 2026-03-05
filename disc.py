@@ -1052,13 +1052,21 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - autoburger_boost - minus_boost - diamond_bonus
     minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
     
-    # Рассчитываем текущий шанс на джекпот (Святой сэндвич работает всегда)
+    # Рассчитываем текущий шанс на джекпот
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
+    
+    # Применяем бонус от алмазного бургера (x2 к шансу)
     if legendary_burger == DIAMOND_BURGER:
         jackpot_chance *= 2
+    
+    # Применяем бонус от Святого сэндвича (+30% за каждый)
     if has_holy_sandwich:
         sandwich_count = items_dict.get("Святой сэндвич", 0)
-        jackpot_chance = max(jackpot_chance, 0.3 * sandwich_count)
+        # Добавляем фиксированные 30% за каждый сэндвич
+        sandwich_bonus = 0.3 * sandwich_count
+        jackpot_chance = max(jackpot_chance, sandwich_bonus)  # Берём максимум
+    
+    # Ограничиваем максимальный шанс
     jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
     
     # Обработка в зависимости от активного легендарного предмета
@@ -3568,7 +3576,6 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
-
 
 
 
