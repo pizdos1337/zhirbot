@@ -1052,7 +1052,7 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - autoburger_boost - minus_boost - diamond_bonus
     minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
     
-        # Рассчитываем текущий шанс на джекпот
+    # Рассчитываем текущий шанс на джекпот
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
     
     # Применяем бонус от алмазного бургера (x2 к шансу)
@@ -1098,9 +1098,9 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
             was_jackpot = False
             return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
     
-        elif active_legendary_item == "rotten_leg":
+    elif active_legendary_item == "rotten_leg":
         # ГНИЛАЯ НОЖКА KFC: 60% потерять 50% массы, 40% обычный джекпот
-          if random.random() < 0.6:  # 60% шанс на потерю
+        if random.random() < 0.6:  # 60% шанс на потерю
             # Потеря 50% массы
             if current_weight is not None:
                 loss = int(current_weight * 0.5)  # 50% массы
