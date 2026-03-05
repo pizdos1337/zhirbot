@@ -491,15 +491,6 @@ def init_guild_database(guild_id):
     
     print(f"✅ База данных инициализирована для сервера {guild_id}")
     
-def migrate_database_if_needed(guild_id):
-    """Проверяет и добавляет недостающие колонки в существующую БД"""
-    db_path = get_db_path(guild_id)
-    if not os.path.exists(db_path):
-        return
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
     # Получаем список существующих колонок
     cursor.execute("PRAGMA table_info(user_fat)")
     columns = [col[1] for col in cursor.fetchall()]
@@ -1211,6 +1202,7 @@ def get_autoburger_interval(autoburger_count):
         return AUTOBURGER_INTERVALS[2]
     else:
         return AUTOBURGER_INTERVALS[3]
+        
 async def apply_autoburger(user_id, guild_id, user_name):
     """Фоновое применение команды !жир для автобургера"""
     try:
@@ -1218,8 +1210,12 @@ async def apply_autoburger(user_id, guild_id, user_name):
          autoburger_count, _, _, total_activations, total_gain, _, _,
          legendary_burger, item_counts, _, _, _) = get_user_data(guild_id, user_id, user_name)
         
+        # ДОБАВЬТЕ ЭТУ СТРОКУ
+        items_dict = get_user_items(item_counts)
+        
         change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-            consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, legendary_burger, items_dict, current_number
+            consecutive_plus, consecutive_minus, jackpot_pity, 
+            autoburger_count, legendary_burger, items_dict, current_number  # 7 параметров
         )
         
         new_number = current_number + change
@@ -1562,9 +1558,13 @@ async def fat_command(ctx):
         embed.set_footer(text="Приходите взвешиваться позже!")
         await ctx.send(embed=embed)
         return
-    
-    change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-        consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, legendary_burger, items_dict, current_number
+    # Получите items_dict перед вызовом
+items_dict = get_user_items(item_counts)
+
+change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
+    consecutive_plus, consecutive_minus, jackpot_pity, 
+    autoburger_count, legendary_burger, items_dict, current_number  # 7 параметров
+)
     )
     new_number = current_number + change
     
@@ -3488,6 +3488,7 @@ async def autoburger_info(ctx, member: discord.Member = None):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
 
