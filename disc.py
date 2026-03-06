@@ -1853,7 +1853,7 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
      autoburger_count, last_case_time, next_autoburger_time,
      total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, last_command_use_time_str) = get_user_data(guild_id, user_id, member.name)
+     legendary_burger, item_counts, last_command, last_command_target, last_command_use_time_str, _) = get_user_data(guild_id, user_id, member.name)
     
     # ПРЕОБРАЗУЕМ СТРОКУ В DATETIME, ЕСЛИ НУЖНО
     last_command_use_time = None
