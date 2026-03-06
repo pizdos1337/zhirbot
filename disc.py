@@ -1661,7 +1661,7 @@ async def shop_command(ctx):
     (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
      autoburger_count, last_case_time, next_autoburger_time,
      total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _) = get_user_data(guild_id, str(member.id), member.name)
+     legendary_burger, item_counts, _, _, _, _) = get_user_data(guild_id, str(member.id), member.name)
     
     # Обновляем last_command для пользователя
     update_user_data(
@@ -2118,7 +2118,7 @@ async def show_inventory(ctx, member: discord.Member = None):
     (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
      autoburger_count, last_case_time, next_autoburger_time,
      total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _) = get_user_data(guild_id, user_id, target.name)
+     legendary_burger, item_counts, _, _, _, _) = get_user_data(guild_id, user_id, target.name)
     
     embed = discord.Embed(
         title=f"🎒 Инвентарь - {target.display_name}",
@@ -2871,6 +2871,7 @@ async def global_leaderboard(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
 
 
 
