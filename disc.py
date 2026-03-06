@@ -1166,7 +1166,7 @@ async def fat_case(ctx):
             line.append(random.choice(prize_emojis))
         
         # СТАВИМ ПРИЗ НА 84 МЕСТО (индекс 83)
-        line[83] = prize['emoji']
+        line[84] = prize['emoji']
         
         # Embed для анимации
         anim_embed = discord.Embed(
