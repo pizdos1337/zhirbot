@@ -2910,48 +2910,51 @@ def generate_shop_items():
     slots = []
     used_indices = set()
     
+    # 4 слота под кейсы, 6 под предметы
     case_slots = 4
     item_slots = 6
     
+    # Генерируем кейсы (4 слота)
     available_cases = [cid for cid, case in CASES.items() if cid != "daily" and case.get("shop_chance", 0) > 0]
     
     for _ in range(case_slots):
-        if random.random() < 0.7:
-            if available_cases:
-                case_choices = []
-                for cid in available_cases:
-                    case = CASES[cid]
-                    weight = case["shop_chance"] * 100
-                    case_choices.extend([cid] * int(weight))
+        if random.random() < 0.7 and available_cases:  # 70% шанс что слот будет с кейсом
+            case_choices = []
+            for cid in available_cases:
+                case = CASES[cid]
+                weight = case["shop_chance"] * 100
+                case_choices.extend([cid] * int(weight))
+            
+            if case_choices:
+                chosen_id = random.choice(case_choices)
+                case = CASES[chosen_id]
+                amount = random.randint(case["min_shop"], case["max_shop"])
                 
-                if case_choices:
-                    chosen_id = random.choice(case_choices)
-                    case = CASES[chosen_id]
-                    amount = random.randint(case["min_shop"], case["max_shop"])
-                    
-                    min_prize = 0
-                    max_prize = 0
-                    for p in case["prizes"]:
-                        if isinstance(p["value"], int):
-                            if p["value"] < min_prize:
-                                min_prize = p["value"]
-                            if p["value"] > max_prize:
-                                max_prize = p["value"]
-                    
-                    slots.append({
-                        "type": "case",
-                        "case_id": chosen_id,
-                        "name": case["name"],
-                        "amount": amount,
-                        "price": case["price"],
-                        "description": f"{case['emoji']} Содержит случайные призы!\n"
-                                      f"От {min_prize}кг до {max_prize}кг",
-                        "emoji": case['emoji']
-                    })
-                    continue
-        
-        slots.append(None)
+                min_prize = 0
+                max_prize = 0
+                for p in case["prizes"]:
+                    if isinstance(p["value"], int):
+                        if p["value"] < min_prize:
+                            min_prize = p["value"]
+                        if p["value"] > max_prize:
+                            max_prize = p["value"]
+                
+                slots.append({
+                    "type": "case",
+                    "case_id": chosen_id,
+                    "name": case["name"],
+                    "amount": amount,
+                    "price": case["price"],
+                    "description": f"{case['emoji']} Содержит случайные призы!\n"
+                                  f"От {min_prize}кг до {max_prize}кг",
+                    "emoji": case['emoji']
+                })
+            else:
+                slots.append(None)
+        else:
+            slots.append(None)
     
+    # Генерируем обычные предметы (6 слотов)
     for _ in range(item_slots):
         chosen_item = None
         for _ in range(50):
@@ -3056,12 +3059,12 @@ async def shop_command(ctx):
     
     items_text = ""
     for i, slot in enumerate(slots, 1):
-        if slot:
+        if slot is not None:  # Проверяем что слот не пустой
             if slot["type"] == "case":
                 prefix = "📦" if i <= 4 else "🎲"
                 items_text += f"**{i}.** {prefix} {slot['emoji']} {slot['name']} — {slot['amount']} шт — **{slot['price']} кг/шт**\n"
                 items_text += f"   └ {slot['description']}\n"
-            else:
+            else:  # type == "item"
                 prefix = "🛒" if i > 4 else "🎁"
                 items_text += f"**{i}.** {prefix} {slot['name']} — {slot['amount']} шт — **{slot['price']} кг/шт**\n"
                 items_text += f"   └ {slot['description']}\n"
@@ -3076,6 +3079,7 @@ async def shop_command(ctx):
     last_update_str = last_update.strftime("%d.%m.%Y %H:%M") if last_update else "Никогда"
     next_update_str = next_update.strftime("%d.%m.%Y %H:%M") if next_update else "Скоро"
     
+    # Статистика заполнения
     case_count = sum(1 for s in slots[:4] if s is not None)
     item_count = sum(1 for s in slots[4:] if s is not None)
     
