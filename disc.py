@@ -2142,23 +2142,52 @@ async def fat_case_command(ctx):
      duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
      duel_initiator, cases_dict) = data
     
+    # ===== ИСПРАВЛЕНИЕ: Проверяем активный кейс =====
     if active_case_message_id:
         try:
-            channel = bot.get_channel(int(active_case_channel_id))
+            channel = bot.get_channel(int(active_case_channel_id)) if active_case_channel_id else None
             if channel:
-                old_msg = await channel.fetch_message(int(active_case_message_id))
-                if old_msg:
-                    embed = discord.Embed(
-                        title="⚠️ Кейс уже открыт!",
-                        description=f"{member.mention}, у вас уже есть активный кейс!\n"
-                                   f"Сначала завершите или дождитесь таймаута предыдущего.",
-                        color=0xffaa00
-                    )
-                    await ctx.send(embed=embed)
-                    return
-        except:
-            pass
+                try:
+                    old_msg = await channel.fetch_message(int(active_case_message_id))
+                    if old_msg:
+                        # Проверяем, не истекло ли время у сообщения
+                        # Если сообщение существует и ему меньше 2 минут - считаем активным
+                        time_since = datetime.now() - old_msg.created_at
+                        if time_since.total_seconds() < 120:  # 2 минуты
+                            embed = discord.Embed(
+                                title="⚠️ Кейс уже открыт!",
+                                description=f"{member.mention}, у вас уже есть активный кейс!\n"
+                                           f"Сначала завершите или дождитесь таймаута предыдущего.",
+                                color=0xffaa00
+                            )
+                            await ctx.send(embed=embed)
+                            return
+                        else:
+                            # Сообщение старое - сбрасываем
+                            active_case_message_id = None
+                            active_case_channel_id = None
+                    else:
+                        # Сообщение не найдено - сбрасываем
+                        active_case_message_id = None
+                        active_case_channel_id = None
+                except discord.NotFound:
+                    # Сообщение удалено - сбрасываем
+                    active_case_message_id = None
+                    active_case_channel_id = None
+                except Exception as e:
+                    print(f"Ошибка при проверке активного кейса: {e}")
+                    active_case_message_id = None
+                    active_case_channel_id = None
+            else:
+                # Канал не найден - сбрасываем
+                active_case_message_id = None
+                active_case_channel_id = None
+        except Exception as e:
+            print(f"Ошибка при проверке активного кейса: {e}")
+            active_case_message_id = None
+            active_case_channel_id = None
     
+    # Проверяем ежедневный кейс
     can_get_daily, daily_remaining = can_get_daily_case(guild_id, user_id)
     case_to_open = None
     case = None
@@ -2185,6 +2214,9 @@ async def fat_case_command(ctx):
         await ctx.send(embed=embed)
         return
     
+    # ===== АНИМАЦИЯ ОТКРЫТИЯ КЕЙСА =====
+    
+    # Собираем эмодзи для анимации
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -2238,6 +2270,7 @@ async def fat_case_command(ctx):
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
     
+    # Сохраняем активный кейс
     update_user_data(
         guild_id, user_id, current_number, user_name,
         consecutive_plus, consecutive_minus, jackpot_pity,
@@ -2256,6 +2289,7 @@ async def fat_case_command(ctx):
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
         
+        # Получаем приз
         if case_to_open == "daily":
             prize = open_case("daily", legendary_burger)
             update_daily_case_time(guild_id, user_id)
@@ -2268,6 +2302,7 @@ async def fat_case_command(ctx):
         except:
             pass
         
+        # Анимация (как в вашем коде)
         line = []
         for i in range(100):
             line.append(random.choice(prize_emojis))
@@ -2320,6 +2355,7 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
         
+        # Обрабатываем приз
         items_dict = get_user_items(item_counts)
         new_number = current_number
         new_autoburger_count = autoburger_count
@@ -2358,6 +2394,7 @@ async def fat_case_command(ctx):
         await case_msg.edit(embed=result_embed)
         await asyncio.sleep(1.5)
         
+        # Обновляем ник если изменился вес
         if prize_value not in ["autoburger", "rotten_leg", "water"] and prize_value != 0:
             try:
                 display_name = member.display_name
@@ -2382,6 +2419,7 @@ async def fat_case_command(ctx):
             except:
                 pass
         
+        # ===== ИСПРАВЛЕНИЕ: Сбрасываем активный кейс после успешного открытия =====
         update_user_data(
             guild_id, user_id, new_number, user_name,
             consecutive_plus, consecutive_minus, jackpot_pity,
@@ -2395,6 +2433,7 @@ async def fat_case_command(ctx):
             duel_amount, duel_message_id, duel_channel_id, duel_initiator
         )
         
+        # Финальное сообщение
         rank_name, rank_emoji = get_rank(new_number)
         
         if prize_value == "autoburger":
@@ -2442,6 +2481,7 @@ async def fat_case_command(ctx):
         await ctx.send(embed=final_embed)
         
     except asyncio.TimeoutError:
+        # ===== ИСПРАВЛЕНИЕ: Сбрасываем активный кейс при таймауте =====
         update_user_data(
             guild_id, user_id, current_number, user_name,
             consecutive_plus, consecutive_minus, jackpot_pity,
