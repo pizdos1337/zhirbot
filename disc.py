@@ -1886,23 +1886,27 @@ async def on_ready():
 async def duel_animation(msg, challenger, opponent, winner_is_challenger):
     """Анимация дуэли с меняющимися стрелками"""
     
+    # Получаем имена (чтобы влезли в код-блок)
     c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
     o_name = opponent.display_name[:15] + "..." if len(opponent.display_name) > 15 else opponent.display_name
     
+    # Выравниваем имена для красоты
     max_len = max(len(c_name), len(o_name))
     c_name = c_name.ljust(max_len)
     o_name = o_name.ljust(max_len)
     
-    symbols = ["=", "/\\", "\\/", "=", "/\\", "\\/", "=", "/\\", "\\/", "=", "/\\", "\\/", "=", "/\\", "\\/"]
-    delays = [0.5] * 10 + [0.8] * 3 + [1.0] * 2
+    # Анимация: только "/\" и "\/" чередуются
+    # Длина анимации: 15 кадров (7.5 секунд) с замедлением к концу
+    frames = 15
+    arrows = ["/\\", "\\/"] * (frames // 2 + 1)
+    arrows = arrows[:frames]  # Берем ровно 15 кадров
     
-    for i, symbol in enumerate(symbols):
-        if symbol == "/\\":
-            anim_text = f"```\n⚔️ ДУЭЛЬ ⚔️\n\n{c_name}\n    {symbol}    \n{o_name}\n```"
-        elif symbol == "\\/":
-            anim_text = f"```\n⚔️ ДУЭЛЬ ⚔️\n\n{o_name}\n    {symbol}    \n{c_name}\n```"
-        else:
-            anim_text = f"```\n⚔️ ДУЭЛЬ ⚔️\n\n{c_name}\n    {symbol}    \n{o_name}\n```"
+    # Замедление к концу: первые 8 кадров быстрые, потом замедление
+    delays = [0.3] * 8 + [0.5] * 4 + [0.8] * 3
+    
+    for i, arrow in enumerate(arrows):
+        # Создаём рамку анимации
+        anim_text = f"```\n⚔️ ДУЭЛЬ ⚔️\n\n{c_name}\n    {arrow}    \n{o_name}\n```"
         
         embed = discord.Embed(
             description=anim_text,
@@ -1910,14 +1914,15 @@ async def duel_animation(msg, challenger, opponent, winner_is_challenger):
         )
         
         await msg.edit(embed=embed)
-        await asyncio.sleep(delays[i] if i < len(delays) else 0.5)
+        await asyncio.sleep(delays[i])
     
+    # Финальный кадр - определяем победителя
     if winner_is_challenger:
-        final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{challenger.display_name}\n    ⬆️    \n{opponent.display_name}\n```"
-        color = 0xffd700
+        final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{c_name}\n    ⬆️    \n{o_name}\n```"
+        color = 0xffd700  # Золотой
     else:
-        final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{opponent.display_name}\n    ⬇️    \n{challenger.display_name}\n```"
-        color = 0xc0c0c0
+        final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{c_name}\n    ⬇️    \n{o_name}\n```"
+        color = 0xc0c0c0  # Серебряный
     
     final_embed = discord.Embed(
         description=final_text,
@@ -4674,3 +4679,4 @@ async def cancel_duel(ctx):
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
+
