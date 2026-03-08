@@ -4457,6 +4457,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     challenger_id = str(challenger.id)
     opponent_id = str(opponent.id)
     
+    # Проверки
     if challenger_id == opponent_id:
         await ctx.send("❌ Нельзя вызвать на дуэль самого себя!")
         return
@@ -4465,12 +4466,14 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send("❌ Нельзя вызвать на дуэль бота!")
         return
     
+    # Получаем данные обоих пользователей
     challenger_data = get_user_data(guild_id, challenger_id, challenger.name)
     opponent_data = get_user_data(guild_id, opponent_id, opponent.name)
     
     challenger_weight = challenger_data[0]
     opponent_weight = opponent_data[0]
     
+    # Проверяем, не заняты ли пользователи
     if not can_duel(challenger_data):
         await ctx.send(f"❌ {challenger.mention}, вы уже участвуете в дуэли!")
         return
@@ -4479,6 +4482,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send(f"❌ {opponent.mention} уже участвует в дуэли!")
         return
     
+    # Определяем сумму дуэли
     duel_amount = 0
     if amount is None or amount.lower() == "все":
         duel_amount = min(challenger_weight, opponent_weight)  # Ставим минимум из двух
@@ -4494,6 +4498,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             await ctx.send("❌ Укажите корректное число кг или 'все'!")
             return
     
+    # Проверяем, хватает ли у обоих веса
     if challenger_weight < duel_amount:
         await ctx.send(f"❌ У вас недостаточно кг! Есть: {challenger_weight}кг, нужно: {duel_amount}кг")
         return
@@ -4502,20 +4507,22 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send(f"❌ У {opponent.mention} недостаточно кг! У него: {opponent_weight}кг, нужно: {duel_amount}кг")
         return
     
+    # Создаём сообщение с вызовом на дуэль
     embed = discord.Embed(
         title="🔫 **ВЫЗОВ НА ДУЭЛЬ!** 🔫",
         description=f"{challenger.mention} вызывает {opponent.mention} на дуэль!\n\n"
                    f"**Ставка:** {amount_text}\n\n"
-                   f"Нажмите ✅ чтобы принять\n"
-                   f"Нажмите ❌ чтобы отказаться",
+                   f"Оба должны нажать ✅ чтобы принять\n"
+                   f"Если кто-то нажмёт ❌ - дуэль отменяется",
         color=0xff5500
     )
-    embed.set_footer(text="У вас 15 секунд чтобы принять решение!")
+    embed.set_footer(text="У вас 30 секунд чтобы принять решение!")
     
     duel_msg = await ctx.send(embed=embed)
     await duel_msg.add_reaction("✅")
     await duel_msg.add_reaction("❌")
     
+    # Блокируем обоих пользователей
     update_user_data(
         guild_id, challenger_id, challenger_weight, challenger.name,
         duel_active=1, duel_opponent=opponent_id, duel_amount=duel_amount,
@@ -4528,38 +4535,71 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=0
     )
     
+    # Множество для отслеживания кто принял
+    accepted_users = set()
+    duel_cancelled = False
+    
     def check(reaction, user):
-        return (user.id == opponent.id or user.id == challenger.id) and \
-               str(reaction.emoji) in ["✅", "❌"] and \
-               reaction.message.id == duel_msg.id
+        nonlocal duel_cancelled
+        # Проверяем, что реакция от одного из участников и на нашем сообщении
+        if user.id not in [challenger.id, opponent.id]:
+            return False
+        if reaction.message.id != duel_msg.id:
+            return False
+        
+        # Если кто-то нажал ❌ - отменяем дуэль
+        if str(reaction.emoji) == "❌":
+            duel_cancelled = True
+            return True
+        
+        # Если нажали ✅ - добавляем в принявшие
+        if str(reaction.emoji) == "✅":
+            return True
+        
+        return False
     
     try:
-        reaction, user = await bot.wait_for('reaction_add', timeout=15.0, check=check)
+        while len(accepted_users) < 2 and not duel_cancelled:
+            reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
+            
+            if duel_cancelled:
+                # Кто-то нажал ❌ - отменяем дуэль
+                await duel_msg.clear_reactions()
+                
+                # Разблокируем пользователей
+                update_user_data(guild_id, challenger_id, challenger_weight, challenger.name,
+                               duel_active=0, duel_opponent=None, duel_amount=0,
+                               duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                update_user_data(guild_id, opponent_id, opponent_weight, opponent.name,
+                               duel_active=0, duel_opponent=None, duel_amount=0,
+                               duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                
+                decline_embed = discord.Embed(
+                    title="❌ Дуэль отклонена",
+                    description=f"{user.mention} отказался от дуэли!",
+                    color=0xff0000
+                )
+                await duel_msg.edit(embed=decline_embed)
+                return
+            
+            if str(reaction.emoji) == "✅" and user.id not in accepted_users:
+                accepted_users.add(user.id)
+                # Можно добавить временное сообщение о том, кто принял
+                # Но не обязательно
         
-        if str(reaction.emoji) == "❌":
-            await duel_msg.clear_reactions()
-            
-            update_user_data(guild_id, challenger_id, challenger_weight, challenger.name,
-                           duel_active=0, duel_opponent=None, duel_amount=0,
-                           duel_message_id=None, duel_channel_id=None, duel_initiator=0)
-            update_user_data(guild_id, opponent_id, opponent_weight, opponent.name,
-                           duel_active=0, duel_opponent=None, duel_amount=0,
-                           duel_message_id=None, duel_channel_id=None, duel_initiator=0)
-            
-            decline_embed = discord.Embed(
-                title="❌ Дуэль отклонена",
-                description=f"{opponent.mention} отказался от дуэли!",
-                color=0xff0000
-            )
-            await duel_msg.edit(embed=decline_embed)
+        if duel_cancelled:
             return
         
+        # Оба приняли - запускаем дуэль
         await duel_msg.clear_reactions()
         
+        # Предопределяем победителя (50/50)
         winner_is_challenger = random.choice([True, False])
         
+        # Запускаем анимацию
         await duel_animation(duel_msg, challenger, opponent, winner_is_challenger)
         
+        # Рассчитываем результаты
         if winner_is_challenger:
             winner = challenger
             winner_id = challenger_id
@@ -4575,6 +4615,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             winner_new_weight = opponent_weight + duel_amount
             loser_new_weight = challenger_weight - duel_amount
         
+        # Обновляем веса и разблокируем пользователей
         update_user_data(guild_id, winner_id, winner_new_weight, winner.name,
                        duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
@@ -4583,6 +4624,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
                        duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
         
+        # Обновляем ники
         try:
             winner_data = get_user_data(guild_id, winner_id, winner.name)
             winner_legendary = winner_data[12]
@@ -4607,6 +4649,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         except:
             pass
         
+        # Финальное сообщение
         result_embed = discord.Embed(
             title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
             description=f"**Победитель:** {winner.mention}\n\n"
@@ -4620,8 +4663,10 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send(embed=result_embed)
         
     except asyncio.TimeoutError:
+        # Время вышло
         await duel_msg.clear_reactions()
         
+        # Разблокируем пользователей
         update_user_data(guild_id, challenger_id, challenger_weight, challenger.name,
                        duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
@@ -4631,7 +4676,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         
         timeout_embed = discord.Embed(
             title="⏰ Время вышло",
-            description=f"{opponent.mention} не ответил на вызов вовремя. Дуэль отменена.",
+            description=f"Не все успели принять дуэль. Дуэль отменена.",
             color=0xffaa00
         )
         await duel_msg.edit(embed=timeout_embed)
