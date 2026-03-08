@@ -1177,6 +1177,7 @@ def get_guild_stats(guild_id):
     }
 
 def get_shop_data(guild_id):
+    """Получает данные магазина из БД"""
     init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
@@ -1184,17 +1185,50 @@ def get_shop_data(guild_id):
     cursor.execute('SELECT slots, last_update, next_update FROM shop WHERE guild_id = ?', (str(guild_id),))
     result = cursor.fetchone()
     conn.close()
-    return result
+    
+    if result:
+        slots_json, last_update, next_update = result
+        try:
+            slots = json.loads(slots_json) if slots_json else []
+            # Убеждаемся, что каждый слот имеет правильную структуру
+            for slot in slots:
+                if slot is not None and "type" not in slot:
+                    # Если слот есть но нет type - это старая версия, конвертируем
+                    if "case_id" in slot:
+                        slot["type"] = "case"
+                    else:
+                        slot["type"] = "item"
+            return slots, last_update, next_update
+        except:
+            return [], None, None
+    return None, None, None
 
 def update_shop_data(guild_id, slots, last_update, next_update):
+    """Сохраняет данные магазина в БД"""
     init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
+    # Убеждаемся, что все слоты имеют тип
+    clean_slots = []
+    for slot in slots:
+        if slot is not None:
+            if "type" not in slot:
+                if "case_id" in slot:
+                    slot["type"] = "case"
+                else:
+                    slot["type"] = "item"
+            clean_slots.append(slot)
+        else:
+            clean_slots.append(None)
+    
+    slots_json = json.dumps(clean_slots)
     last_update_str = last_update.isoformat() if last_update else None
     next_update_str = next_update.isoformat() if next_update else None
+    
     cursor.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', 
-                  (str(guild_id), json.dumps(slots), last_update_str, next_update_str))
+                  (str(guild_id), slots_json, last_update_str, next_update_str))
     conn.commit()
     conn.close()
 
@@ -2989,22 +3023,24 @@ async def ensure_shop_updated(guild_id):
     result = get_shop_data(guild_id)
     current_time = datetime.now()
     
-    if result:
-        slots_json, last_update_str, next_update_str = result
+    if result[0] is not None:  # Магазин существует
+        slots, last_update_str, next_update_str = result
         
+        # Преобразуем строки в datetime
         last_update = None
         next_update = None
         if last_update_str:
             try:
-                last_update = datetime.fromisoformat(last_update_str)
+                last_update = datetime.fromisoformat(last_update_str) if isinstance(last_update_str, str) else last_update_str
             except:
                 last_update = None
         if next_update_str:
             try:
-                next_update = datetime.fromisoformat(next_update_str)
+                next_update = datetime.fromisoformat(next_update_str) if isinstance(next_update_str, str) else next_update_str
             except:
                 next_update = None
         
+        # Проверяем, нужно ли обновить магазин
         if next_update and current_time >= next_update:
             new_slots = generate_shop_items()
             last_update = current_time
@@ -3012,9 +3048,9 @@ async def ensure_shop_updated(guild_id):
             update_shop_data(guild_id, new_slots, last_update, next_update)
             return new_slots, last_update, next_update
         else:
-            slots = json.loads(slots_json) if slots_json else []
             return slots, last_update, next_update
     else:
+        # Создаём новый магазин
         new_slots = generate_shop_items()
         last_update = current_time
         next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
@@ -3051,6 +3087,10 @@ async def shop_command(ctx):
     
     slots, last_update, next_update = await ensure_shop_updated(guild_id)
     
+    # Убеждаемся что slots - это список
+    if not isinstance(slots, list):
+        slots = []
+    
     embed = discord.Embed(
         title="🏪 **МАГАЗИН** 🏪",
         description="Доступные предметы (используйте `!купить [слот] [количество]`):\n📦 **Слоты 1-4:** Кейсы | 🛒 **Слоты 5-10:** Предметы",
@@ -3058,16 +3098,25 @@ async def shop_command(ctx):
     )
     
     items_text = ""
-    for i, slot in enumerate(slots, 1):
-        if slot is not None:  # Проверяем что слот не пустой
+    for i in range(1, SHOP_SLOTS + 1):
+        slot = slots[i-1] if i-1 < len(slots) else None
+        
+        if slot is not None and isinstance(slot, dict):
+            # Проверяем наличие type, если нет - определяем по наличию case_id
+            if "type" not in slot:
+                if "case_id" in slot:
+                    slot["type"] = "case"
+                else:
+                    slot["type"] = "item"
+            
             if slot["type"] == "case":
                 prefix = "📦" if i <= 4 else "🎲"
-                items_text += f"**{i}.** {prefix} {slot['emoji']} {slot['name']} — {slot['amount']} шт — **{slot['price']} кг/шт**\n"
-                items_text += f"   └ {slot['description']}\n"
+                items_text += f"**{i}.** {prefix} {slot.get('emoji', '📦')} {slot.get('name', 'Неизвестный кейс')} — {slot.get('amount', 0)} шт — **{slot.get('price', 0)} кг/шт**\n"
+                items_text += f"   └ {slot.get('description', 'Нет описания')}\n"
             else:  # type == "item"
                 prefix = "🛒" if i > 4 else "🎁"
-                items_text += f"**{i}.** {prefix} {slot['name']} — {slot['amount']} шт — **{slot['price']} кг/шт**\n"
-                items_text += f"   └ {slot['description']}\n"
+                items_text += f"**{i}.** {prefix} {slot.get('name', 'Неизвестный предмет')} — {slot.get('amount', 0)} шт — **{slot.get('price', 0)} кг/шт**\n"
+                items_text += f"   └ {slot.get('description', 'Нет описания')}\n"
         else:
             if i <= 4:
                 items_text += f"**{i}.** 📦🕳️ Пустой слот для кейса\n"
@@ -3080,8 +3129,8 @@ async def shop_command(ctx):
     next_update_str = next_update.strftime("%d.%m.%Y %H:%M") if next_update else "Скоро"
     
     # Статистика заполнения
-    case_count = sum(1 for s in slots[:4] if s is not None)
-    item_count = sum(1 for s in slots[4:] if s is not None)
+    case_count = sum(1 for s in slots[:4] if s is not None and isinstance(s, dict))
+    item_count = sum(1 for s in slots[4:] if s is not None and isinstance(s, dict))
     
     embed.add_field(name="📊 Статистика магазина", 
                    value=f"📦 Кейсов в наличии: {case_count}/4\n🛒 Предметов в наличии: {item_count}/6\n⏰ Обновление каждые {SHOP_UPDATE_HOURS} часов", 
@@ -3113,11 +3162,6 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     if amount <= 0:
         await ctx.send("❌ Количество должно быть больше 0!")
         return
-    
-    if slot <= 4:
-        slot_type = "📦 кейс"
-    else:
-        slot_type = "🛒 предмет"
     
     data = get_user_data(guild_id, user_id, member.name)
     (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
@@ -3159,11 +3203,20 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     
     slots, last_update, next_update = await ensure_shop_updated(guild_id)
     
-    if slot - 1 >= len(slots) or not slots[slot - 1]:
+    if slot - 1 >= len(slots) or slots[slot - 1] is None:
         await ctx.send(f"❌ В слоте {slot} ничего нет!")
         return
     
     item = slots[slot - 1]
+    
+    # Убеждаемся что item - словарь и имеет нужные ключи
+    if not isinstance(item, dict):
+        await ctx.send(f"❌ Ошибка в данных слота {slot}!")
+        return
+    
+    if "amount" not in item or "price" not in item:
+        await ctx.send(f"❌ Ошибка в данных слота {slot}!")
+        return
     
     if amount > item["amount"]:
         await ctx.send(f"❌ В наличии только {item['amount']} шт!")
@@ -3177,9 +3230,16 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     new_number = current_number - total_price
     item["amount"] -= amount
     
-    if item["type"] == "case":
-        cases_dict[item["case_id"]] = cases_dict.get(item["case_id"], 0) + amount
-        purchase_desc = f"{item['emoji']} {item['name']} x{amount}"
+    if item.get("type") == "case" or "case_id" in item:
+        # Это кейс
+        case_id = item.get("case_id")
+        if not case_id:
+            await ctx.send(f"❌ Ошибка: не удалось определить тип кейса!")
+            return
+            
+        cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
+        purchase_desc = f"{item.get('emoji', '📦')} {item.get('name', 'Кейс')} x{amount}"
+        
         update_user_data(
             guild_id, user_id, new_number, member.name,
             consecutive_plus, consecutive_minus, jackpot_pity,
@@ -3191,9 +3251,11 @@ async def buy_command(ctx, slot: int, amount: int = 1):
             duel_message_id, duel_channel_id, duel_initiator
         )
     else:
+        # Обычный предмет
         items_dict = get_user_items(item_counts)
         items_dict[item["name"]] = items_dict.get(item["name"], 0) + amount
         purchase_desc = f"{item['name']} x{amount}"
+        
         update_user_data(
             guild_id, user_id, new_number, member.name,
             consecutive_plus, consecutive_minus, jackpot_pity,
