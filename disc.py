@@ -321,7 +321,7 @@ SHOP_ITEMS = [
      "effect": "jackpot_boost", "effect_value": 0.05, "effect_type": "passive"},
     
     {"name": "Снатчер", "chance": 0.001, "min_amount": 1, "max_amount": 1,
-     "price": 2000, "gain_per_24h": 0, "description": "👾 **СНАТЧЕР** 👾\nКаждые 6 часов с шансом 20% генерирует 1 случайный предмет из магазина\nВыбирает случайный слот из виртуального магазина (6 слотов)\nЕсли в слоте есть предмет - даёт 1 шт\nРаботает пассивно, уведомления в ЛС"},
+     "price": 2000, "gain_per_24h": 0, "description": "👾 **СНАТЧЕР** 👾\nКаждые 6 часов с шансом 20% генерирует 1 случайный предмет из магазина\nВыбирает случайный слот из виртуального магазина (10 слотов)\nЕсли в слоте есть предмет - даёт 1 шт\nРаботает пассивно, уведомления в ЛС"},
 ]
 
 print("="*60)
@@ -1690,11 +1690,11 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
             )
             return
         
-        # Генерируем "виртуальный" магазин с 6 слотами
+        # ===== ИСПРАВЛЕНИЕ: Генерируем "виртуальный" магазин с 10 слотами =====
         virtual_slots = []
         used_indices = set()
         
-        for _ in range(6):
+        for _ in range(10):  # Было 6, стало 10
             chosen_item = None
             for _ in range(50):
                 item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
@@ -1719,8 +1719,8 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
             else:
                 virtual_slots.append(None)
         
-        # Выбираем случайный слот (0-5)
-        chosen_slot = random.randint(0, 5)
+        # Выбираем случайный слот (0-9)
+        chosen_slot = random.randint(0, 9)  # Было 0-5, стало 0-9
         selected_item = virtual_slots[chosen_slot]
         
         if not selected_item:
@@ -1752,7 +1752,7 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
             duel_message_id, duel_channel_id, duel_initiator
         )
         
-        print(f"👾 Снатчер сработал для {user_name}: +1 {selected_item['name']} (слот {chosen_slot + 1})")
+        print(f"👾 Снатчер сработал для {user_name}: +1 {selected_item['name']} (слот {chosen_slot + 1}/10)")
         
         try:
             guild = bot.get_guild(guild_id)
@@ -1761,7 +1761,7 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
                 if member:
                     embed = discord.Embed(
                         title="👾 **Снатчер сработал!**",
-                        description=f"Ваш **Снатчер** сгенерировал предмет из {chosen_slot + 1} слота!",
+                        description=f"Ваш **Снатчер** сгенерировал предмет из {chosen_slot + 1} слота (всего 10 слотов)!",
                         color=0x9b59b6
                     )
                     embed.add_field(name="📦 Получено", value=f"**+1 {selected_item['name']}**", inline=False)
