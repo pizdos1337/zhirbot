@@ -472,7 +472,6 @@ def add_missing_columns(db_path, existing_columns):
         'active_case_channel_id': "TEXT",
         'daily_case_last_time': "TIMESTAMP",
         'snatcher_last_time': "TIMESTAMP",
-        # Добавляем поля для дуэлей
         'duel_active': "INTEGER DEFAULT 0",
         'duel_opponent': "TEXT",
         'duel_amount': "INTEGER DEFAULT 0",
@@ -489,7 +488,6 @@ def add_missing_columns(db_path, existing_columns):
             except Exception as e:
                 print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
     
-    # Добавляем колонки для кейсов
     for case_id in CASES.keys():
         if case_id != "daily":
             col_name = f"case_{case_id}_count"
@@ -512,6 +510,70 @@ def add_missing_columns(db_path, existing_columns):
     
     conn.commit()
     conn.close()
+
+def migrate_old_database(guild_id):
+    """Миграция старой базы данных к новой структуре"""
+    db_path = get_db_path(guild_id)
+    if not os.path.exists(db_path):
+        return
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Получаем существующие колонки
+    cursor.execute("PRAGMA table_info(user_fat)")
+    existing_columns = [col[1] for col in cursor.fetchall()]
+    
+    # Список всех новых колонок, которые должны быть
+    required_columns = {
+        'legendary_burger': "INTEGER DEFAULT -1",
+        'item_counts': "TEXT DEFAULT '{}'",
+        'last_command': "TEXT",
+        'last_command_target': "TEXT",
+        'last_command_use_time': "TIMESTAMP",
+        'fat_cooldown_time': "TIMESTAMP",
+        'active_case_message_id': "TEXT",
+        'active_case_channel_id': "TEXT",
+        'daily_case_last_time': "TIMESTAMP",
+        'snatcher_last_time': "TIMESTAMP",
+        'duel_active': "INTEGER DEFAULT 0",
+        'duel_opponent': "TEXT",
+        'duel_amount': "INTEGER DEFAULT 0",
+        'duel_message_id': "TEXT",
+        'duel_channel_id': "TEXT",
+        'duel_initiator': "INTEGER DEFAULT 0",
+    }
+    
+    # Добавляем недостающие колонки
+    for col_name, col_type in required_columns.items():
+        if col_name not in existing_columns:
+            try:
+                print(f"📦 Миграция: добавляю колонку {col_name} для сервера {guild_id}")
+                cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} {col_type}")
+            except Exception as e:
+                print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
+    
+    # Добавляем колонки для кейсов
+    for case_id in CASES.keys():
+        if case_id != "daily":
+            col_name = f"case_{case_id}_count"
+            if col_name not in existing_columns:
+                try:
+                    print(f"📦 Миграция: добавляю колонку {col_name} для сервера {guild_id}")
+                    cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} INTEGER DEFAULT 0")
+                except Exception as e:
+                    print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
+    
+    # Обновляем существующие записи, устанавливая значения по умолчанию
+    for case_id in CASES.keys():
+        if case_id != "daily":
+            col_name = f"case_{case_id}_count"
+            if col_name in existing_columns:
+                cursor.execute(f"UPDATE user_fat SET {col_name} = COALESCE({col_name}, 0)")
+    
+    conn.commit()
+    conn.close()
+    print(f"✅ Миграция базы данных для сервера {guild_id} завершена")
 
 def migrate_database_if_needed(guild_id):
     db_path = get_db_path(guild_id)
@@ -556,7 +618,6 @@ def migrate_database_if_needed(guild_id):
     conn.commit()
     conn.close()
     
-    # Добавляем колонки для кейсов, снатчера и дуэлей
     add_missing_columns(db_path, columns)
 
 def init_guild_database(guild_id):
@@ -564,7 +625,6 @@ def init_guild_database(guild_id):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Базовые колонки со всеми необходимыми полями
     base_columns = '''
         user_id TEXT PRIMARY KEY, 
         user_name TEXT, 
@@ -598,7 +658,6 @@ def init_guild_database(guild_id):
         duel_initiator INTEGER DEFAULT 0
     '''
     
-    # Добавляем колонки для каждого типа кейса
     case_columns = []
     for case_id in CASES.keys():
         if case_id != "daily":
@@ -621,28 +680,28 @@ def init_guild_database(guild_id):
     print(f"✅ База данных инициализирована для сервера {guild_id}")
 
 def get_user_data(guild_id, user_id, user_name=None):
+    """Возвращает словарь с данными пользователя"""
+    migrate_old_database(guild_id)
     safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Получаем список всех колонок
     cursor.execute("PRAGMA table_info(user_fat)")
     columns = [col[1] for col in cursor.fetchall()]
     
-    # Формируем запрос со всеми колонками
     select_cols = [
-        'current_number', 'last_command_time', 'consecutive_plus', 'consecutive_minus',
-        'jackpot_pity', 'autoburger_count', 'last_case_time', 'next_autoburger_time',
-        'total_autoburger_activations', 'total_autoburger_gain', 'last_autoburger_result',
-        'last_autoburger_time', 'legendary_burger', 'item_counts', 'last_command',
-        'last_command_target', 'last_command_use_time', 'fat_cooldown_time',
-        'active_case_message_id', 'active_case_channel_id', 'daily_case_last_time',
-        'snatcher_last_time', 'duel_active', 'duel_opponent', 'duel_amount', 
-        'duel_message_id', 'duel_channel_id', 'duel_initiator'
+        'user_id', 'user_name', 'current_number', 'last_command_time',
+        'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
+        'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
+        'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
+        'legendary_burger', 'item_counts', 'last_command', 'last_command_target',
+        'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
+        'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
+        'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
+        'duel_channel_id', 'duel_initiator'
     ]
     
-    # Добавляем колонки кейсов
     case_cols = []
     for case_id in CASES.keys():
         if case_id != "daily":
@@ -656,79 +715,92 @@ def get_user_data(guild_id, user_id, user_name=None):
     result = cursor.fetchone()
     
     if result:
-        # Распаковываем результат
-        data = list(result)
-        idx = 0
-        number = data[idx]; idx += 1
-        last_time = data[idx]; idx += 1
-        consecutive_plus = data[idx]; idx += 1
-        consecutive_minus = data[idx]; idx += 1
-        jackpot_pity = data[idx]; idx += 1
-        autoburger_count = data[idx]; idx += 1
-        last_case_time = data[idx]; idx += 1
-        next_autoburger_time = data[idx]; idx += 1
-        total_activations = data[idx]; idx += 1
-        total_gain = data[idx]; idx += 1
-        last_result = data[idx]; idx += 1
-        last_activation_time = data[idx]; idx += 1
-        legendary_burger = data[idx]; idx += 1
-        item_counts = data[idx]; idx += 1
-        last_command = data[idx]; idx += 1
-        last_command_target = data[idx]; idx += 1
-        last_command_use_time = data[idx]; idx += 1
-        fat_cooldown_time = data[idx]; idx += 1
-        active_case_message_id = data[idx]; idx += 1
-        active_case_channel_id = data[idx]; idx += 1
-        daily_case_last_time = data[idx]; idx += 1
-        snatcher_last_time = data[idx]; idx += 1
-        duel_active = data[idx]; idx += 1
-        duel_opponent = data[idx]; idx += 1
-        duel_amount = data[idx]; idx += 1
-        duel_message_id = data[idx]; idx += 1
-        duel_channel_id = data[idx]; idx += 1
-        duel_initiator = data[idx]; idx += 1
-        
-        # Словарь для кейсов
-        cases_dict = {}
-        for case_col in case_cols:
-            case_id = case_col.replace("case_", "").replace("_count", "")
-            cases_dict[case_id] = data[idx] or 0
-            idx += 1
+       data = list(result)
+       idx = 0
+    
+       user_data = {}
+       user_data['user_id'] = data[idx]; idx += 1
+       user_data['user_name'] = data[idx]; idx += 1
+       user_data['current_number'] = data[idx]; idx += 1
+       user_data['last_command_time'] = data[idx]; idx += 1
+       user_data['consecutive_plus'] = data[idx]; idx += 1
+       user_data['consecutive_minus'] = data[idx]; idx += 1
+       user_data['jackpot_pity'] = data[idx]; idx += 1
+       user_data['autoburger_count'] = data[idx]; idx += 1
+       user_data['last_case_time'] = data[idx]; idx += 1
+       user_data['next_autoburger_time'] = data[idx]; idx += 1
+       user_data['total_autoburger_activations'] = data[idx]; idx += 1
+       user_data['total_autoburger_gain'] = data[idx]; idx += 1
+       user_data['last_autoburger_result'] = data[idx]; idx += 1
+       user_data['last_autoburger_time'] = data[idx]; idx += 1
+       user_data['legendary_burger'] = data[idx]; idx += 1
+       user_data['item_counts'] = data[idx]; idx += 1
+       user_data['last_command'] = data[idx]; idx += 1
+       user_data['last_command_target'] = data[idx]; idx += 1
+       user_data['last_command_use_time'] = data[idx]; idx += 1
+       user_data['fat_cooldown_time'] = data[idx]; idx += 1
+       user_data['active_case_message_id'] = data[idx]; idx += 1
+       user_data['active_case_channel_id'] = data[idx]; idx += 1
+       user_data['daily_case_last_time'] = data[idx]; idx += 1
+       user_data['snatcher_last_time'] = data[idx]; idx += 1
+       user_data['duel_active'] = data[idx]; idx += 1
+       user_data['duel_opponent'] = data[idx]; idx += 1
+       user_data['duel_amount'] = data[idx]; idx += 1
+       user_data['duel_message_id'] = data[idx]; idx += 1
+       user_data['duel_channel_id'] = data[idx]; idx += 1
+       user_data['duel_initiator'] = data[idx]; idx += 1
+    
+       cases_dict = {}
+       for case_col in case_cols:
+           case_id = case_col.replace("case_", "").replace("_count", "")
+           cases_dict[case_id] = data[idx] or 0
+           idx += 1
+    
+       user_data['cases_dict'] = cases_dict
     else:
-        # Новый пользователь - все значения по умолчанию
-        number = 0
-        last_time = None
-        consecutive_plus = 0
-        consecutive_minus = 0
-        jackpot_pity = 0
-        autoburger_count = 0
-        last_case_time = None
-        next_autoburger_time = None
-        total_activations = 0
-        total_gain = 0
-        last_result = None
-        last_activation_time = None
-        legendary_burger = -1
-        item_counts = '{}'
-        last_command = None
-        last_command_target = None
-        last_command_use_time = None
-        fat_cooldown_time = None
-        active_case_message_id = None
-        active_case_channel_id = None
-        daily_case_last_time = None
-        snatcher_last_time = None
-        duel_active = 0
-        duel_opponent = None
-        duel_amount = 0
-        duel_message_id = None
-        duel_channel_id = None
-        duel_initiator = 0
-        cases_dict = {case_id: 0 for case_id in CASES.keys() if case_id != "daily"}
+        user_data = {
+            'user_id': str(user_id),
+            'user_name': user_name or "Unknown",
+            'current_number': 0,
+            'last_command_time': None,
+            'consecutive_plus': 0,
+            'consecutive_minus': 0,
+            'jackpot_pity': 0,
+            'autoburger_count': 0,
+            'last_case_time': None,
+            'next_autoburger_time': None,
+            'total_autoburger_activations': 0,
+            'total_autoburger_gain': 0,
+            'last_autoburger_result': None,
+            'last_autoburger_time': None,
+            'legendary_burger': -1,
+            'item_counts': '{}',
+            'last_command': None,
+            'last_command_target': None,
+            'last_command_use_time': None,
+            'fat_cooldown_time': None,
+            'active_case_message_id': None,
+            'active_case_channel_id': None,
+            'daily_case_last_time': None,
+            'snatcher_last_time': None,
+            'duel_active': 0,
+            'duel_opponent': None,
+            'duel_amount': 0,
+            'duel_message_id': None,
+            'duel_channel_id': None,
+            'duel_initiator': 0,
+            'cases_dict': {case_id: 0 for case_id in CASES.keys() if case_id != "daily"}
+        }
+        
+        create_new_user(cursor, user_data)
+        conn.commit()
+    
+    conn.close()
+    return user_data
 
-        # Вставка новой записи
-        cols = [
-            'user_id', 'user_name', 'current_number', 'last_command_time',
+def create_new_user(cursor, user_data):
+    """Создает новую запись пользователя"""
+    cols = ['user_id', 'user_name', 'current_number', 'last_command_time',
             'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
             'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
             'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
@@ -736,273 +808,82 @@ def get_user_data(guild_id, user_id, user_name=None):
             'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
             'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
             'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
-            'duel_channel_id', 'duel_initiator'
-        ]
-        
-        # Добавляем колонки для кейсов
-        for case_id in cases_dict.keys():
-            cols.append(f"case_{case_id}_count")
-        
-        values = [
-            str(user_id), user_name or "Unknown", number, last_time,
-            consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count,
-            last_case_time, next_autoburger_time, total_activations,
-            total_gain, last_result, last_activation_time,
-            legendary_burger, item_counts, last_command, last_command_target,
-            last_command_use_time, fat_cooldown_time, active_case_message_id,
-            active_case_channel_id, daily_case_last_time, snatcher_last_time,
-            duel_active, duel_opponent, duel_amount, duel_message_id, 
-            duel_channel_id, duel_initiator
-        ]
-        
-        # Добавляем нулевые значения для кейсов
-        for case_id in cases_dict.keys():
-            values.append(0)
-        
-        placeholders = ["?"] * len(cols)
-        query = f"INSERT INTO user_fat ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
-        cursor.execute(query, values)
-        conn.commit()
+            'duel_channel_id', 'duel_initiator']
     
-    conn.close()
+    values = [
+        user_data['user_id'], user_data['user_name'], user_data['current_number'],
+        user_data['last_command_time'], user_data['consecutive_plus'],
+        user_data['consecutive_minus'], user_data['jackpot_pity'],
+        user_data['autoburger_count'], user_data['last_case_time'],
+        user_data['next_autoburger_time'], user_data['total_autoburger_activations'],
+        user_data['total_autoburger_gain'], user_data['last_autoburger_result'],
+        user_data['last_autoburger_time'], user_data['legendary_burger'],
+        user_data['item_counts'], user_data['last_command'], user_data['last_command_target'],
+        user_data['last_command_use_time'], user_data['fat_cooldown_time'],
+        user_data['active_case_message_id'], user_data['active_case_channel_id'],
+        user_data['daily_case_last_time'], user_data['snatcher_last_time'],
+        user_data['duel_active'], user_data['duel_opponent'], user_data['duel_amount'],
+        user_data['duel_message_id'], user_data['duel_channel_id'], user_data['duel_initiator']
+    ]
     
-    return (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time, total_activations,
-            total_gain, last_result, last_activation_time, legendary_burger, item_counts,
-            last_command, last_command_target, last_command_use_time, fat_cooldown_time,
-            active_case_message_id, active_case_channel_id, daily_case_last_time,
-            snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator, cases_dict)
+    for case_id, count in user_data['cases_dict'].items():
+        cols.append(f"case_{case_id}_count")
+        values.append(count)
+    
+    placeholders = ["?"] * len(cols)
+    query = f"INSERT INTO user_fat ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
+    cursor.execute(query, values)
 
-def safe_init_guild_database(guild_id, guild_name="Unknown"):
-    db_path = get_db_path(guild_id)
-    if os.path.exists(db_path):
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_fat'")
-            if not cursor.fetchone():
-                conn.close()
-                os.remove(db_path)
-                print(f"⚠️ Таблица user_fat не найдена в БД сервера {guild_name}, создаю заново")
-                return create_new_database(db_path, guild_id, guild_name)
-            cursor.execute("PRAGMA table_info(user_fat)")
-            columns = [col[1] for col in cursor.fetchall()]
-            conn.close()
-            add_missing_columns(db_path, columns)
-            print(f"✅ База данных для сервера {guild_name} в порядке")
-            return True
-        except sqlite3.DatabaseError:
-            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
-            repair_database(db_path)
-            return create_new_database(db_path, guild_id, guild_name)
-    else:
-        print(f"📁 Создаю новую БД для сервера {guild_name} (ID: {guild_id})")
-        return create_new_database(db_path, guild_id, guild_name)
-
-def create_new_database(db_path, guild_id, guild_name):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    base_columns = '''
-        user_id TEXT PRIMARY KEY, 
-        user_name TEXT, 
-        current_number INTEGER DEFAULT 0, 
-        last_command_time TIMESTAMP, 
-        consecutive_plus INTEGER DEFAULT 0, 
-        consecutive_minus INTEGER DEFAULT 0, 
-        jackpot_pity INTEGER DEFAULT 0, 
-        autoburger_count INTEGER DEFAULT 0, 
-        last_case_time TIMESTAMP, 
-        next_autoburger_time TIMESTAMP, 
-        total_autoburger_activations INTEGER DEFAULT 0, 
-        total_autoburger_gain INTEGER DEFAULT 0, 
-        last_autoburger_result TEXT, 
-        last_autoburger_time TIMESTAMP,
-        legendary_burger INTEGER DEFAULT -1,
-        item_counts TEXT DEFAULT '{}',
-        last_command TEXT,
-        last_command_target TEXT,
-        last_command_use_time TIMESTAMP,
-        fat_cooldown_time TIMESTAMP,
-        active_case_message_id TEXT,
-        active_case_channel_id TEXT,
-        daily_case_last_time TIMESTAMP,
-        snatcher_last_time TIMESTAMP,
-        duel_active INTEGER DEFAULT 0,
-        duel_opponent TEXT,
-        duel_amount INTEGER DEFAULT 0,
-        duel_message_id TEXT,
-        duel_channel_id TEXT,
-        duel_initiator INTEGER DEFAULT 0
-    '''
-    
-    case_columns = []
-    for case_id in CASES.keys():
-        if case_id != "daily":
-            case_columns.append(f"case_{case_id}_count INTEGER DEFAULT 0")
-    
-    all_columns = base_columns + ", " + ", ".join(case_columns) if case_columns else base_columns
-    
-    cursor.execute(f'''CREATE TABLE user_fat ({all_columns})''')
-    
-    cursor.execute('''CREATE TABLE IF NOT EXISTS shop (
-        guild_id TEXT PRIMARY KEY, 
-        slots TEXT, 
-        last_update TIMESTAMP, 
-        next_update TIMESTAMP
-    )''')
-    
-    conn.commit()
-    conn.close()
-    print(f"✅ Новая база данных создана для сервера {guild_name}")
-    return True
-
-def update_user_data(guild_id, user_id, new_number, user_name=None, consecutive_plus=None, 
-                     consecutive_minus=None, jackpot_pity=None, autoburger_count=None, 
-                     last_case_time=None, next_autoburger_time=None, total_activations=None, 
-                     total_gain=None, last_result=None, last_activation_time=None, 
-                     legendary_burger=None, item_counts=None, last_command=None, 
-                     last_command_target=None, last_command_use_time=None, fat_cooldown_time=None, 
-                     active_case_message_id=None, active_case_channel_id=None, daily_case_last_time=None,
-                     cases_dict=None, snatcher_last_time=None,
-                     duel_active=None, duel_opponent=None, duel_amount=None, 
-                     duel_message_id=None, duel_channel_id=None, duel_initiator=None):
-    
+def update_user_data(guild_id, user_id, **kwargs):
+    """Обновляет данные пользователя. Принимает только измененные поля."""
     init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    current_time = datetime.now()
     
-    updates = ["current_number = ?", "user_name = ?", "last_command_time = ?"]
-    values = [new_number, user_name or "Unknown", current_time]
+    updates = []
+    values = []
     
-    if fat_cooldown_time is not None:
-        updates.append("fat_cooldown_time = ?")
-        values.append(fat_cooldown_time)
-    if active_case_message_id is not None:
-        updates.append("active_case_message_id = ?")
-        values.append(active_case_message_id)
-    if active_case_channel_id is not None:
-        updates.append("active_case_channel_id = ?")
-        values.append(active_case_channel_id)
-    if daily_case_last_time is not None:
-        updates.append("daily_case_last_time = ?")
-        values.append(daily_case_last_time)
-    if snatcher_last_time is not None:
-        updates.append("snatcher_last_time = ?")
-        values.append(snatcher_last_time)
-    if consecutive_plus is not None:
-        updates.append("consecutive_plus = ?")
-        values.append(consecutive_plus)
-    if consecutive_minus is not None:
-        updates.append("consecutive_minus = ?")
-        values.append(consecutive_minus)
-    if jackpot_pity is not None:
-        updates.append("jackpot_pity = ?")
-        values.append(jackpot_pity)
-    if autoburger_count is not None:
-        updates.append("autoburger_count = ?")
-        values.append(autoburger_count)
-    if last_case_time is not None:
-        updates.append("last_case_time = ?")
-        values.append(last_case_time)
-    if next_autoburger_time is not None:
-        updates.append("next_autoburger_time = ?")
-        values.append(next_autoburger_time)
-    if total_activations is not None:
-        updates.append("total_autoburger_activations = ?")
-        values.append(total_activations)
-    if total_gain is not None:
-        updates.append("total_autoburger_gain = ?")
-        values.append(total_gain)
-    if last_result is not None:
-        updates.append("last_autoburger_result = ?")
-        values.append(last_result)
-    if last_activation_time is not None:
-        updates.append("last_autoburger_time = ?")
-        values.append(last_activation_time)
-    if legendary_burger is not None:
-        updates.append("legendary_burger = ?")
-        values.append(legendary_burger)
-    if item_counts is not None:
-        updates.append("item_counts = ?")
-        values.append(item_counts)
-    if last_command is not None:
-        updates.append("last_command = ?")
-        values.append(last_command)
-    if last_command_target is not None:
-        updates.append("last_command_target = ?")
-        values.append(last_command_target)
-    if last_command_use_time is not None:
-        updates.append("last_command_use_time = ?")
-        values.append(last_command_use_time)
-    if duel_active is not None:
-        updates.append("duel_active = ?")
-        values.append(duel_active)
-    if duel_opponent is not None:
-        updates.append("duel_opponent = ?")
-        values.append(duel_opponent)
-    if duel_amount is not None:
-        updates.append("duel_amount = ?")
-        values.append(duel_amount)
-    if duel_message_id is not None:
-        updates.append("duel_message_id = ?")
-        values.append(duel_message_id)
-    if duel_channel_id is not None:
-        updates.append("duel_channel_id = ?")
-        values.append(duel_channel_id)
-    if duel_initiator is not None:
-        updates.append("duel_initiator = ?")
-        values.append(duel_initiator)
+    field_map = {
+        'number': 'current_number',
+        'last_time': 'last_command_time',
+        'cases': 'cases_dict'
+    }
     
-    if cases_dict:
-        for case_id, count in cases_dict.items():
-            if case_id != "daily":
-                col_name = f"case_{case_id}_count"
-                updates.append(f"{col_name} = ?")
-                values.append(count)
+    for key, value in kwargs.items():
+        if key == 'user_name':
+            updates.append(f"{key} = ?")
+            values.append(value)
+        elif key == 'cases_dict':
+            if value:
+                for case_id, count in value.items():
+                    if case_id != "daily":
+                        updates.append(f"case_{case_id}_count = ?")
+                        values.append(count)
+        elif key in field_map:
+            updates.append(f"{field_map[key]} = ?")
+            values.append(value)
+        else:
+            updates.append(f"{key} = ?")
+            values.append(value)
+    
+    updates.append("last_command_time = ?")
+    values.append(datetime.now())
     
     values.append(str(user_id))
     query = f"UPDATE user_fat SET {', '.join(updates)} WHERE user_id = ?"
     cursor.execute(query, values)
     
     if cursor.rowcount == 0:
-        # Вставка новой записи
-        cols = [
-            'user_id', 'user_name', 'current_number', 'last_command_time',
-            'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
-            'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
-            'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
-            'legendary_burger', 'item_counts', 'last_command', 'last_command_target',
-            'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
-            'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
-            'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
-            'duel_channel_id', 'duel_initiator'
-        ]
-        
-        base_values = [
-            str(user_id), user_name or "Unknown", new_number, current_time,
-            consecutive_plus or 0, consecutive_minus or 0, jackpot_pity or 0,
-            autoburger_count or 0, last_case_time, next_autoburger_time,
-            total_activations or 0, total_gain or 0, last_result, last_activation_time,
-            legendary_burger or -1, item_counts or '{}', last_command, last_command_target,
-            last_command_use_time, fat_cooldown_time, active_case_message_id,
-            active_case_channel_id, daily_case_last_time, snatcher_last_time,
-            duel_active or 0, duel_opponent, duel_amount or 0, duel_message_id,
-            duel_channel_id, duel_initiator or 0
-        ]
-        
-        if cases_dict:
-            for case_id, count in cases_dict.items():
-                if case_id != "daily":
-                    cols.append(f"case_{case_id}_count")
-                    base_values.append(count)
-        
-        placeholders = ["?"] * len(cols)
-        query = f"INSERT INTO user_fat ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
-        cursor.execute(query, base_values)
+        user_data = get_user_data(guild_id, user_id, kwargs.get('user_name'))
+        for key, value in kwargs.items():
+            if key == 'number':
+                user_data['current_number'] = value
+            elif key == 'cases_dict':
+                user_data['cases_dict'] = value
+            elif key in user_data:
+                user_data[key] = value
+        create_new_user(cursor, user_data)
     
     conn.commit()
     conn.close()
@@ -1015,47 +896,28 @@ def update_user_data(guild_id, user_id, new_number, user_name=None, consecutive_
         shutil.copy2(db_path, backup_path)
     except:
         pass
-    
-    return current_time
 
 def get_user_cases(guild_id, user_id):
     """Возвращает словарь с количеством кейсов у пользователя"""
     data = get_user_data(guild_id, user_id)
-    return data[28]  # cases_dict на позиции 28
+    return data.get('cases_dict', {})
 
 def update_user_cases(guild_id, user_id, case_id, change=1):
     """Обновляет количество конкретного кейса у пользователя"""
     data = get_user_data(guild_id, user_id)
-    (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target,
-     last_command_use_time, fat_cooldown_time, active_case_message_id,
-     active_case_channel_id, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id,
-     duel_channel_id, duel_initiator, cases_dict) = data
+    cases_dict = data.get('cases_dict', {})
     
     if case_id in cases_dict:
         cases_dict[case_id] += change
         if cases_dict[case_id] < 0:
             cases_dict[case_id] = 0
     
-    update_user_data(
-        guild_id, user_id, number, None,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        autoburger_count, last_case_time, next_autoburger_time,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, item_counts, last_command, last_command_target,
-        last_command_use_time, fat_cooldown_time, active_case_message_id,
-        active_case_channel_id, daily_case_last_time, cases_dict,
-        snatcher_last_time, duel_active, duel_opponent, duel_amount,
-        duel_message_id, duel_channel_id, duel_initiator
-    )
+    update_user_data(guild_id, user_id, cases_dict=cases_dict)
 
-def can_get_daily_case(guild_id, user_id):
+def can_get_daily_case(guild_id, user_id, custom_cooldown=None):
     """Проверяет, можно ли получить ежедневный кейс"""
     data = get_user_data(guild_id, user_id)
-    daily_case_last_time = data[20]  # daily_case_last_time на позиции 20
+    daily_case_last_time = data.get('daily_case_last_time')
     
     if not daily_case_last_time:
         return True, 0
@@ -1066,7 +928,7 @@ def can_get_daily_case(guild_id, user_id):
         last_time = daily_case_last_time
     
     time_diff = datetime.now() - last_time
-    cooldown = CASE_COOLDOWN_HOURS * 3600
+    cooldown = (custom_cooldown or CASE_COOLDOWN_HOURS) * 3600
     
     if time_diff.total_seconds() >= cooldown:
         return True, 0
@@ -1074,29 +936,9 @@ def can_get_daily_case(guild_id, user_id):
         remaining = cooldown - time_diff.total_seconds()
         return False, remaining
 
-def update_daily_case_time(guild_id, user_id):
+def update_daily_case_time(guild_id, user_id, custom_cooldown=None):
     """Обновляет время получения ежедневного кейса"""
-    data = get_user_data(guild_id, user_id)
-    (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target,
-     last_command_use_time, fat_cooldown_time, active_case_message_id,
-     active_case_channel_id, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id,
-     duel_channel_id, duel_initiator, cases_dict) = data
-    
-    update_user_data(
-        guild_id, user_id, number, None,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        autoburger_count, last_case_time, next_autoburger_time,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, item_counts, last_command, last_command_target,
-        last_command_use_time, fat_cooldown_time, active_case_message_id,
-        active_case_channel_id, datetime.now(), cases_dict,
-        snatcher_last_time, duel_active, duel_opponent, duel_amount,
-        duel_message_id, duel_channel_id, duel_initiator
-    )
+    update_user_data(guild_id, user_id, daily_case_last_time=datetime.now())
 
 def reset_all_cooldowns(guild_id):
     init_guild_database(guild_id)
@@ -1190,10 +1032,8 @@ def get_shop_data(guild_id):
         slots_json, last_update, next_update = result
         try:
             slots = json.loads(slots_json) if slots_json else []
-            # Убеждаемся, что каждый слот имеет правильную структуру
             for slot in slots:
                 if slot is not None and "type" not in slot:
-                    # Если слот есть но нет type - это старая версия, конвертируем
                     if "case_id" in slot:
                         slot["type"] = "case"
                     else:
@@ -1210,7 +1050,6 @@ def update_shop_data(guild_id, slots, last_update, next_update):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Убеждаемся, что все слоты имеют тип
     clean_slots = []
     for slot in slots:
         if slot is not None:
@@ -1287,23 +1126,22 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
     has_water = items_dict.get("Стакан воды", 0) > 0
     
-    # Проверяем эффекты фруктов
-    fat_reduction = 0
-    case_reduction = 0
+    fat_cooldown_reduction = 0
+    case_cooldown_reduction = 0
     jackpot_boost = 0
     
     for item_name, count in items_dict.items():
-        if "Яблоко" in item_name and "Золотое" not in item_name:
-            fat_reduction += count * 0.05
-        elif "Золотое Яблоко" in item_name:
-            fat_reduction += count * 0.10
-        elif "Апельсин" in item_name and "Золотой" not in item_name:
-            case_reduction += count * 0.05
-        elif "Золотой Апельсин" in item_name:
-            case_reduction += count * 0.10
-        elif "Драгонфрукт" in item_name and "Золотой" not in item_name:
+        if item_name == "Яблоко":
+            fat_cooldown_reduction += count * 0.05
+        elif item_name == "Золотое Яблоко":
+            fat_cooldown_reduction += count * 0.10
+        elif item_name == "Апельсин":
+            case_cooldown_reduction += count * 0.05
+        elif item_name == "Золотой Апельсин":
+            case_cooldown_reduction += count * 0.10
+        elif item_name == "Драгонфрукт":
             jackpot_boost += count * 0.01
-        elif "Золотой Драгонфрукт" in item_name:
+        elif item_name == "Золотой Драгонфрукт":
             jackpot_boost += count * 0.05
     
     active_legendary_item = None
@@ -1422,12 +1260,10 @@ def open_case(case_id, legendary_burger=-1):
     case = CASES[case_id]
     prizes = case["prizes"]
     
-    # Нормализуем шансы
     total_chance = sum(p["chance"] for p in prizes)
     for prize in prizes:
         prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
     
-    # Алмазный бургер удваивает шансы на хорошие призы
     if legendary_burger == DIAMOND_BURGER and case_id != "daily":
         modified_prizes = []
         for prize in prizes:
@@ -1441,7 +1277,6 @@ def open_case(case_id, legendary_burger=-1):
             p["normalized_chance"] = (p["normalized_chance"] / total) * 100
         prizes = modified_prizes
     
-    # Выбираем приз
     roll = random.random() * 100
     cumulative = 0
     for prize in prizes:
@@ -1466,32 +1301,27 @@ def get_autoburger_interval(autoburger_count):
 async def apply_autoburger(user_id, guild_id, user_name):
     try:
         data = get_user_data(guild_id, user_id, user_name)
-        (current_number, _, consecutive_plus, consecutive_minus, jackpot_pity, 
-         autoburger_count, _, _, total_activations, total_gain, _, _, 
-         legendary_burger, item_counts, _, _, _, _, _, _, _, snatcher_last_time,
-         duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-         duel_initiator, cases_dict) = data
         
-        items_dict = get_user_items(item_counts)
+        items_dict = get_user_items(data['item_counts'])
         change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-            consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, 
-            legendary_burger, items_dict, current_number)
+            data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
+            data['autoburger_count'], data['legendary_burger'], items_dict, data['current_number'])
         
-        new_number = current_number + change
-        new_total_activations = total_activations + 1
-        new_total_gain = total_gain + change
-        new_last_result = f"{change:+d} кг"
-        new_last_activation_time = datetime.now()
+        new_number = data['current_number'] + change
         
-        update_user_data(guild_id, user_id, new_number, user_name, 
-                        new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, 
-                        autoburger_count, None, None, new_total_activations, 
-                        new_total_gain, new_last_result, new_last_activation_time, 
-                        legendary_burger, item_counts, cases_dict=cases_dict,
-                        snatcher_last_time=snatcher_last_time,
-                        duel_active=duel_active, duel_opponent=duel_opponent,
-                        duel_amount=duel_amount, duel_message_id=duel_message_id,
-                        duel_channel_id=duel_channel_id, duel_initiator=duel_initiator)
+        update_user_data(
+            guild_id, user_id,
+            number=new_number,
+            user_name=user_name,
+            consecutive_plus=new_consecutive_plus,
+            consecutive_minus=new_consecutive_minus,
+            jackpot_pity=new_jackpot_pity,
+            total_autoburger_activations=data['total_autoburger_activations'] + 1,
+            total_autoburger_gain=data['total_autoburger_gain'] + change,
+            last_autoburger_result=f"{change:+d} кг",
+            last_autoburger_time=datetime.now(),
+            cases_dict=data.get('cases_dict')
+        )
         
         guild = bot.get_guild(guild_id)
         if guild:
@@ -1509,7 +1339,7 @@ async def apply_autoburger(user_id, guild_id, user_name):
                     clean_name = display_name
                 if not clean_name or len(clean_name) > 30:
                     clean_name = user_name
-                new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+                new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
                 if len(new_nick) > 32:
                     new_nick = new_nick[:32]
                 try:
@@ -1648,53 +1478,31 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
     """Применяет эффект Снатчера - каждые 6 часов с шансом 20% генерирует предмет"""
     try:
         data = get_user_data(guild_id, user_id, user_name)
-        (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-         autoburger_count, last_case_time, next_autoburger_time,
-         total_activations, total_gain, last_result, last_activation_time,
-         legendary_burger, item_counts, last_command, last_command_target, 
-         last_command_use_time, fat_cooldown_time, _, _, daily_case_last_time, 
-         snatcher_last_time, duel_active, duel_opponent, duel_amount, duel_message_id,
-         duel_channel_id, duel_initiator, cases_dict) = data
+        items_dict = get_user_items(data['item_counts'])
         
-        items_dict = get_user_items(item_counts)
-        
-        # Проверяем, есть ли Снатчер
         snatcher_count = items_dict.get("Снатчер", 0)
         if snatcher_count == 0:
             return
         
-        # Проверяем, прошло ли 6 часов с последнего срабатывания
         current_time = datetime.now()
         
-        if snatcher_last_time:
-            if isinstance(snatcher_last_time, str):
-                last_time = datetime.fromisoformat(snatcher_last_time)
-            else:
-                last_time = snatcher_last_time
+        if data.get('snatcher_last_time'):
+            last_time = data['snatcher_last_time']
+            if isinstance(last_time, str):
+                last_time = datetime.fromisoformat(last_time)
             
             time_diff = current_time - last_time
             if time_diff.total_seconds() < 6 * 3600:
                 return
         
-        # 20% шанс срабатывания
         if random.random() > 0.2:
-            update_user_data(
-                guild_id, user_id, current_number, user_name,
-                consecutive_plus, consecutive_minus, jackpot_pity,
-                autoburger_count, last_case_time, next_autoburger_time,
-                total_activations, total_gain, last_result, last_activation_time,
-                legendary_burger, item_counts, last_command, last_command_target,
-                last_command_use_time, fat_cooldown_time, None, None, daily_case_last_time,
-                cases_dict, current_time, duel_active, duel_opponent, duel_amount,
-                duel_message_id, duel_channel_id, duel_initiator
-            )
+            update_user_data(guild_id, user_id, snatcher_last_time=current_time)
             return
         
-        # ===== ИСПРАВЛЕНИЕ: Генерируем "виртуальный" магазин с 10 слотами =====
         virtual_slots = []
         used_indices = set()
         
-        for _ in range(10):  # Было 6, стало 10
+        for _ in range(10):
             chosen_item = None
             for _ in range(50):
                 item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
@@ -1719,37 +1527,19 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
             else:
                 virtual_slots.append(None)
         
-        # Выбираем случайный слот (0-9)
-        chosen_slot = random.randint(0, 9)  # Было 0-5, стало 0-9
+        chosen_slot = random.randint(0, 9)
         selected_item = virtual_slots[chosen_slot]
         
         if not selected_item:
             print(f"👾 Снатчер у {user_name}: слот {chosen_slot + 1} пустой")
-            update_user_data(
-                guild_id, user_id, current_number, user_name,
-                consecutive_plus, consecutive_minus, jackpot_pity,
-                autoburger_count, last_case_time, next_autoburger_time,
-                total_activations, total_gain, last_result, last_activation_time,
-                legendary_burger, item_counts, last_command, last_command_target,
-                last_command_use_time, fat_cooldown_time, None, None, daily_case_last_time,
-                cases_dict, current_time, duel_active, duel_opponent, duel_amount,
-                duel_message_id, duel_channel_id, duel_initiator
-            )
+            update_user_data(guild_id, user_id, snatcher_last_time=current_time)
             return
         
-        # Генерируем 1 предмет
         items_dict[selected_item["name"]] = items_dict.get(selected_item["name"], 0) + 1
-        
         update_user_data(
-            guild_id, user_id, current_number, user_name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, save_user_items(items_dict),
-            last_command, last_command_target, last_command_use_time,
-            fat_cooldown_time, None, None, daily_case_last_time, cases_dict,
-            current_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id, 
+            item_counts=save_user_items(items_dict),
+            snatcher_last_time=current_time
         )
         
         print(f"👾 Снатчер сработал для {user_name}: +1 {selected_item['name']} (слот {chosen_slot + 1}/10)")
@@ -1816,6 +1606,92 @@ async def snatcher_loop():
         
         await asyncio.sleep(1800)
 
+async def apply_hourly_effects():
+    """Применяет эффекты предметов, которые работают каждый час"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            current_time = datetime.now()
+            print(f"💊 Проверка почасовых эффектов: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            for guild in bot.guilds:
+                guild_id = guild.id
+                db_path = get_db_path(guild_id)
+                if not os.path.exists(db_path):
+                    continue
+                
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
+                users = cursor.fetchall()
+                conn.close()
+                
+                for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
+                    try:
+                        items_dict = get_user_items(item_counts_str)
+                        if not items_dict:
+                            continue
+                        
+                        total_gain = 0
+                        gained_items = []
+                        
+                        for item_name, count in items_dict.items():
+                            if item_name == "Автохолестерол":
+                                gain = random.randint(1, 10) * count
+                                total_gain += gain
+                                gained_items.append(f"Автохолестерол x{count} (+{gain}кг)")
+                            elif item_name == "Холестеринимус":
+                                gain = random.randint(1, 5) * count
+                                total_gain += gain
+                                gained_items.append(f"Холестеринимус x{count} (+{gain}кг)")
+                        
+                        if total_gain > 0:
+                            multiplier = 1.0
+                            if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
+                                multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                            
+                            final_gain = int(total_gain * multiplier)
+                            new_number = current_number + final_gain
+                            
+                            conn2 = sqlite3.connect(db_path)
+                            c = conn2.cursor()
+                            c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
+                            conn2.commit()
+                            conn2.close()
+                            
+                            try:
+                                guild_obj = bot.get_guild(guild_id)
+                                if guild_obj:
+                                    member = guild_obj.get_member(int(user_id))
+                                    if member:
+                                        display_name = member.display_name
+                                        clean_name = display_name
+                                        if "kg" in display_name:
+                                            parts = display_name.split("kg", 1)
+                                            if len(parts) > 1:
+                                                clean_name = parts[1].strip()
+                                                if not clean_name:
+                                                    clean_name = user_name
+                                        else:
+                                            clean_name = display_name
+                                        if not clean_name or len(clean_name) > 30:
+                                            clean_name = user_name
+                                        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+                                        if len(new_nick) > 32:
+                                            new_nick = new_nick[:32]
+                                        await member.edit(nick=new_nick)
+                            except:
+                                pass
+                            
+                            print(f"💊 {user_name} получил {final_gain}кг от почасовых предметов: {', '.join(gained_items)}")
+                    except Exception as e:
+                        print(f"❌ Ошибка при начислении почасового дохода для {user_id}: {e}")
+            
+        except Exception as e:
+            print(f"❌ Ошибка в цикле почасовых эффектов: {e}")
+        
+        await asyncio.sleep(3600)
+
 def check_databases_on_startup():
     print("\n🔍 ** ПРОВЕРКА БАЗ ДАННЫХ ** 🔍")
     print("-" * 40)
@@ -1858,20 +1734,103 @@ def check_databases_on_startup():
     
     return existing_dbs, new_dbs, corrupted_dbs
 
+def safe_init_guild_database(guild_id, guild_name="Unknown"):
+    db_path = get_db_path(guild_id)
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_fat'")
+            if not cursor.fetchone():
+                conn.close()
+                os.remove(db_path)
+                print(f"⚠️ Таблица user_fat не найдена в БД сервера {guild_name}, создаю заново")
+                return create_new_database(db_path, guild_id, guild_name)
+            cursor.execute("PRAGMA table_info(user_fat)")
+            columns = [col[1] for col in cursor.fetchall()]
+            conn.close()
+            add_missing_columns(db_path, columns)
+            print(f"✅ База данных для сервера {guild_name} в порядке")
+            return True
+        except sqlite3.DatabaseError:
+            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
+            repair_database(db_path)
+            return create_new_database(db_path, guild_id, guild_name)
+    else:
+        print(f"📁 Создаю новую БД для сервера {guild_name} (ID: {guild_id})")
+        return create_new_database(db_path, guild_id, guild_name)
+
+def create_new_database(db_path, guild_id, guild_name):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    base_columns = '''
+        user_id TEXT PRIMARY KEY, 
+        user_name TEXT, 
+        current_number INTEGER DEFAULT 0, 
+        last_command_time TIMESTAMP, 
+        consecutive_plus INTEGER DEFAULT 0, 
+        consecutive_minus INTEGER DEFAULT 0, 
+        jackpot_pity INTEGER DEFAULT 0, 
+        autoburger_count INTEGER DEFAULT 0, 
+        last_case_time TIMESTAMP, 
+        next_autoburger_time TIMESTAMP, 
+        total_autoburger_activations INTEGER DEFAULT 0, 
+        total_autoburger_gain INTEGER DEFAULT 0, 
+        last_autoburger_result TEXT, 
+        last_autoburger_time TIMESTAMP,
+        legendary_burger INTEGER DEFAULT -1,
+        item_counts TEXT DEFAULT '{}',
+        last_command TEXT,
+        last_command_target TEXT,
+        last_command_use_time TIMESTAMP,
+        fat_cooldown_time TIMESTAMP,
+        active_case_message_id TEXT,
+        active_case_channel_id TEXT,
+        daily_case_last_time TIMESTAMP,
+        snatcher_last_time TIMESTAMP,
+        duel_active INTEGER DEFAULT 0,
+        duel_opponent TEXT,
+        duel_amount INTEGER DEFAULT 0,
+        duel_message_id TEXT,
+        duel_channel_id TEXT,
+        duel_initiator INTEGER DEFAULT 0
+    '''
+    
+    case_columns = []
+    for case_id in CASES.keys():
+        if case_id != "daily":
+            case_columns.append(f"case_{case_id}_count INTEGER DEFAULT 0")
+    
+    all_columns = base_columns + ", " + ", ".join(case_columns) if case_columns else base_columns
+    
+    cursor.execute(f'''CREATE TABLE user_fat ({all_columns})''')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS shop (
+        guild_id TEXT PRIMARY KEY, 
+        slots TEXT, 
+        last_update TIMESTAMP, 
+        next_update TIMESTAMP
+    )''')
+    
+    conn.commit()
+    conn.close()
+    print(f"✅ Новая база данных создана для сервера {guild_name}")
+    return True
+
 def can_duel(user_data):
     """Проверяет, может ли пользователь участвовать в дуэли"""
-    duel_active = user_data[22]  # Индекс duel_active
-    return not duel_active
+    return not user_data.get('duel_active', 0)
 
 def get_duel_info(user_data):
     """Возвращает информацию о текущей дуэли пользователя"""
     return {
-        'active': user_data[22],
-        'opponent': user_data[23],
-        'amount': user_data[24],
-        'message_id': user_data[25],
-        'channel_id': user_data[26],
-        'initiator': user_data[27]
+        'active': user_data.get('duel_active', 0),
+        'opponent': user_data.get('duel_opponent'),
+        'amount': user_data.get('duel_amount', 0),
+        'message_id': user_data.get('duel_message_id'),
+        'channel_id': user_data.get('duel_channel_id'),
+        'initiator': user_data.get('duel_initiator', 0)
     }
 
 @bot.event
@@ -1916,30 +1875,25 @@ async def on_ready():
     bot.loop.create_task(autoburger_loop())
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
+    bot.loop.create_task(apply_hourly_effects())
 
 async def duel_animation(msg, challenger, opponent, winner_is_challenger):
     """Анимация дуэли с меняющимися стрелками"""
     
-    # Получаем имена (чтобы влезли в код-блок)
     c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
     o_name = opponent.display_name[:15] + "..." if len(opponent.display_name) > 15 else opponent.display_name
     
-    # Выравниваем имена для красоты
     max_len = max(len(c_name), len(o_name))
     c_name = c_name.ljust(max_len)
     o_name = o_name.ljust(max_len)
     
-    # Анимация: только "/\" и "\/" чередуются
-    # Длина анимации: 15 кадров (7.5 секунд) с замедлением к концу
     frames = 15
     arrows = ["/\\", "\\/"] * (frames // 2 + 1)
-    arrows = arrows[:frames]  # Берем ровно 15 кадров
+    arrows = arrows[:frames]
     
-    # Замедление к концу: первые 8 кадров быстрые, потом замедление
     delays = [0.3] * 8 + [0.5] * 4 + [0.8] * 3
     
     for i, arrow in enumerate(arrows):
-        # Создаём рамку анимации
         anim_text = f"```\n⚔️ ДУЭЛЬ ⚔️\n\n{c_name}\n    {arrow}    \n{o_name}\n```"
         
         embed = discord.Embed(
@@ -1950,13 +1904,12 @@ async def duel_animation(msg, challenger, opponent, winner_is_challenger):
         await msg.edit(embed=embed)
         await asyncio.sleep(delays[i])
     
-    # Финальный кадр - определяем победителя
     if winner_is_challenger:
         final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{c_name}\n    ⬆️    \n{o_name}\n```"
-        color = 0xffd700  # Золотой
+        color = 0xffd700
     else:
         final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{c_name}\n    ⬇️    \n{o_name}\n```"
-        color = 0xc0c0c0  # Серебряный
+        color = 0xc0c0c0
     
     final_embed = discord.Embed(
         description=final_text,
@@ -1977,6 +1930,8 @@ async def on_guild_join(guild):
             await channel.send(embed=embed)
             break
 
+# ===== ОСНОВНЫЕ КОМАНДЫ =====
+
 @bot.command(name='жир')
 async def fat_command(ctx):
     guild_id = ctx.guild.id
@@ -1985,26 +1940,21 @@ async def fat_command(ctx):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, _, _, total_activations, total_gain, _, _, 
-     legendary_burger, item_counts, _, _, _, fat_cooldown_time, _, _, _, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
     actual_cooldown = COOLDOWN_HOURS
-    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-        actual_cooldown = BURGER_RANKS[legendary_burger]["fat_cooldown"] / 60
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        actual_cooldown = BURGER_RANKS[data['legendary_burger']]["fat_cooldown"] / 60
     
-    items_dict = get_user_items(item_counts)
+    items_dict = get_user_items(data['item_counts'])
     for item_name, count in items_dict.items():
-        if "Яблоко" in item_name and "Золотое" not in item_name:
+        if item_name == "Яблоко":
             actual_cooldown *= (1 - count * 0.05)
-        elif "Золотое Яблоко" in item_name:
+        elif item_name == "Золотое Яблоко":
             actual_cooldown *= (1 - count * 0.10)
     
     actual_cooldown = max(0.1, actual_cooldown)
     
-    can_use, remaining = check_cooldown(fat_cooldown_time, actual_cooldown)
+    can_use, remaining = check_cooldown(data['fat_cooldown_time'], actual_cooldown)
     
     if not can_use:
         embed = discord.Embed(title="⏳ Подождите!", 
@@ -2017,19 +1967,21 @@ async def fat_command(ctx):
         return
     
     change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
-        consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, 
-        legendary_burger, items_dict, current_number)
+        data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
+        data['autoburger_count'], data['legendary_burger'], items_dict, data['current_number'])
     
-    new_number = current_number + change
+    new_number = data['current_number'] + change
     
-    update_user_data(guild_id, user_id, new_number, user_name, 
-                    new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, 
-                    autoburger_count, None, None, total_activations, total_gain, 
-                    None, None, legendary_burger, item_counts, None, None, None, 
-                    datetime.now(), cases_dict=cases_dict, snatcher_last_time=snatcher_last_time,
-                    duel_active=duel_active, duel_opponent=duel_opponent,
-                    duel_amount=duel_amount, duel_message_id=duel_message_id,
-                    duel_channel_id=duel_channel_id, duel_initiator=duel_initiator)
+    update_user_data(
+        guild_id, user_id,
+        number=new_number,
+        user_name=user_name,
+        consecutive_plus=new_consecutive_plus,
+        consecutive_minus=new_consecutive_minus,
+        jackpot_pity=new_jackpot_pity,
+        fat_cooldown_time=datetime.now(),
+        cases_dict=data.get('cases_dict')
+    )
     
     nick_updated = False
     try:
@@ -2047,7 +1999,7 @@ async def fat_command(ctx):
         if not clean_name or len(clean_name) > 30:
             clean_name = user_name
         
-        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+        new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
         if len(new_nick) > 32:
             new_nick = new_nick[:32]
         
@@ -2085,26 +2037,26 @@ async def fat_command(ctx):
     if was_jackpot:
         pity_info.append("💰 Джекпот сброшен!")
     elif was_minus:
-        if consecutive_plus > 0:
-            pity_info.append(f"❌ Серия плюсов ({consecutive_plus}) прервана!")
+        if data['consecutive_plus'] > 0:
+            pity_info.append(f"❌ Серия плюсов ({data['consecutive_plus']}) прервана!")
         pity_info.append(f"📉 Минусов подряд: {new_consecutive_minus}")
     else:
         if new_consecutive_plus > 0:
             pity_info.append(f"🔥 Плюсов подряд: {new_consecutive_plus}")
-        if consecutive_minus > 0:
-            pity_info.append(f"✅ Серия минусов ({consecutive_minus}) прервана!")
+        if data['consecutive_minus'] > 0:
+            pity_info.append(f"✅ Серия минусов ({data['consecutive_minus']}) прервана!")
     
     if pity_info:
         embed.add_field(name="📊 Статистика", value="\n".join(pity_info), inline=False)
     
-    if autoburger_count > 0:
-        interval = get_autoburger_interval(autoburger_count)
-        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+    if data['autoburger_count'] > 0:
+        interval = get_autoburger_interval(data['autoburger_count'])
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * data['autoburger_count'])) * 100
         embed.add_field(name="🍔 Автобургеры", 
-                       value=f"{autoburger_count} шт (каждые {interval} ч)\n⚡ Бонус к плюсу: +{current_boost:.1f}%", 
+                       value=f"{data['autoburger_count']} шт (каждые {interval} ч)\n⚡ Бонус к плюсу: +{current_boost:.1f}%", 
                        inline=True)
     
-    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(new_number, legendary_burger)
+    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(new_number, data['legendary_burger'])
     if available:
         embed.add_field(name="✨ **ВОЗВЫШЕНИЕ ДОСТУПНО!** ✨", 
                        value=f"Вы достигли {req_weight}кг! Используйте `!возвышение`\nШанс получить {BURGER_RANKS[burger_idx]['emoji']} {burger_name}: {chance*100:.0f}%", 
@@ -2124,6 +2076,7 @@ async def fat_command(ctx):
     
     await ctx.send(embed=embed)
 
+
 @bot.command(name='жиркейс')
 async def fat_case_command(ctx):
     """Открывает кейсы из инвентаря в порядке очереди с анимацией"""
@@ -2133,27 +2086,17 @@ async def fat_case_command(ctx):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, 
-     last_command_use_time, fat_cooldown_time, active_case_message_id, 
-     active_case_channel_id, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    # ===== ИСПРАВЛЕНИЕ: Проверяем активный кейс =====
-    if active_case_message_id:
+    # ===== ПРОВЕРКА АКТИВНОГО КЕЙСА =====
+    if data.get('active_case_message_id'):
         try:
-            channel = bot.get_channel(int(active_case_channel_id)) if active_case_channel_id else None
+            channel = bot.get_channel(int(data['active_case_channel_id'])) if data.get('active_case_channel_id') else None
             if channel:
                 try:
-                    old_msg = await channel.fetch_message(int(active_case_message_id))
+                    old_msg = await channel.fetch_message(int(data['active_case_message_id']))
                     if old_msg:
-                        # Проверяем, не истекло ли время у сообщения
-                        # Если сообщение существует и ему меньше 2 минут - считаем активным
                         time_since = datetime.now() - old_msg.created_at
-                        if time_since.total_seconds() < 120:  # 2 минуты
+                        if time_since.total_seconds() < 120:
                             embed = discord.Embed(
                                 title="⚠️ Кейс уже открыт!",
                                 description=f"{member.mention}, у вас уже есть активный кейс!\n"
@@ -2162,33 +2105,30 @@ async def fat_case_command(ctx):
                             )
                             await ctx.send(embed=embed)
                             return
-                        else:
-                            # Сообщение старое - сбрасываем
-                            active_case_message_id = None
-                            active_case_channel_id = None
-                    else:
-                        # Сообщение не найдено - сбрасываем
-                        active_case_message_id = None
-                        active_case_channel_id = None
-                except discord.NotFound:
-                    # Сообщение удалено - сбрасываем
-                    active_case_message_id = None
-                    active_case_channel_id = None
-                except Exception as e:
-                    print(f"Ошибка при проверке активного кейса: {e}")
-                    active_case_message_id = None
-                    active_case_channel_id = None
-            else:
-                # Канал не найден - сбрасываем
-                active_case_message_id = None
-                active_case_channel_id = None
+                except:
+                    pass
         except Exception as e:
             print(f"Ошибка при проверке активного кейса: {e}")
-            active_case_message_id = None
-            active_case_channel_id = None
     
-    # Проверяем ежедневный кейс
-    can_get_daily, daily_remaining = can_get_daily_case(guild_id, user_id)
+    # ===== ПРИМЕНЯЕМ ЭФФЕКТЫ АПЕЛЬСИНОВ =====
+    items_dict = get_user_items(data['item_counts'])
+    
+    actual_case_cooldown = CASE_COOLDOWN_HOURS
+    
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        actual_case_cooldown = BURGER_RANKS[data['legendary_burger']]["case_cooldown"]
+    
+    for item_name, count in items_dict.items():
+        if item_name == "Апельсин":
+            actual_case_cooldown *= (1 - count * 0.05)
+        elif item_name == "Золотой Апельсин":
+            actual_case_cooldown *= (1 - count * 0.10)
+    
+    actual_case_cooldown = max(1, int(actual_case_cooldown))
+    
+    can_get_daily, daily_remaining = can_get_daily_case(guild_id, user_id, actual_case_cooldown)
+    
+    cases_dict = data.get('cases_dict', {})
     case_to_open = None
     case = None
     
@@ -2215,8 +2155,6 @@ async def fat_case_command(ctx):
         return
     
     # ===== АНИМАЦИЯ ОТКРЫТИЯ КЕЙСА =====
-    
-    # Собираем эмодзи для анимации
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -2270,17 +2208,10 @@ async def fat_case_command(ctx):
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
     
-    # Сохраняем активный кейс
     update_user_data(
-        guild_id, user_id, current_number, user_name,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        autoburger_count, last_case_time, next_autoburger_time,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, item_counts, last_command, last_command_target,
-        last_command_use_time, fat_cooldown_time,
-        str(case_msg.id), str(ctx.channel.id), daily_case_last_time, cases_dict,
-        snatcher_last_time, duel_active, duel_opponent, duel_amount,
-        duel_message_id, duel_channel_id, duel_initiator
+        guild_id, user_id,
+        active_case_message_id=str(case_msg.id),
+        active_case_channel_id=str(ctx.channel.id)
     )
     
     def check(reaction, user):
@@ -2289,12 +2220,11 @@ async def fat_case_command(ctx):
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
         
-        # Получаем приз
         if case_to_open == "daily":
-            prize = open_case("daily", legendary_burger)
+            prize = open_case("daily", data['legendary_burger'])
             update_daily_case_time(guild_id, user_id)
         else:
-            prize = open_case(case_to_open, legendary_burger)
+            prize = open_case(case_to_open, data['legendary_burger'])
             cases_dict[case_to_open] -= 1
         
         try:
@@ -2302,7 +2232,6 @@ async def fat_case_command(ctx):
         except:
             pass
         
-        # Анимация (как в вашем коде)
         line = []
         for i in range(100):
             line.append(random.choice(prize_emojis))
@@ -2355,11 +2284,10 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
         
-        # Обрабатываем приз
-        items_dict = get_user_items(item_counts)
-        new_number = current_number
-        new_autoburger_count = autoburger_count
-        new_next_autoburger_time = next_autoburger_time
+        items_dict = get_user_items(data['item_counts'])
+        new_number = data['current_number']
+        new_autoburger_count = data['autoburger_count']
+        new_next_autoburger_time = data['next_autoburger_time']
         prize_value = prize["value"]
         
         has_water = items_dict.get("Стакан воды", 0) > 0
@@ -2382,7 +2310,7 @@ async def fat_case_command(ctx):
         else:
             if has_water and case_to_open != "daily":
                 prize_value = prize_value // 3
-            new_number = current_number + prize_value
+            new_number = data['current_number'] + prize_value
             result_display = f"🎉 **{prize_value:+d} кг** {prize_emoji}"
             result_color = 0xffaa00
         
@@ -2394,7 +2322,6 @@ async def fat_case_command(ctx):
         await case_msg.edit(embed=result_embed)
         await asyncio.sleep(1.5)
         
-        # Обновляем ник если изменился вес
         if prize_value not in ["autoburger", "rotten_leg", "water"] and prize_value != 0:
             try:
                 display_name = member.display_name
@@ -2411,7 +2338,7 @@ async def fat_case_command(ctx):
                 if not clean_name or len(clean_name) > 30:
                     clean_name = user_name
                 
-                new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+                new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
                 if len(new_nick) > 32:
                     new_nick = new_nick[:32]
                 
@@ -2419,21 +2346,20 @@ async def fat_case_command(ctx):
             except:
                 pass
         
-        # ===== ИСПРАВЛЕНИЕ: Сбрасываем активный кейс после успешного открытия =====
         update_user_data(
-            guild_id, user_id, new_number, user_name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            new_autoburger_count, datetime.now() if case_to_open == "daily" else last_case_time,
-            new_next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, save_user_items(items_dict),
-            last_command, last_command_target, last_command_use_time,
-            fat_cooldown_time, None, None, daily_case_last_time if case_to_open != "daily" else datetime.now(),
-            cases_dict, snatcher_last_time, duel_active, duel_opponent,
-            duel_amount, duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id,
+            number=new_number,
+            user_name=user_name,
+            autoburger_count=new_autoburger_count,
+            last_case_time=datetime.now() if case_to_open == "daily" else data['last_case_time'],
+            next_autoburger_time=new_next_autoburger_time,
+            item_counts=save_user_items(items_dict),
+            active_case_message_id=None,
+            active_case_channel_id=None,
+            daily_case_last_time=datetime.now() if case_to_open == "daily" else data['daily_case_last_time'],
+            cases_dict=cases_dict
         )
         
-        # Финальное сообщение
         rank_name, rank_emoji = get_rank(new_number)
         
         if prize_value == "autoburger":
@@ -2469,7 +2395,7 @@ async def fat_case_command(ctx):
         
         if case_to_open == "daily":
             final_embed.add_field(name="⏰ Следующий ежедневный кейс", 
-                               value=f"через {CASE_COOLDOWN_HOURS} часов", 
+                               value=f"через {actual_case_cooldown} часов", 
                                inline=False)
         else:
             remaining_text = "\n".join([f"{CASES[cid]['emoji']} {CASES[cid]['name']}: {count}" 
@@ -2481,17 +2407,10 @@ async def fat_case_command(ctx):
         await ctx.send(embed=final_embed)
         
     except asyncio.TimeoutError:
-        # ===== ИСПРАВЛЕНИЕ: Сбрасываем активный кейс при таймауте =====
         update_user_data(
-            guild_id, user_id, current_number, user_name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, item_counts,
-            last_command, last_command_target, last_command_use_time,
-            fat_cooldown_time, None, None, daily_case_last_time, cases_dict,
-            snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id,
+            active_case_message_id=None,
+            active_case_channel_id=None
         )
         
         try:
@@ -2505,6 +2424,7 @@ async def fat_case_command(ctx):
             color=0xff0000
         )
         await case_msg.edit(embed=timeout_embed)
+
 
 @bot.command(name='жиркейс_шансы')
 async def fat_case_chances(ctx):
@@ -2543,6 +2463,7 @@ async def fat_case_chances(ctx):
     
     embed.set_footer(text="🎰 Удачи в открытии кейсов!")
     await ctx.send(embed=embed)
+
 
 @bot.command(name='жиротрясы')
 async def fat_leaderboard(ctx):
@@ -2616,6 +2537,7 @@ async def fat_leaderboard(ctx):
     
     await ctx.send(embed=embed)
 
+
 @bot.command(name='жирстат')
 async def fat_stats(ctx, member: discord.Member = None):
     """Показывает подробную статистику автобургеров"""
@@ -2624,53 +2546,45 @@ async def fat_stats(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _, _, _, _, _, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
     embed = discord.Embed(
         title=f"📊 Статистика автобургеров - {target.display_name}",
         color=0x3498db
     )
     
-    embed.add_field(name="🍔 Всего автобургеров", value=str(autoburger_count), inline=True)
-    embed.add_field(name="⚡ Срабатываний", value=str(total_activations), inline=True)
-    embed.add_field(name="📈 Всего набрано", value=f"{total_gain} кг", inline=True)
+    embed.add_field(name="🍔 Всего автобургеров", value=str(data['autoburger_count']), inline=True)
+    embed.add_field(name="⚡ Срабатываний", value=str(data['total_autoburger_activations']), inline=True)
+    embed.add_field(name="📈 Всего набрано", value=f"{data['total_autoburger_gain']} кг", inline=True)
     
-    if total_activations > 0:
-        avg_gain = total_gain / total_activations
+    if data['total_autoburger_activations'] > 0:
+        avg_gain = data['total_autoburger_gain'] / data['total_autoburger_activations']
         embed.add_field(name="📊 Средний прирост", value=f"{avg_gain:.1f} кг", inline=True)
     
-    if last_result and last_activation_time:
+    if data['last_autoburger_result'] and data['last_autoburger_time']:
         try:
-            if isinstance(last_activation_time, str):
-                last_time = datetime.fromisoformat(last_activation_time)
-            else:
-                last_time = last_activation_time
+            last_time = data['last_autoburger_time']
+            if isinstance(last_time, str):
+                last_time = datetime.fromisoformat(last_time)
             time_diff = datetime.now() - last_time
             hours = time_diff.total_seconds() / 3600
             embed.add_field(name="🕒 Последнее", 
-                           value=f"{last_result} ({hours:.1f} ч назад)", 
+                           value=f"{data['last_autoburger_result']} ({hours:.1f} ч назад)", 
                            inline=False)
         except:
             pass
     
-    if autoburger_count > 0:
-        interval = get_autoburger_interval(autoburger_count)
-        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+    if data['autoburger_count'] > 0:
+        interval = get_autoburger_interval(data['autoburger_count'])
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * data['autoburger_count'])) * 100
         embed.add_field(name="⚡ Текущий бонус", 
                        value=f"+{current_boost:.1f}% к плюсу (каждые {interval} ч)", 
                        inline=False)
     
-    if next_autoburger_time:
+    if data.get('next_autoburger_time'):
         try:
-            if isinstance(next_autoburger_time, str):
-                next_time = datetime.fromisoformat(next_autoburger_time)
-            else:
-                next_time = next_autoburger_time
+            next_time = data['next_autoburger_time']
+            if isinstance(next_time, str):
+                next_time = datetime.fromisoformat(next_time)
             time_diff = next_time - datetime.now()
             if time_diff.total_seconds() > 0:
                 embed.add_field(name="⏰ Следующий автобургер", 
@@ -2681,6 +2595,7 @@ async def fat_stats(ctx, member: discord.Member = None):
     
     await ctx.send(embed=embed)
 
+
 @bot.command(name='жир_инфо')
 async def fat_info(ctx, member: discord.Member = None):
     """Информация о пользователе"""
@@ -2689,31 +2604,24 @@ async def fat_info(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, 
-     last_command_use_time, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    rank_name, rank_emoji = get_rank(number)
+    rank_name, rank_emoji = get_rank(data['current_number'])
     
     actual_fat_cooldown = COOLDOWN_HOURS
     actual_case_cooldown = CASE_COOLDOWN_HOURS
-    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-        actual_fat_cooldown = BURGER_RANKS[legendary_burger]["fat_cooldown"] / 60
-        actual_case_cooldown = BURGER_RANKS[legendary_burger]["case_cooldown"]
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        actual_fat_cooldown = BURGER_RANKS[data['legendary_burger']]["fat_cooldown"] / 60
+        actual_case_cooldown = BURGER_RANKS[data['legendary_burger']]["case_cooldown"]
     
-    items_dict = get_user_items(item_counts)
+    items_dict = get_user_items(data['item_counts'])
     for item_name, count in items_dict.items():
-        if "Яблоко" in item_name and "Золотое" not in item_name:
+        if item_name == "Яблоко":
             actual_fat_cooldown *= (1 - count * 0.05)
-        elif "Золотое Яблоко" in item_name:
+        elif item_name == "Золотое Яблоко":
             actual_fat_cooldown *= (1 - count * 0.10)
-        elif "Апельсин" in item_name and "Золотой" not in item_name:
+        elif item_name == "Апельсин":
             actual_case_cooldown *= (1 - count * 0.05)
-        elif "Золотой Апельсин" in item_name:
+        elif item_name == "Золотой Апельсин":
             actual_case_cooldown *= (1 - count * 0.10)
     
     actual_fat_cooldown = max(0.1, actual_fat_cooldown)
@@ -2724,39 +2632,38 @@ async def fat_info(ctx, member: discord.Member = None):
         color=0x00ff00
     )
     
-    embed.add_field(name="Текущий вес", value=f"{number}kg", inline=True)
+    embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
     embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
     
-    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-        burger = BURGER_RANKS[legendary_burger]
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        burger = BURGER_RANKS[data['legendary_burger']]
         embed.add_field(name=f"{burger['emoji']} Легендарный бургер", 
                        value=f"**{burger['name']}**\nМножитель: x{burger['multiplier']}", 
                        inline=True)
     
     pity_emojis = []
-    if consecutive_plus > 0:
-        pity_emojis.append(f"🔥{consecutive_plus}")
-    if consecutive_minus > 0:
-        pity_emojis.append(f"❄️{consecutive_minus}")
-    if jackpot_pity > 0:
-        pity_emojis.append(f"💰{jackpot_pity}")
+    if data['consecutive_plus'] > 0:
+        pity_emojis.append(f"🔥{data['consecutive_plus']}")
+    if data['consecutive_minus'] > 0:
+        pity_emojis.append(f"❄️{data['consecutive_minus']}")
+    if data['jackpot_pity'] > 0:
+        pity_emojis.append(f"💰{data['jackpot_pity']}")
     
     if pity_emojis:
         embed.add_field(name="📊 Счётчики", value=" ".join(pity_emojis), inline=True)
     
-    if autoburger_count > 0:
-        interval = get_autoburger_interval(autoburger_count)
-        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+    if data['autoburger_count'] > 0:
+        interval = get_autoburger_interval(data['autoburger_count'])
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * data['autoburger_count'])) * 100
         embed.add_field(name="🍔 Автобургеры", 
-                       value=f"{autoburger_count} шт (каждые {interval} ч)\n⚡ Бонус: +{current_boost:.1f}%\n⚡ Срабатываний: {total_activations}", 
+                       value=f"{data['autoburger_count']} шт (каждые {interval} ч)\n⚡ Бонус: +{current_boost:.1f}%\n⚡ Срабатываний: {data['total_autoburger_activations']}", 
                        inline=True)
         
-        if next_autoburger_time:
+        if data.get('next_autoburger_time'):
             try:
-                if isinstance(next_autoburger_time, str):
-                    next_time = datetime.fromisoformat(next_autoburger_time)
-                else:
-                    next_time = next_autoburger_time
+                next_time = data['next_autoburger_time']
+                if isinstance(next_time, str):
+                    next_time = datetime.fromisoformat(next_time)
                 time_diff = next_time - datetime.now()
                 if time_diff.total_seconds() > 0:
                     embed.add_field(name="⏰ Следующий автобургер", 
@@ -2765,6 +2672,7 @@ async def fat_info(ctx, member: discord.Member = None):
             except:
                 pass
     
+    cases_dict = data.get('cases_dict', {})
     cases_text = ""
     for case_id, count in cases_dict.items():
         if count > 0:
@@ -2784,13 +2692,13 @@ async def fat_info(ctx, member: discord.Member = None):
     if legendary_items:
         embed.add_field(name="✨ Легендарные предметы", value="\n".join(legendary_items[:5]), inline=True)
     
-    can_use, remaining = check_cooldown(fat_cooldown_time, actual_fat_cooldown)
+    can_use, remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
     if can_use:
         cooldown_status = f"✅ !жир доступен (КД {actual_fat_cooldown*60:.0f} мин)"
     else:
         cooldown_status = f"⏳ !жир через {format_time(remaining)}"
     
-    can_use_case, case_remaining = check_cooldown(last_case_time, actual_case_cooldown)
+    can_use_case, case_remaining = check_cooldown(data['last_case_time'], actual_case_cooldown)
     if can_use_case:
         case_status = f"✅ !жиркейс доступен (КД {actual_case_cooldown:.1f} ч)"
     else:
@@ -2798,7 +2706,7 @@ async def fat_info(ctx, member: discord.Member = None):
     
     embed.add_field(name="Команды", value=f"{cooldown_status}\n{case_status}", inline=False)
     
-    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(number, legendary_burger)
+    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(data['current_number'], data['legendary_burger'])
     if available:
         embed.add_field(
             name="✨ **ВОЗВЫШЕНИЕ ДОСТУПНО!** ✨",
@@ -2807,6 +2715,7 @@ async def fat_info(ctx, member: discord.Member = None):
         )
     
     await ctx.send(embed=embed)
+
 
 @bot.command(name='возвышение')
 async def ascension_command(ctx):
@@ -2820,18 +2729,11 @@ async def ascension_command(ctx):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, 
-     last_command_use_time, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(current_number, legendary_burger)
+    available, burger_idx, burger_name, req_weight, chance = check_ascension_available(data['current_number'], data['legendary_burger'])
     
     if not available:
-        if legendary_burger >= DIAMOND_BURGER:
+        if data['legendary_burger'] >= DIAMOND_BURGER:
             embed = discord.Embed(
                 title="❌ Возвышение недоступно",
                 description=f"{member.mention}, у вас уже есть **Алмазный бургер**!\n"
@@ -2839,13 +2741,13 @@ async def ascension_command(ctx):
                 color=0xff0000
             )
         else:
-            next_burger = legendary_burger + 1 if legendary_burger >= 0 else 0
+            next_burger = data['legendary_burger'] + 1 if data['legendary_burger'] >= 0 else 0
             if next_burger < len(BURGER_RANKS):
                 req = BURGER_RANKS[next_burger]["weight_required"]
                 embed = discord.Embed(
                     title="❌ Возвышение недоступно",
                     description=f"{member.mention}, вам нужно достичь **{req}кг**\n"
-                               f"Текущий вес: **{current_number}кг**",
+                               f"Текущий вес: **{data['current_number']}кг**",
                     color=0xff0000
                 )
             else:
@@ -2860,7 +2762,7 @@ async def ascension_command(ctx):
     roll = random.random()
     success = roll < chance
     
-    items_dict = get_user_items(item_counts)
+    items_dict = get_user_items(data['item_counts'])
     
     if success:
         new_burger_idx = burger_idx
@@ -2892,15 +2794,14 @@ async def ascension_command(ctx):
             pass
         
         update_user_data(
-            guild_id, user_id, new_number, user_name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            new_autoburger_count, last_case_time, new_next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            new_burger_idx, save_user_items(items_dict),
-            last_command, last_command_target, last_command_use_time,
-            fat_cooldown_time, None, None, daily_case_last_time, cases_dict,
-            snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id,
+            number=new_number,
+            user_name=user_name,
+            autoburger_count=new_autoburger_count,
+            next_autoburger_time=new_next_autoburger_time,
+            legendary_burger=new_burger_idx,
+            item_counts=save_user_items(items_dict),
+            cases_dict=data.get('cases_dict')
         )
         
         burger_emoji = BURGER_RANKS[new_burger_idx]["emoji"]
@@ -2927,7 +2828,7 @@ async def ascension_command(ctx):
         embed.add_field(name="⚡ Полученные бонусы", value=bonus_text, inline=False)
         
     else:
-        new_number = current_number // 2
+        new_number = data['current_number'] // 2
         
         display_name = member.display_name
         clean_name = display_name
@@ -2943,7 +2844,7 @@ async def ascension_command(ctx):
         if not clean_name or len(clean_name) > 30:
             clean_name = user_name
         
-        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+        new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
         if len(new_nick) > 32:
             new_nick = new_nick[:32]
         
@@ -2953,15 +2854,11 @@ async def ascension_command(ctx):
             pass
         
         update_user_data(
-            guild_id, user_id, new_number, user_name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, save_user_items(items_dict),
-            last_command, last_command_target, last_command_use_time,
-            fat_cooldown_time, None, None, daily_case_last_time, cases_dict,
-            snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id,
+            number=new_number,
+            user_name=user_name,
+            item_counts=save_user_items(items_dict),
+            cases_dict=data.get('cases_dict')
         )
         
         embed = discord.Embed(
@@ -2979,123 +2876,6 @@ async def ascension_command(ctx):
     embed.set_footer(text="💪 Продолжайте набирать массу!")
     await ctx.send(embed=embed)
 
-def generate_shop_items():
-    """Генерирует новый набор предметов для магазина (10 слотов: 6 предметов + 4 кейса)"""
-    slots = []
-    used_indices = set()
-    
-    # 4 слота под кейсы, 6 под предметы
-    case_slots = 4
-    item_slots = 6
-    
-    # Генерируем кейсы (4 слота)
-    available_cases = [cid for cid, case in CASES.items() if cid != "daily" and case.get("shop_chance", 0) > 0]
-    
-    for _ in range(case_slots):
-        if random.random() < 0.7 and available_cases:  # 70% шанс что слот будет с кейсом
-            case_choices = []
-            for cid in available_cases:
-                case = CASES[cid]
-                weight = case["shop_chance"] * 100
-                case_choices.extend([cid] * int(weight))
-            
-            if case_choices:
-                chosen_id = random.choice(case_choices)
-                case = CASES[chosen_id]
-                amount = random.randint(case["min_shop"], case["max_shop"])
-                
-                min_prize = 0
-                max_prize = 0
-                for p in case["prizes"]:
-                    if isinstance(p["value"], int):
-                        if p["value"] < min_prize:
-                            min_prize = p["value"]
-                        if p["value"] > max_prize:
-                            max_prize = p["value"]
-                
-                slots.append({
-                    "type": "case",
-                    "case_id": chosen_id,
-                    "name": case["name"],
-                    "amount": amount,
-                    "price": case["price"],
-                    "description": f"{case['emoji']} Содержит случайные призы!\n"
-                                  f"От {min_prize}кг до {max_prize}кг",
-                    "emoji": case['emoji']
-                })
-            else:
-                slots.append(None)
-        else:
-            slots.append(None)
-    
-    # Генерируем обычные предметы (6 слотов)
-    for _ in range(item_slots):
-        chosen_item = None
-        for _ in range(50):
-            item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
-            if item_idx in used_indices:
-                continue
-            
-            item = SHOP_ITEMS[item_idx]
-            if random.random() < item["chance"]:
-                chosen_item = item
-                used_indices.add(item_idx)
-                break
-        
-        if chosen_item:
-            amount = random.randint(chosen_item["min_amount"], chosen_item["max_amount"])
-            slots.append({
-                "type": "item",
-                "name": chosen_item["name"],
-                "amount": amount,
-                "price": chosen_item["price"],
-                "description": chosen_item["description"],
-                "gain_per_24h": chosen_item.get("gain_per_24h", 0)
-            })
-        else:
-            slots.append(None)
-    
-    random.shuffle(slots)
-    return slots
-
-async def ensure_shop_updated(guild_id):
-    """Проверяет и обновляет магазин если нужно"""
-    result = get_shop_data(guild_id)
-    current_time = datetime.now()
-    
-    if result[0] is not None:  # Магазин существует
-        slots, last_update_str, next_update_str = result
-        
-        # Преобразуем строки в datetime
-        last_update = None
-        next_update = None
-        if last_update_str:
-            try:
-                last_update = datetime.fromisoformat(last_update_str) if isinstance(last_update_str, str) else last_update_str
-            except:
-                last_update = None
-        if next_update_str:
-            try:
-                next_update = datetime.fromisoformat(next_update_str) if isinstance(next_update_str, str) else next_update_str
-            except:
-                next_update = None
-        
-        # Проверяем, нужно ли обновить магазин
-        if next_update and current_time >= next_update:
-            new_slots = generate_shop_items()
-            last_update = current_time
-            next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
-            update_shop_data(guild_id, new_slots, last_update, next_update)
-            return new_slots, last_update, next_update
-        else:
-            return slots, last_update, next_update
-    else:
-        # Создаём новый магазин
-        new_slots = generate_shop_items()
-        last_update = current_time
-        next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
-        update_shop_data(guild_id, new_slots, last_update, next_update)
-        return new_slots, last_update, next_update
 
 @bot.command(name='магазин')
 async def shop_command(ctx):
@@ -3107,27 +2887,15 @@ async def shop_command(ctx):
     member = ctx.author
     
     data = get_user_data(guild_id, str(member.id), member.name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _, _, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
     update_user_data(
-        guild_id, str(member.id), current_number, member.name,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        autoburger_count, last_case_time, next_autoburger_time,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, item_counts,
-        "shop", None, datetime.now(), None, None, None, daily_case_last_time, cases_dict,
-        snatcher_last_time, duel_active, duel_opponent, duel_amount,
-        duel_message_id, duel_channel_id, duel_initiator
+        guild_id, str(member.id),
+        last_command="shop",
+        last_command_use_time=datetime.now()
     )
     
     slots, last_update, next_update = await ensure_shop_updated(guild_id)
     
-    # Убеждаемся что slots - это список
     if not isinstance(slots, list):
         slots = []
     
@@ -3142,7 +2910,6 @@ async def shop_command(ctx):
         slot = slots[i-1] if i-1 < len(slots) else None
         
         if slot is not None and isinstance(slot, dict):
-            # Проверяем наличие type, если нет - определяем по наличию case_id
             if "type" not in slot:
                 if "case_id" in slot:
                     slot["type"] = "case"
@@ -3153,7 +2920,7 @@ async def shop_command(ctx):
                 prefix = "📦" if i <= 4 else "🎲"
                 items_text += f"**{i}.** {prefix} {slot.get('emoji', '📦')} {slot.get('name', 'Неизвестный кейс')} — {slot.get('amount', 0)} шт — **{slot.get('price', 0)} кг/шт**\n"
                 items_text += f"   └ {slot.get('description', 'Нет описания')}\n"
-            else:  # type == "item"
+            else:
                 prefix = "🛒" if i > 4 else "🎁"
                 items_text += f"**{i}.** {prefix} {slot.get('name', 'Неизвестный предмет')} — {slot.get('amount', 0)} шт — **{slot.get('price', 0)} кг/шт**\n"
                 items_text += f"   └ {slot.get('description', 'Нет описания')}\n"
@@ -3168,7 +2935,6 @@ async def shop_command(ctx):
     last_update_str = last_update.strftime("%d.%m.%Y %H:%M") if last_update else "Никогда"
     next_update_str = next_update.strftime("%d.%m.%Y %H:%M") if next_update else "Скоро"
     
-    # Статистика заполнения
     case_count = sum(1 for s in slots[:4] if s is not None and isinstance(s, dict))
     item_count = sum(1 for s in slots[4:] if s is not None and isinstance(s, dict))
     
@@ -3183,6 +2949,7 @@ async def shop_command(ctx):
     embed.set_footer(text="💸 Тратьте кг с умом! | 📦 - Кейсы | 🛒 - Предметы")
     
     await ctx.send(embed=embed)
+
 
 @bot.command(name='купить')
 async def buy_command(ctx, slot: int, amount: int = 1):
@@ -3204,41 +2971,22 @@ async def buy_command(ctx, slot: int, amount: int = 1):
         return
     
     data = get_user_data(guild_id, user_id, member.name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, 
-     last_command_use_time_str, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    last_command_use_time = None
-    if last_command_use_time_str:
+    last_command_use_time = data.get('last_command_use_time')
+    if last_command_use_time and isinstance(last_command_use_time, str):
         try:
-            if isinstance(last_command_use_time_str, str):
-                last_command_use_time = datetime.fromisoformat(last_command_use_time_str)
-            else:
-                last_command_use_time = last_command_use_time_str
+            last_command_use_time = datetime.fromisoformat(last_command_use_time)
         except:
             last_command_use_time = None
     
-    if last_command != "shop" or not last_command_use_time:
+    if data.get('last_command') != "shop" or not last_command_use_time:
         await ctx.send("❌ Сначала используйте `!магазин` для просмотра доступных товаров!")
         return
     
     time_since_shop = datetime.now() - last_command_use_time
     if time_since_shop.total_seconds() > 300:
         await ctx.send("❌ Время ожидания истекло. Используйте `!магазин` заново!")
-        update_user_data(
-            guild_id, user_id, current_number, member.name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, item_counts,
-            None, None, None, fat_cooldown_time, None, None, daily_case_last_time, cases_dict,
-            snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
-        )
+        update_user_data(guild_id, user_id, last_command=None, last_command_use_time=None)
         return
     
     slots, last_update, next_update = await ensure_shop_updated(guild_id)
@@ -3249,7 +2997,6 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     
     item = slots[slot - 1]
     
-    # Убеждаемся что item - словарь и имеет нужные ключи
     if not isinstance(item, dict):
         await ctx.send(f"❌ Ошибка в данных слота {slot}!")
         return
@@ -3263,48 +3010,42 @@ async def buy_command(ctx, slot: int, amount: int = 1):
         return
     
     total_price = item["price"] * amount
-    if current_number < total_price:
-        await ctx.send(f"❌ Недостаточно кг! Нужно: {total_price} кг, у вас: {current_number} кг")
+    if data['current_number'] < total_price:
+        await ctx.send(f"❌ Недостаточно кг! Нужно: {total_price} кг, у вас: {data['current_number']} кг")
         return
     
-    new_number = current_number - total_price
+    new_number = data['current_number'] - total_price
     item["amount"] -= amount
     
+    cases_dict = data.get('cases_dict', {})
+    
     if item.get("type") == "case" or "case_id" in item:
-        # Это кейс
         case_id = item.get("case_id")
         if not case_id:
             await ctx.send(f"❌ Ошибка: не удалось определить тип кейса!")
             return
-            
+        
         cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
         purchase_desc = f"{item.get('emoji', '📦')} {item.get('name', 'Кейс')} x{amount}"
         
         update_user_data(
-            guild_id, user_id, new_number, member.name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, item_counts,
-            None, None, None, fat_cooldown_time, None, None, daily_case_last_time,
-            cases_dict, snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id,
+            number=new_number,
+            cases_dict=cases_dict,
+            last_command=None,
+            last_command_use_time=None
         )
     else:
-        # Обычный предмет
-        items_dict = get_user_items(item_counts)
+        items_dict = get_user_items(data['item_counts'])
         items_dict[item["name"]] = items_dict.get(item["name"], 0) + amount
         purchase_desc = f"{item['name']} x{amount}"
         
         update_user_data(
-            guild_id, user_id, new_number, member.name,
-            consecutive_plus, consecutive_minus, jackpot_pity,
-            autoburger_count, last_case_time, next_autoburger_time,
-            total_activations, total_gain, last_result, last_activation_time,
-            legendary_burger, save_user_items(items_dict),
-            None, None, None, fat_cooldown_time, None, None, daily_case_last_time,
-            cases_dict, snatcher_last_time, duel_active, duel_opponent, duel_amount,
-            duel_message_id, duel_channel_id, duel_initiator
+            guild_id, user_id,
+            number=new_number,
+            item_counts=save_user_items(items_dict),
+            last_command=None,
+            last_command_use_time=None
         )
     
     update_shop_data(guild_id, slots, last_update, next_update)
@@ -3324,7 +3065,7 @@ async def buy_command(ctx, slot: int, amount: int = 1):
         if not clean_name or len(clean_name) > 30:
             clean_name = member.name
         
-        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+        new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
         if len(new_nick) > 32:
             new_nick = new_nick[:32]
         
@@ -3344,336 +3085,6 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     
     await ctx.send(embed=embed)
 
-@bot.command(name='датьжир')
-async def give_fat(ctx, target: discord.Member, amount: int):
-    """Передаёт указанное количество кг другому пользователю"""
-    if amount <= 0:
-        await ctx.send("❌ Количество должно быть больше 0!")
-        return
-    
-    guild_id = ctx.guild.id
-    giver = ctx.author
-    giver_id = str(giver.id)
-    giver_name = giver.name
-    target_id = str(target.id)
-    target_name = target.name
-    
-    if giver_id == target_id:
-        await ctx.send("❌ Нельзя передавать кг самому себе!")
-        return
-    
-    giver_data = get_user_data(guild_id, giver_id, giver_name)
-    (giver_number, giver_last_time, giver_plus, giver_minus, giver_jackpot,
-     giver_burgers, giver_case_time, giver_next_burger,
-     giver_acts, giver_gain, giver_last_res, giver_last_time,
-     giver_legendary, giver_items, _, _, _, giver_fat_cooldown, _, _, giver_daily, giver_snatcher,
-     giver_duel_active, giver_duel_opponent, giver_duel_amount, giver_duel_message_id,
-     giver_duel_channel_id, giver_duel_initiator, giver_cases) = giver_data
-    
-    target_data = get_user_data(guild_id, target_id, target_name)
-    (target_number, target_last_time, target_plus, target_minus, target_jackpot,
-     target_burgers, target_case_time, target_next_burger,
-     target_acts, target_gain, target_last_res, target_last_time,
-     target_legendary, target_items, _, _, _, target_fat_cooldown, _, _, target_daily, target_snatcher,
-     target_duel_active, target_duel_opponent, target_duel_amount, target_duel_message_id,
-     target_duel_channel_id, target_duel_initiator, target_cases) = target_data
-    
-    if giver_number < amount:
-        await ctx.send(f"❌ У вас недостаточно кг! Есть: {giver_number} кг, нужно: {amount} кг")
-        return
-    
-    new_giver_number = giver_number - amount
-    new_target_number = target_number + amount
-    
-    update_user_data(guild_id, giver_id, new_giver_number, giver_name,
-                    giver_plus, giver_minus, giver_jackpot, giver_burgers,
-                    giver_case_time, giver_next_burger,
-                    giver_acts, giver_gain, giver_last_res, giver_last_time,
-                    giver_legendary, giver_items, None, None, None, giver_fat_cooldown,
-                    None, None, giver_daily, giver_cases, giver_snatcher,
-                    giver_duel_active, giver_duel_opponent, giver_duel_amount,
-                    giver_duel_message_id, giver_duel_channel_id, giver_duel_initiator)
-    
-    update_user_data(guild_id, target_id, new_target_number, target_name,
-                    target_plus, target_minus, target_jackpot, target_burgers,
-                    target_case_time, target_next_burger,
-                    target_acts, target_gain, target_last_res, target_last_time,
-                    target_legendary, target_items, None, None, None, target_fat_cooldown,
-                    None, None, target_daily, target_cases, target_snatcher,
-                    target_duel_active, target_duel_opponent, target_duel_amount,
-                    target_duel_message_id, target_duel_channel_id, target_duel_initiator)
-    
-    try:
-        display_name = giver.display_name
-        clean_name = display_name
-        if "kg" in display_name:
-            parts = display_name.split("kg", 1)
-            if len(parts) > 1:
-                clean_name = parts[1].strip()
-                if not clean_name:
-                    clean_name = giver_name
-        else:
-            clean_name = display_name
-        if not clean_name or len(clean_name) > 30:
-            clean_name = giver_name
-        new_nick = format_nick_with_icon(new_giver_number, clean_name, giver_legendary)
-        if len(new_nick) > 32:
-            new_nick = new_nick[:32]
-        await giver.edit(nick=new_nick)
-    except:
-        pass
-    
-    try:
-        display_name = target.display_name
-        clean_name = display_name
-        if "kg" in display_name:
-            parts = display_name.split("kg", 1)
-            if len(parts) > 1:
-                clean_name = parts[1].strip()
-                if not clean_name:
-                    clean_name = target_name
-        else:
-            clean_name = display_name
-        if not clean_name or len(clean_name) > 30:
-            clean_name = target_name
-        new_nick = format_nick_with_icon(new_target_number, clean_name, target_legendary)
-        if len(new_nick) > 32:
-            new_nick = new_nick[:32]
-        await target.edit(nick=new_nick)
-    except:
-        pass
-    
-    giver_rank, giver_rank_emoji = get_rank(new_giver_number)
-    target_rank, target_rank_emoji = get_rank(new_target_number)
-    
-    embed = discord.Embed(
-        title="⚖️ Перевод жира",
-        description=f"**{giver.mention}** передал кг **{target.mention}**!",
-        color=0xffaa00
-    )
-    
-    embed.add_field(name="📤 Отправитель", 
-                   value=f"{giver.mention}\nБыло: {giver_number}kg\nСтало: {new_giver_number}kg\n{giver_rank_emoji} {giver_rank}", 
-                   inline=True)
-    
-    embed.add_field(name="📥 Получатель", 
-                   value=f"{target.mention}\nБыло: {target_number}kg\nСтало: {new_target_number}kg\n{target_rank_emoji} {target_rank}", 
-                   inline=True)
-    
-    embed.add_field(name="📦 Количество", value=f"{amount} кг", inline=True)
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name='датьпредмет')
-async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str):
-    """
-    Передаёт предметы другому пользователю
-    Использование: !датьпредмет @пользователь количество "название предмета"
-    """
-    if amount <= 0:
-        await ctx.send("❌ Количество должно быть больше 0!")
-        return
-    
-    guild_id = ctx.guild.id
-    giver = ctx.author
-    giver_id = str(giver.id)
-    giver_name = giver.name
-    target_id = str(target.id)
-    target_name = target.name
-    
-    if giver_id == target_id:
-        await ctx.send("❌ Нельзя передавать предметы самому себе!")
-        return
-    
-    giver_data = get_user_data(guild_id, giver_id, giver_name)
-    (giver_number, giver_last_time, giver_plus, giver_minus, giver_jackpot,
-     giver_burgers, giver_case_time, giver_next_burger,
-     giver_acts, giver_gain, giver_last_res, giver_last_time,
-     giver_legendary, giver_items_str, _, _, _, giver_fat_cooldown, _, _, giver_daily, giver_snatcher,
-     giver_duel_active, giver_duel_opponent, giver_duel_amount, giver_duel_message_id,
-     giver_duel_channel_id, giver_duel_initiator, giver_cases) = giver_data
-    
-    target_data = get_user_data(guild_id, target_id, target_name)
-    (target_number, target_last_time, target_plus, target_minus, target_jackpot,
-     target_burgers, target_case_time, target_next_burger,
-     target_acts, target_gain, target_last_res, target_last_time,
-     target_legendary, target_items_str, _, _, _, target_fat_cooldown, _, _, target_daily, target_snatcher,
-     target_duel_active, target_duel_opponent, target_duel_amount, target_duel_message_id,
-     target_duel_channel_id, target_duel_initiator, target_cases) = target_data
-    
-    item_lower = item_name.lower()
-    
-    for case_id, case in CASES.items():
-        if case_id != "daily" and case["name"].lower() in item_lower:
-            if not case["tradable"]:
-                await ctx.send(f"❌ Кейс '{case['name']}' нельзя передавать!")
-                return
-            
-            if giver_cases.get(case_id, 0) < amount:
-                await ctx.send(f"❌ У вас недостаточно кейсов '{case['name']}'! Есть: {giver_cases.get(case_id, 0)}, нужно: {amount}")
-                return
-            
-            giver_cases[case_id] = giver_cases.get(case_id, 0) - amount
-            target_cases[case_id] = target_cases.get(case_id, 0) + amount
-            
-            update_user_data(guild_id, giver_id, giver_number, giver_name,
-                            giver_plus, giver_minus, giver_jackpot, giver_burgers,
-                            giver_case_time, giver_next_burger,
-                            giver_acts, giver_gain, giver_last_res, giver_last_time,
-                            giver_legendary, giver_items_str, None, None, None,
-                            giver_fat_cooldown, None, None, giver_daily, giver_cases, giver_snatcher,
-                            giver_duel_active, giver_duel_opponent, giver_duel_amount,
-                            giver_duel_message_id, giver_duel_channel_id, giver_duel_initiator)
-            
-            update_user_data(guild_id, target_id, target_number, target_name,
-                            target_plus, target_minus, target_jackpot, target_burgers,
-                            target_case_time, target_next_burger,
-                            target_acts, target_gain, target_last_res, target_last_time,
-                            target_legendary, target_items_str, None, None, None,
-                            target_fat_cooldown, None, None, target_daily, target_cases, target_snatcher,
-                            target_duel_active, target_duel_opponent, target_duel_amount,
-                            target_duel_message_id, target_duel_channel_id, target_duel_initiator)
-            
-            embed = discord.Embed(
-                title=f"{case['emoji']} Передача кейса",
-                description=f"**{giver.mention}** передал кейс **{target.mention}**!",
-                color=0xffaa00
-            )
-            
-            embed.add_field(name="📦 Кейс", value=f"{case['name']} x{amount}", inline=True)
-            embed.add_field(name="📤 У вас осталось", value=f"{giver_cases.get(case_id, 0)} шт", inline=True)
-            embed.add_field(name="📥 У получателя", value=f"{target_cases.get(case_id, 0)} шт", inline=True)
-            
-            await ctx.send(embed=embed)
-            return
-    
-    is_autoburger = any(word in item_lower for word in ["автобургер", "бургер", "autoburger"])
-    
-    if is_autoburger:
-        if giver_burgers < amount:
-            await ctx.send(f"❌ У вас недостаточно автобургеров! Есть: {giver_burgers}, нужно: {amount}")
-            return
-        
-        new_giver_burgers = giver_burgers - amount
-        new_target_burgers = target_burgers + amount
-        
-        new_target_next_burger = None
-        if new_target_burgers > 0:
-            interval = get_autoburger_interval(new_target_burgers)
-            if interval:
-                new_target_next_burger = datetime.now() + timedelta(hours=interval)
-        
-        update_user_data(
-            guild_id, giver_id, giver_number, giver_name,
-            giver_plus, giver_minus, giver_jackpot, new_giver_burgers,
-            giver_case_time, giver_next_burger,
-            giver_acts, giver_gain, giver_last_res, giver_last_time,
-            giver_legendary, giver_items_str,
-            None, None, None, giver_fat_cooldown, None, None, giver_daily, giver_cases, giver_snatcher,
-            giver_duel_active, giver_duel_opponent, giver_duel_amount,
-            giver_duel_message_id, giver_duel_channel_id, giver_duel_initiator
-        )
-        
-        update_user_data(
-            guild_id, target_id, target_number, target_name,
-            target_plus, target_minus, target_jackpot, new_target_burgers,
-            target_case_time, new_target_next_burger,
-            target_acts, target_gain, target_last_res, target_last_time,
-            target_legendary, target_items_str,
-            None, None, None, target_fat_cooldown, None, None, target_daily, target_cases, target_snatcher,
-            target_duel_active, target_duel_opponent, target_duel_amount,
-            target_duel_message_id, target_duel_channel_id, target_duel_initiator
-        )
-        
-        embed = discord.Embed(
-            title="🍔 Передача автобургера",
-            description=f"**{giver.mention}** передал автобургер **{target.mention}**!",
-            color=0xffaa00
-        )
-        
-        embed.add_field(name="📦 Количество", value=f"{amount} шт", inline=True)
-        embed.add_field(name="📤 У вас осталось", value=f"{new_giver_burgers} 🍔", inline=True)
-        embed.add_field(name="📥 У получателя", value=f"{new_target_burgers} 🍔", inline=True)
-        
-        await ctx.send(embed=embed)
-        return
-    
-    giver_items = get_user_items(giver_items_str)
-    target_items = get_user_items(target_items_str)
-    
-    item_name = item_name.strip()
-    
-    found_item = None
-    for key in giver_items.keys():
-        if key.lower() == item_name.lower():
-            found_item = key
-            break
-    
-    if not found_item:
-        available_items = list(giver_items.keys())
-        if available_items:
-            items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
-            await ctx.send(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
-        else:
-            await ctx.send("❌ У вас нет предметов в инвентаре!")
-        return
-    
-    if giver_items[found_item] < amount:
-        await ctx.send(f"❌ У вас недостаточно '{found_item}'! Есть: {giver_items[found_item]}, нужно: {amount}")
-        return
-    
-    legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
-    if found_item in legendary_burger_names:
-        await ctx.send(f"❌ Легендарные бургеры нельзя передавать!")
-        return
-    
-    giver_items[found_item] -= amount
-    if giver_items[found_item] <= 0:
-        del giver_items[found_item]
-    
-    target_items[found_item] = target_items.get(found_item, 0) + amount
-    
-    update_user_data(
-        guild_id, giver_id, giver_number, giver_name,
-        giver_plus, giver_minus, giver_jackpot, giver_burgers,
-        giver_case_time, giver_next_burger,
-        giver_acts, giver_gain, giver_last_res, giver_last_time,
-        giver_legendary, save_user_items(giver_items),
-        None, None, None, giver_fat_cooldown, None, None, giver_daily, giver_cases, giver_snatcher,
-        giver_duel_active, giver_duel_opponent, giver_duel_amount,
-        giver_duel_message_id, giver_duel_channel_id, giver_duel_initiator
-    )
-    
-    update_user_data(
-        guild_id, target_id, target_number, target_name,
-        target_plus, target_minus, target_jackpot, target_burgers,
-        target_case_time, target_next_burger,
-        target_acts, target_gain, target_last_res, target_last_time,
-        target_legendary, save_user_items(target_items),
-        None, None, None, target_fat_cooldown, None, None, target_daily, target_cases, target_snatcher,
-        target_duel_active, target_duel_opponent, target_duel_amount,
-        target_duel_message_id, target_duel_channel_id, target_duel_initiator
-    )
-    
-    embed = discord.Embed(
-        title="🎁 Передача предмета",
-        description=f"**{giver.mention}** передал предмет **{target.mention}**!",
-        color=0xffaa00
-    )
-    
-    embed.add_field(name="📦 Предмет", value=f"**{found_item}** x{amount}", inline=False)
-    
-    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
-    if len(giver_items) > 5:
-        giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
-    embed.add_field(name="📤 Ваш инвентарь", value=giver_inv or "Пусто", inline=True)
-    
-    target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
-    if len(target_items) > 5:
-        target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
-    embed.add_field(name="📥 Инвентарь получателя", value=target_inv or "Пусто", inline=True)
-    
-    await ctx.send(embed=embed)
 
 @bot.command(name='инвентарь')
 async def show_inventory(ctx, member: discord.Member = None):
@@ -3683,28 +3094,23 @@ async def show_inventory(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _, _, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
     embed = discord.Embed(
         title=f"🎒 Инвентарь - {target.display_name}",
         color=0x3498db
     )
     
-    embed.add_field(name="🍔 Автобургеры", value=str(autoburger_count), inline=True)
-    embed.add_field(name="⚡ Срабатываний", value=str(total_activations), inline=True)
-    embed.add_field(name="📈 Всего набрано", value=f"{total_gain} кг", inline=True)
+    embed.add_field(name="🍔 Автобургеры", value=str(data['autoburger_count']), inline=True)
+    embed.add_field(name="⚡ Срабатываний", value=str(data['total_autoburger_activations']), inline=True)
+    embed.add_field(name="📈 Всего набрано", value=f"{data['total_autoburger_gain']} кг", inline=True)
     
-    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-        burger = BURGER_RANKS[legendary_burger]
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        burger = BURGER_RANKS[data['legendary_burger']]
         embed.add_field(name=f"{burger['emoji']} Легендарный бургер", 
                        value=f"**{burger['name']}**\nМножитель: x{burger['multiplier']}", 
                        inline=False)
     
+    cases_dict = data.get('cases_dict', {})
     cases_text = ""
     for case_id, count in cases_dict.items():
         if count > 0:
@@ -3713,7 +3119,7 @@ async def show_inventory(ctx, member: discord.Member = None):
     if cases_text:
         embed.add_field(name="📦 Кейсы", value=cases_text, inline=False)
     
-    items_dict = get_user_items(item_counts)
+    items_dict = get_user_items(data['item_counts'])
     if items_dict:
         items_text = ""
         regular_items = []
@@ -3737,19 +3143,18 @@ async def show_inventory(ctx, member: discord.Member = None):
         
         embed.add_field(name="📦 Предметы", value=items_text, inline=False)
     
-    if autoburger_count > 0:
-        interval = get_autoburger_interval(autoburger_count)
-        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+    if data['autoburger_count'] > 0:
+        interval = get_autoburger_interval(data['autoburger_count'])
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * data['autoburger_count'])) * 100
         embed.add_field(name="⚡ Текущий бонус", 
                        value=f"+{current_boost:.1f}% к плюсу (каждые {interval} ч)", 
                        inline=True)
         
-        if next_autoburger_time:
+        if data.get('next_autoburger_time'):
             try:
-                if isinstance(next_autoburger_time, str):
-                    next_time = datetime.fromisoformat(next_autoburger_time)
-                else:
-                    next_time = next_autoburger_time
+                next_time = data['next_autoburger_time']
+                if isinstance(next_time, str):
+                    next_time = datetime.fromisoformat(next_time)
                 time_diff = next_time - datetime.now()
                 if time_diff.total_seconds() > 0:
                     embed.add_field(name="⏰ Следующий автобургер", 
@@ -3758,12 +3163,11 @@ async def show_inventory(ctx, member: discord.Member = None):
             except:
                 pass
     
-    if snatcher_last_time:
+    if data.get('snatcher_last_time'):
         try:
-            if isinstance(snatcher_last_time, str):
-                last_snatch = datetime.fromisoformat(snatcher_last_time)
-            else:
-                last_snatch = snatcher_last_time
+            last_snatch = data['snatcher_last_time']
+            if isinstance(last_snatch, str):
+                last_snatch = datetime.fromisoformat(last_snatch)
             time_diff = datetime.now() - last_snatch
             next_snatch = 6 * 3600 - time_diff.total_seconds()
             if next_snatch > 0:
@@ -3775,6 +3179,7 @@ async def show_inventory(ctx, member: discord.Member = None):
     
     embed.set_footer(text="💪 Жир, кейсы и предметы!")
     await ctx.send(embed=embed)
+
 
 @bot.command(name='жир_звания')
 async def show_ranks(ctx):
@@ -3796,6 +3201,7 @@ async def show_ranks(ctx):
     embed.add_field(name="Доступные звания", value=ranks_text, inline=False)
     await ctx.send(embed=embed)
 
+
 @bot.command(name='жир_сброс')
 async def fat_reset(ctx, member: discord.Member = None):
     """Сброс веса (только админы)"""
@@ -3808,13 +3214,22 @@ async def fat_reset(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    update_user_data(guild_id, user_id, 0, target.name, 0, 0, 0, 0, None, None, 0, 0, None, None, -1, '{}', 
-                    None, None, None, None, None, None, daily_case_last_time, cases_dict, snatcher_last_time,
-                    duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id, duel_initiator)
+    update_user_data(
+        guild_id, user_id,
+        number=0,
+        consecutive_plus=0,
+        consecutive_minus=0,
+        jackpot_pity=0,
+        autoburger_count=0,
+        total_autoburger_activations=0,
+        total_autoburger_gain=0,
+        last_autoburger_result=None,
+        last_autoburger_time=None,
+        legendary_burger=-1,
+        item_counts='{}',
+        cases_dict=data.get('cases_dict')  # Сохраняем кейсы
+    )
     
     try:
         new_nick = f"0kg {target.name}"
@@ -3822,6 +3237,7 @@ async def fat_reset(ctx, member: discord.Member = None):
         await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg")
     except:
         await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg (ник не изменён)")
+
 
 @bot.command(name='сброскд')
 async def reset_cooldowns(ctx):
@@ -3878,6 +3294,7 @@ async def reset_cooldowns(ctx):
     
     await ctx.send(embed=embed)
 
+
 @bot.command(name='сбросвсех')
 async def reset_all_users_weight(ctx):
     """Глобальный сброс веса (только тестеры)"""
@@ -3907,6 +3324,7 @@ async def reset_all_users_weight(ctx):
     embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
     await ctx.send(embed=embed)
 
+
 @bot.command(name='жир_кулдаун')
 async def cooldown_info(ctx):
     """Информация о кулдаунах"""
@@ -3915,35 +3333,29 @@ async def cooldown_info(ctx):
     user_id = str(member.id)
     
     data = get_user_data(guild_id, user_id, member.name)
-    (number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
     actual_fat_cooldown = COOLDOWN_HOURS
     actual_case_cooldown = CASE_COOLDOWN_HOURS
-    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-        actual_fat_cooldown = BURGER_RANKS[legendary_burger]["fat_cooldown"] / 60
-        actual_case_cooldown = BURGER_RANKS[legendary_burger]["case_cooldown"]
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        actual_fat_cooldown = BURGER_RANKS[data['legendary_burger']]["fat_cooldown"] / 60
+        actual_case_cooldown = BURGER_RANKS[data['legendary_burger']]["case_cooldown"]
     
-    items_dict = get_user_items(item_counts)
+    items_dict = get_user_items(data['item_counts'])
     for item_name, count in items_dict.items():
-        if "Яблоко" in item_name and "Золотое" not in item_name:
+        if item_name == "Яблоко":
             actual_fat_cooldown *= (1 - count * 0.05)
-        elif "Золотое Яблоко" in item_name:
+        elif item_name == "Золотое Яблоко":
             actual_fat_cooldown *= (1 - count * 0.10)
-        elif "Апельсин" in item_name and "Золотой" not in item_name:
+        elif item_name == "Апельсин":
             actual_case_cooldown *= (1 - count * 0.05)
-        elif "Золотой Апельсин" in item_name:
+        elif item_name == "Золотой Апельсин":
             actual_case_cooldown *= (1 - count * 0.10)
     
     actual_fat_cooldown = max(0.1, actual_fat_cooldown)
     actual_case_cooldown = max(0.1, actual_case_cooldown)
     
-    fat_can_use, fat_remaining = check_cooldown(fat_cooldown_time, actual_fat_cooldown)
-    case_can_use, case_remaining = check_cooldown(last_case_time, actual_case_cooldown)
+    fat_can_use, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
+    case_can_use, case_remaining = check_cooldown(data['last_case_time'], actual_case_cooldown)
     
     embed = discord.Embed(
         title=f"⏰ Кулдауны на сервере {ctx.guild.name}",
@@ -3965,19 +3377,19 @@ async def cooldown_info(ctx):
     
     embed.add_field(name="!жиркейс", value=f"Кулдаун: {actual_case_cooldown:.1f} ч\nСтатус: {case_status}", inline=True)
     
-    embed.add_field(name="Текущий вес", value=f"{number}kg", inline=True)
+    embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
     
     pity_emojis = []
-    if consecutive_plus > 0:
-        pity_emojis.append(f"🔥{consecutive_plus}")
-    if consecutive_minus > 0:
-        pity_emojis.append(f"❄️{consecutive_minus}")
-    if jackpot_pity > 0:
-        pity_emojis.append(f"💰{jackpot_pity}")
-    if autoburger_count > 0:
-        pity_emojis.append(f"🍔{autoburger_count}")
-    if legendary_burger >= 0:
-        pity_emojis.append(BURGER_RANKS[legendary_burger]["emoji"])
+    if data['consecutive_plus'] > 0:
+        pity_emojis.append(f"🔥{data['consecutive_plus']}")
+    if data['consecutive_minus'] > 0:
+        pity_emojis.append(f"❄️{data['consecutive_minus']}")
+    if data['jackpot_pity'] > 0:
+        pity_emojis.append(f"💰{data['jackpot_pity']}")
+    if data['autoburger_count'] > 0:
+        pity_emojis.append(f"🍔{data['autoburger_count']}")
+    if data['legendary_burger'] >= 0:
+        pity_emojis.append(BURGER_RANKS[data['legendary_burger']]["emoji"])
     
     if pity_emojis:
         embed.add_field(name="Счётчики", value=" ".join(pity_emojis), inline=True)
@@ -3985,12 +3397,11 @@ async def cooldown_info(ctx):
     if has_tester_role(ctx.author):
         embed.add_field(name="Роль", value="🎭 Тестер", inline=True)
     
-    if next_autoburger_time:
+    if data.get('next_autoburger_time'):
         try:
-            if isinstance(next_autoburger_time, str):
-                next_time = datetime.fromisoformat(next_autoburger_time)
-            else:
-                next_time = next_autoburger_time
+            next_time = data['next_autoburger_time']
+            if isinstance(next_time, str):
+                next_time = datetime.fromisoformat(next_time)
             time_diff = next_time - datetime.now()
             if time_diff.total_seconds() > 0:
                 embed.add_field(name="🍔 След. автобургер", 
@@ -4000,6 +3411,7 @@ async def cooldown_info(ctx):
             pass
     
     await ctx.send(embed=embed)
+
 
 @bot.command(name='жир_серверы')
 async def list_guilds(ctx):
@@ -4030,6 +3442,7 @@ async def list_guilds(ctx):
         )
     
     await ctx.send(embed=embed)
+
 
 @bot.command(name='жирхелп')
 async def fat_help(ctx):
@@ -4063,7 +3476,8 @@ async def fat_help(ctx):
         `!дуэль @user [кг/"все"]` - вызвать на дуэль
         • Шанс 50/50
         • Победитель забирает ставку
-        • 15 сек на принятие
+        • Оба должны нажать ✅
+        • 30 сек на принятие
         • Анимированная битва!
         
         **Примеры:**
@@ -4160,9 +3574,16 @@ async def fat_help(ctx):
         inline=True
     )
     
-    embed.set_footer(text="🔥❄️💰🍔⚡👾 - следите за показателями! | Версия 6.0")
+    embed.set_footer(text="🔥❄️💰🍔⚡👾 - следите за показателями! | Версия 7.0")
     
-    await ctx.send(embed=embed)
+    try:
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        try:
+            await ctx.author.send("❌ У бота нет прав на отправку сообщений в этом канале. Вот справка в личку:", embed=embed)
+        except:
+            pass
+
 
 @bot.command(name='автобургер')
 async def give_autoburger(ctx, количество: int = 1):
@@ -4185,15 +3606,8 @@ async def give_autoburger(ctx, количество: int = 1):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, 
-     last_command_use_time, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    new_autoburger_count = autoburger_count + количество
+    new_autoburger_count = data['autoburger_count'] + количество
     
     interval = get_autoburger_interval(new_autoburger_count)
     if interval:
@@ -4202,14 +3616,10 @@ async def give_autoburger(ctx, количество: int = 1):
         new_next_autoburger_time = None
     
     update_user_data(
-        guild_id, user_id, current_number, user_name,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        new_autoburger_count, last_case_time, new_next_autoburger_time,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, item_counts,
-        last_command, last_command_target, last_command_use_time, fat_cooldown_time,
-        None, None, daily_case_last_time, cases_dict, snatcher_last_time,
-        duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id, duel_initiator
+        guild_id, user_id,
+        autoburger_count=new_autoburger_count,
+        next_autoburger_time=new_next_autoburger_time,
+        cases_dict=data.get('cases_dict')
     )
     
     embed = discord.Embed(
@@ -4231,6 +3641,7 @@ async def give_autoburger(ctx, количество: int = 1):
     embed.set_footer(text="✨ Удачи в наборе массы!")
     await ctx.send(embed=embed)
 
+
 @bot.command(name='автобургер_сброс')
 async def reset_autoburger(ctx, member: discord.Member = None):
     """Сбрасывает количество автобургеров у пользователя (только для тестеров)"""
@@ -4243,27 +3654,16 @@ async def reset_autoburger(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, last_command, last_command_target, 
-     last_command_use_time, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
-    if autoburger_count == 0:
+    if data['autoburger_count'] == 0:
         await ctx.send(f"ℹ️ У {target.mention} нет автобургеров!")
         return
     
     update_user_data(
-        guild_id, user_id, current_number, target.name,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        0, last_case_time, None,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, item_counts,
-        last_command, last_command_target, last_command_use_time, fat_cooldown_time,
-        None, None, daily_case_last_time, cases_dict, snatcher_last_time,
-        duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id, duel_initiator
+        guild_id, user_id,
+        autoburger_count=0,
+        next_autoburger_time=None,
+        cases_dict=data.get('cases_dict')
     )
     
     embed = discord.Embed(
@@ -4271,9 +3671,10 @@ async def reset_autoburger(ctx, member: discord.Member = None):
         description=f"**{ctx.author.name}** сбросил автобургеры у {target.mention}",
         color=0xff5500
     )
-    embed.add_field(name="Было", value=f"{autoburger_count} 🍔", inline=True)
+    embed.add_field(name="Было", value=f"{data['autoburger_count']} 🍔", inline=True)
     embed.add_field(name="Стало", value="0 🍔", inline=True)
     await ctx.send(embed=embed)
+
 
 @bot.command(name='автобургер_инфо')
 async def autoburger_info(ctx, member: discord.Member = None):
@@ -4287,12 +3688,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts, _, _, _, _, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
     
     embed = discord.Embed(
         title=f"🍔 Информация об автобургерах",
@@ -4300,26 +3695,25 @@ async def autoburger_info(ctx, member: discord.Member = None):
         color=0x3498db
     )
     
-    embed.add_field(name="Количество", value=f"{autoburger_count} 🍔", inline=True)
-    embed.add_field(name="Срабатываний", value=str(total_activations), inline=True)
-    embed.add_field(name="Всего набрано", value=f"{total_gain} кг", inline=True)
+    embed.add_field(name="Количество", value=f"{data['autoburger_count']} 🍔", inline=True)
+    embed.add_field(name="Срабатываний", value=str(data['total_autoburger_activations']), inline=True)
+    embed.add_field(name="Всего набрано", value=f"{data['total_autoburger_gain']} кг", inline=True)
     
-    if total_activations > 0:
-        avg_gain = total_gain / total_activations
+    if data['total_autoburger_activations'] > 0:
+        avg_gain = data['total_autoburger_gain'] / data['total_autoburger_activations']
         embed.add_field(name="Средний прирост", value=f"{avg_gain:.1f} кг", inline=True)
     
-    if autoburger_count > 0:
-        interval = get_autoburger_interval(autoburger_count)
-        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count)) * 100
+    if data['autoburger_count'] > 0:
+        interval = get_autoburger_interval(data['autoburger_count'])
+        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * data['autoburger_count'])) * 100
         embed.add_field(name="Интервал", value=f"каждые {interval} ч", inline=True)
         embed.add_field(name="Бонус к плюсу", value=f"+{current_boost:.1f}%", inline=True)
         
-        if next_autoburger_time:
+        if data.get('next_autoburger_time'):
             try:
-                if isinstance(next_autoburger_time, str):
-                    next_time = datetime.fromisoformat(next_autoburger_time)
-                else:
-                    next_time = next_autoburger_time
+                next_time = data['next_autoburger_time']
+                if isinstance(next_time, str):
+                    next_time = datetime.fromisoformat(next_time)
                 time_diff = next_time - datetime.now()
                 if time_diff.total_seconds() > 0:
                     embed.add_field(name="⏰ Следующий", 
@@ -4328,21 +3722,21 @@ async def autoburger_info(ctx, member: discord.Member = None):
             except:
                 pass
     
-    if last_result and last_activation_time:
+    if data['last_autoburger_result'] and data['last_autoburger_time']:
         try:
-            if isinstance(last_activation_time, str):
-                last_time = datetime.fromisoformat(last_activation_time)
-            else:
-                last_time = last_activation_time
+            last_time = data['last_autoburger_time']
+            if isinstance(last_time, str):
+                last_time = datetime.fromisoformat(last_time)
             time_diff = datetime.now() - last_time
             hours = time_diff.total_seconds() / 3600
             embed.add_field(name="🕒 Последний результат", 
-                           value=f"{last_result} ({hours:.1f} ч назад)", 
+                           value=f"{data['last_autoburger_result']} ({hours:.1f} ч назад)", 
                            inline=False)
         except:
             pass
     
     await ctx.send(embed=embed)
+
 
 @bot.command(name='выдатьпредмет')
 async def give_shop_item(ctx, amount: int, *, item_name: str):
@@ -4369,29 +3763,17 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
-    (current_number, last_time, consecutive_plus, consecutive_minus, jackpot_pity,
-     autoburger_count, last_case_time, next_autoburger_time,
-     total_activations, total_gain, last_result, last_activation_time,
-     legendary_burger, item_counts_str, last_command, last_command_target, 
-     last_command_use_time, fat_cooldown_time, _, _, daily_case_last_time, snatcher_last_time,
-     duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id,
-     duel_initiator, cases_dict) = data
-    
     item_name = item_name.strip()
     
+    # Проверяем, не кейс ли это
     for case_id, case in CASES.items():
         if case_id != "daily" and case["name"].lower() == item_name.lower():
+            cases_dict = data.get('cases_dict', {})
             cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
             
             update_user_data(
-                guild_id, user_id, current_number, user_name,
-                consecutive_plus, consecutive_minus, jackpot_pity,
-                autoburger_count, last_case_time, next_autoburger_time,
-                total_activations, total_gain, last_result, last_activation_time,
-                legendary_burger, item_counts_str,
-                last_command, last_command_target, last_command_use_time, fat_cooldown_time,
-                None, None, daily_case_last_time, cases_dict, snatcher_last_time,
-                duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id, duel_initiator
+                guild_id, user_id,
+                cases_dict=cases_dict
             )
             
             embed = discord.Embed(
@@ -4404,6 +3786,7 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
             await ctx.send(embed=embed)
             return
     
+    # Проверяем обычные предметы
     found_item = None
     for shop_item in SHOP_ITEMS:
         if shop_item["name"].lower() == item_name.lower():
@@ -4417,18 +3800,13 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
         await ctx.send(f"❌ Предмет '{item_name}' не найден в магазине!\n\n📦 **Доступные предметы:**\n{items_list}")
         return
     
-    items_dict = get_user_items(item_counts_str)
+    items_dict = get_user_items(data['item_counts'])
     items_dict[found_item["name"]] = items_dict.get(found_item["name"], 0) + amount
     
     update_user_data(
-        guild_id, user_id, current_number, user_name,
-        consecutive_plus, consecutive_minus, jackpot_pity,
-        autoburger_count, last_case_time, next_autoburger_time,
-        total_activations, total_gain, last_result, last_activation_time,
-        legendary_burger, save_user_items(items_dict),
-        last_command, last_command_target, last_command_use_time, fat_cooldown_time,
-        None, None, daily_case_last_time, cases_dict, snatcher_last_time,
-        duel_active, duel_opponent, duel_amount, duel_message_id, duel_channel_id, duel_initiator
+        guild_id, user_id,
+        item_counts=save_user_items(items_dict),
+        cases_dict=data.get('cases_dict')
     )
     
     embed = discord.Embed(
@@ -4448,6 +3826,7 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     embed.set_footer(text="✨ Только для высших тестеров!")
     
     await ctx.send(embed=embed)
+
 
 @bot.command(name='жирглобал')
 async def global_leaderboard(ctx):
@@ -4550,6 +3929,7 @@ async def global_leaderboard(ctx):
     
     await ctx.send(embed=embed)
 
+
 @bot.command(name='дуэль')
 async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     """
@@ -4563,7 +3943,6 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     challenger_id = str(challenger.id)
     opponent_id = str(opponent.id)
     
-    # Проверки
     if challenger_id == opponent_id:
         await ctx.send("❌ Нельзя вызвать на дуэль самого себя!")
         return
@@ -4572,14 +3951,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send("❌ Нельзя вызвать на дуэль бота!")
         return
     
-    # Получаем данные обоих пользователей
     challenger_data = get_user_data(guild_id, challenger_id, challenger.name)
     opponent_data = get_user_data(guild_id, opponent_id, opponent.name)
     
-    challenger_weight = challenger_data[0]
-    opponent_weight = opponent_data[0]
-    
-    # Проверяем, не заняты ли пользователи
     if not can_duel(challenger_data):
         await ctx.send(f"❌ {challenger.mention}, вы уже участвуете в дуэли!")
         return
@@ -4588,10 +3962,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send(f"❌ {opponent.mention} уже участвует в дуэли!")
         return
     
-    # Определяем сумму дуэли
     duel_amount = 0
     if amount is None or amount.lower() == "все":
-        duel_amount = min(challenger_weight, opponent_weight)  # Ставим минимум из двух
+        duel_amount = min(challenger_data['current_number'], opponent_data['current_number'])
         amount_text = f"**всё ({duel_amount}кг)**"
     else:
         try:
@@ -4604,16 +3977,14 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             await ctx.send("❌ Укажите корректное число кг или 'все'!")
             return
     
-    # Проверяем, хватает ли у обоих веса
-    if challenger_weight < duel_amount:
-        await ctx.send(f"❌ У вас недостаточно кг! Есть: {challenger_weight}кг, нужно: {duel_amount}кг")
+    if challenger_data['current_number'] < duel_amount:
+        await ctx.send(f"❌ У вас недостаточно кг! Есть: {challenger_data['current_number']}кг, нужно: {duel_amount}кг")
         return
     
-    if opponent_weight < duel_amount:
-        await ctx.send(f"❌ У {opponent.mention} недостаточно кг! У него: {opponent_weight}кг, нужно: {duel_amount}кг")
+    if opponent_data['current_number'] < duel_amount:
+        await ctx.send(f"❌ У {opponent.mention} недостаточно кг! У него: {opponent_data['current_number']}кг, нужно: {duel_amount}кг")
         return
     
-    # Создаём сообщение с вызовом на дуэль
     embed = discord.Embed(
         title="🔫 **ВЫЗОВ НА ДУЭЛЬ!** 🔫",
         description=f"{challenger.mention} вызывает {opponent.mention} на дуэль!\n\n"
@@ -4628,37 +3999,40 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     await duel_msg.add_reaction("✅")
     await duel_msg.add_reaction("❌")
     
-    # Блокируем обоих пользователей
     update_user_data(
-        guild_id, challenger_id, challenger_weight, challenger.name,
-        duel_active=1, duel_opponent=opponent_id, duel_amount=duel_amount,
-        duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=1
+        guild_id, challenger_id,
+        duel_active=1,
+        duel_opponent=opponent_id,
+        duel_amount=duel_amount,
+        duel_message_id=str(duel_msg.id),
+        duel_channel_id=str(ctx.channel.id),
+        duel_initiator=1
     )
     
     update_user_data(
-        guild_id, opponent_id, opponent_weight, opponent.name,
-        duel_active=1, duel_opponent=challenger_id, duel_amount=duel_amount,
-        duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=0
+        guild_id, opponent_id,
+        duel_active=1,
+        duel_opponent=challenger_id,
+        duel_amount=duel_amount,
+        duel_message_id=str(duel_msg.id),
+        duel_channel_id=str(ctx.channel.id),
+        duel_initiator=0
     )
     
-    # Множество для отслеживания кто принял
     accepted_users = set()
     duel_cancelled = False
     
     def check(reaction, user):
         nonlocal duel_cancelled
-        # Проверяем, что реакция от одного из участников и на нашем сообщении
         if user.id not in [challenger.id, opponent.id]:
             return False
         if reaction.message.id != duel_msg.id:
             return False
         
-        # Если кто-то нажал ❌ - отменяем дуэль
         if str(reaction.emoji) == "❌":
             duel_cancelled = True
             return True
         
-        # Если нажали ✅ - добавляем в принявшие
         if str(reaction.emoji) == "✅":
             return True
         
@@ -4669,15 +4043,11 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
             
             if duel_cancelled:
-                # Кто-то нажал ❌ - отменяем дуэль
                 await duel_msg.clear_reactions()
                 
-                # Разблокируем пользователей
-                update_user_data(guild_id, challenger_id, challenger_weight, challenger.name,
-                               duel_active=0, duel_opponent=None, duel_amount=0,
+                update_user_data(guild_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0,
                                duel_message_id=None, duel_channel_id=None, duel_initiator=0)
-                update_user_data(guild_id, opponent_id, opponent_weight, opponent.name,
-                               duel_active=0, duel_opponent=None, duel_amount=0,
+                update_user_data(guild_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0,
                                duel_message_id=None, duel_channel_id=None, duel_initiator=0)
                 
                 decline_embed = discord.Embed(
@@ -4690,53 +4060,44 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             
             if str(reaction.emoji) == "✅" and user.id not in accepted_users:
                 accepted_users.add(user.id)
-                # Можно добавить временное сообщение о том, кто принял
-                # Но не обязательно
         
         if duel_cancelled:
             return
         
-        # Оба приняли - запускаем дуэль
         await duel_msg.clear_reactions()
         
-        # Предопределяем победителя (50/50)
         winner_is_challenger = random.choice([True, False])
         
-        # Запускаем анимацию
         await duel_animation(duel_msg, challenger, opponent, winner_is_challenger)
         
-        # Рассчитываем результаты
         if winner_is_challenger:
             winner = challenger
             winner_id = challenger_id
             loser = opponent
             loser_id = opponent_id
-            winner_new_weight = challenger_weight + duel_amount
-            loser_new_weight = opponent_weight - duel_amount
+            winner_new_weight = challenger_data['current_number'] + duel_amount
+            loser_new_weight = opponent_data['current_number'] - duel_amount
         else:
             winner = opponent
             winner_id = opponent_id
             loser = challenger
             loser_id = challenger_id
-            winner_new_weight = opponent_weight + duel_amount
-            loser_new_weight = challenger_weight - duel_amount
+            winner_new_weight = opponent_data['current_number'] + duel_amount
+            loser_new_weight = challenger_data['current_number'] - duel_amount
         
-        # Обновляем веса и разблокируем пользователей
-        update_user_data(guild_id, winner_id, winner_new_weight, winner.name,
+        update_user_data(guild_id, winner_id, number=winner_new_weight,
                        duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
         
-        update_user_data(guild_id, loser_id, loser_new_weight, loser.name,
+        update_user_data(guild_id, loser_id, number=loser_new_weight,
                        duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
         
-        # Обновляем ники
         try:
             winner_data = get_user_data(guild_id, winner_id, winner.name)
-            winner_legendary = winner_data[12]
             display_name = winner.display_name
             clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
-            new_nick = format_nick_with_icon(winner_new_weight, clean_name, winner_legendary)
+            new_nick = format_nick_with_icon(winner_new_weight, clean_name, winner_data['legendary_burger'])
             if len(new_nick) > 32:
                 new_nick = new_nick[:32]
             await winner.edit(nick=new_nick)
@@ -4745,23 +4106,21 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         
         try:
             loser_data = get_user_data(guild_id, loser_id, loser.name)
-            loser_legendary = loser_data[12]
             display_name = loser.display_name
             clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
-            new_nick = format_nick_with_icon(loser_new_weight, clean_name, loser_legendary)
+            new_nick = format_nick_with_icon(loser_new_weight, clean_name, loser_data['legendary_burger'])
             if len(new_nick) > 32:
                 new_nick = new_nick[:32]
             await loser.edit(nick=new_nick)
         except:
             pass
         
-        # Финальное сообщение
         result_embed = discord.Embed(
             title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
             description=f"**Победитель:** {winner.mention}\n\n"
                        f"📊 **Результаты:**\n"
-                       f"{winner.mention}: {challenger_weight if winner == challenger else opponent_weight}кг → **{winner_new_weight}кг** (+{duel_amount})\n"
-                       f"{loser.mention}: {opponent_weight if loser == opponent else challenger_weight}кг → **{loser_new_weight}кг** (-{duel_amount})",
+                       f"{winner.mention}: {challenger_data['current_number'] if winner == challenger else opponent_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n"
+                       f"{loser.mention}: {opponent_data['current_number'] if loser == opponent else challenger_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})",
             color=0xffd700 if winner == challenger else 0xc0c0c0
         )
         result_embed.set_footer(text="⚔️ Следующая дуэль доступна!")
@@ -4769,15 +4128,11 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await ctx.send(embed=result_embed)
         
     except asyncio.TimeoutError:
-        # Время вышло
         await duel_msg.clear_reactions()
         
-        # Разблокируем пользователей
-        update_user_data(guild_id, challenger_id, challenger_weight, challenger.name,
-                       duel_active=0, duel_opponent=None, duel_amount=0,
+        update_user_data(guild_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
-        update_user_data(guild_id, opponent_id, opponent_weight, opponent.name,
-                       duel_active=0, duel_opponent=None, duel_amount=0,
+        update_user_data(guild_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
         
         timeout_embed = discord.Embed(
@@ -4786,6 +4141,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             color=0xffaa00
         )
         await duel_msg.edit(embed=timeout_embed)
+
 
 @bot.command(name='отмена')
 async def cancel_duel(ctx):
@@ -4806,11 +4162,11 @@ async def cancel_duel(ctx):
     
     opponent_data = get_user_data(guild_id, duel_info['opponent'])
     
-    update_user_data(guild_id, user_id, data[0], ctx.author.name,
+    update_user_data(guild_id, user_id,
                    duel_active=0, duel_opponent=None, duel_amount=0,
                    duel_message_id=None, duel_channel_id=None, duel_initiator=0)
     
-    update_user_data(guild_id, duel_info['opponent'], opponent_data[0], None,
+    update_user_data(guild_id, duel_info['opponent'],
                    duel_active=0, duel_opponent=None, duel_amount=0,
                    duel_message_id=None, duel_channel_id=None, duel_initiator=0)
     
@@ -4826,8 +4182,368 @@ async def cancel_duel(ctx):
     await ctx.send(f"✅ Дуэль отменена!")
 
 
+# ===== ФУНКЦИИ ДЛЯ МАГАЗИНА =====
+def generate_shop_items():
+    """Генерирует новый набор предметов для магазина (10 слотов: 6 предметов + 4 кейса)"""
+    slots = []
+    used_indices = set()
+    
+    case_slots = 4
+    item_slots = 6
+    
+    available_cases = [cid for cid, case in CASES.items() if cid != "daily" and case.get("shop_chance", 0) > 0]
+    
+    for _ in range(case_slots):
+        if random.random() < 0.7 and available_cases:
+            case_choices = []
+            for cid in available_cases:
+                case = CASES[cid]
+                weight = case["shop_chance"] * 100
+                case_choices.extend([cid] * int(weight))
+            
+            if case_choices:
+                chosen_id = random.choice(case_choices)
+                case = CASES[chosen_id]
+                amount = random.randint(case["min_shop"], case["max_shop"])
+                
+                min_prize = 0
+                max_prize = 0
+                for p in case["prizes"]:
+                    if isinstance(p["value"], int):
+                        if p["value"] < min_prize:
+                            min_prize = p["value"]
+                        if p["value"] > max_prize:
+                            max_prize = p["value"]
+                
+                slots.append({
+                    "type": "case",
+                    "case_id": chosen_id,
+                    "name": case["name"],
+                    "amount": amount,
+                    "price": case["price"],
+                    "description": f"{case['emoji']} Содержит случайные призы!\n"
+                                  f"От {min_prize}кг до {max_prize}кг",
+                    "emoji": case['emoji']
+                })
+            else:
+                slots.append(None)
+        else:
+            slots.append(None)
+    
+    for _ in range(item_slots):
+        chosen_item = None
+        for _ in range(50):
+            item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
+            if item_idx in used_indices:
+                continue
+            
+            item = SHOP_ITEMS[item_idx]
+            if random.random() < item["chance"]:
+                chosen_item = item
+                used_indices.add(item_idx)
+                break
+        
+        if chosen_item:
+            amount = random.randint(chosen_item["min_amount"], chosen_item["max_amount"])
+            slots.append({
+                "type": "item",
+                "name": chosen_item["name"],
+                "amount": amount,
+                "price": chosen_item["price"],
+                "description": chosen_item["description"],
+                "gain_per_24h": chosen_item.get("gain_per_24h", 0)
+            })
+        else:
+            slots.append(None)
+    
+    random.shuffle(slots)
+    return slots
+
+
+async def ensure_shop_updated(guild_id):
+    """Проверяет и обновляет магазин если нужно"""
+    result = get_shop_data(guild_id)
+    current_time = datetime.now()
+    
+    if result[0] is not None:
+        slots, last_update_str, next_update_str = result
+        
+        last_update = None
+        next_update = None
+        if last_update_str:
+            try:
+                last_update = datetime.fromisoformat(last_update_str) if isinstance(last_update_str, str) else last_update_str
+            except:
+                last_update = None
+        if next_update_str:
+            try:
+                next_update = datetime.fromisoformat(next_update_str) if isinstance(next_update_str, str) else next_update_str
+            except:
+                next_update = None
+        
+        if next_update and current_time >= next_update:
+            new_slots = generate_shop_items()
+            last_update = current_time
+            next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
+            update_shop_data(guild_id, new_slots, last_update, next_update)
+            return new_slots, last_update, next_update
+        else:
+            return slots, last_update, next_update
+    else:
+        new_slots = generate_shop_items()
+        last_update = current_time
+        next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
+        update_shop_data(guild_id, new_slots, last_update, next_update)
+        return new_slots, last_update, next_update
+
+
+# ===== КОМАНДЫ ДЛЯ ПЕРЕДАЧИ =====
+@bot.command(name='датьжир')
+async def give_fat(ctx, target: discord.Member, amount: int):
+    """Передаёт указанное количество кг другому пользователю"""
+    if amount <= 0:
+        await ctx.send("❌ Количество должно быть больше 0!")
+        return
+    
+    guild_id = ctx.guild.id
+    giver = ctx.author
+    giver_id = str(giver.id)
+    giver_name = giver.name
+    target_id = str(target.id)
+    target_name = target.name
+    
+    if giver_id == target_id:
+        await ctx.send("❌ Нельзя передавать кг самому себе!")
+        return
+    
+    giver_data = get_user_data(guild_id, giver_id, giver_name)
+    target_data = get_user_data(guild_id, target_id, target_name)
+    
+    if giver_data['current_number'] < amount:
+        await ctx.send(f"❌ У вас недостаточно кг! Есть: {giver_data['current_number']} кг, нужно: {amount} кг")
+        return
+    
+    new_giver_number = giver_data['current_number'] - amount
+    new_target_number = target_data['current_number'] + amount
+    
+    update_user_data(guild_id, giver_id, number=new_giver_number)
+    update_user_data(guild_id, target_id, number=new_target_number)
+    
+    try:
+        display_name = giver.display_name
+        clean_name = display_name
+        if "kg" in display_name:
+            parts = display_name.split("kg", 1)
+            if len(parts) > 1:
+                clean_name = parts[1].strip()
+                if not clean_name:
+                    clean_name = giver_name
+        else:
+            clean_name = display_name
+        if not clean_name or len(clean_name) > 30:
+            clean_name = giver_name
+        new_nick = format_nick_with_icon(new_giver_number, clean_name, giver_data['legendary_burger'])
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        await giver.edit(nick=new_nick)
+    except:
+        pass
+    
+    try:
+        display_name = target.display_name
+        clean_name = display_name
+        if "kg" in display_name:
+            parts = display_name.split("kg", 1)
+            if len(parts) > 1:
+                clean_name = parts[1].strip()
+                if not clean_name:
+                    clean_name = target_name
+        else:
+            clean_name = display_name
+        if not clean_name or len(clean_name) > 30:
+            clean_name = target_name
+        new_nick = format_nick_with_icon(new_target_number, clean_name, target_data['legendary_burger'])
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        await target.edit(nick=new_nick)
+    except:
+        pass
+    
+    giver_rank, giver_rank_emoji = get_rank(new_giver_number)
+    target_rank, target_rank_emoji = get_rank(new_target_number)
+    
+    embed = discord.Embed(
+        title="⚖️ Перевод жира",
+        description=f"**{giver.mention}** передал кг **{target.mention}**!",
+        color=0xffaa00
+    )
+    
+    embed.add_field(name="📤 Отправитель", 
+                   value=f"{giver.mention}\nБыло: {giver_data['current_number']}kg\nСтало: {new_giver_number}kg\n{giver_rank_emoji} {giver_rank}", 
+                   inline=True)
+    
+    embed.add_field(name="📥 Получатель", 
+                   value=f"{target.mention}\nБыло: {target_data['current_number']}kg\nСтало: {new_target_number}kg\n{target_rank_emoji} {target_rank}", 
+                   inline=True)
+    
+    embed.add_field(name="📦 Количество", value=f"{amount} кг", inline=True)
+    
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='датьпредмет')
+async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str):
+    """
+    Передаёт предметы другому пользователю
+    Использование: !датьпредмет @пользователь количество "название предмета"
+    """
+    if amount <= 0:
+        await ctx.send("❌ Количество должно быть больше 0!")
+        return
+    
+    guild_id = ctx.guild.id
+    giver = ctx.author
+    giver_id = str(giver.id)
+    giver_name = giver.name
+    target_id = str(target.id)
+    target_name = target.name
+    
+    if giver_id == target_id:
+        await ctx.send("❌ Нельзя передавать предметы самому себе!")
+        return
+    
+    giver_data = get_user_data(guild_id, giver_id, giver_name)
+    target_data = get_user_data(guild_id, target_id, target_name)
+    
+    item_lower = item_name.lower()
+    
+    # Проверяем кейсы
+    for case_id, case in CASES.items():
+        if case_id != "daily" and case["name"].lower() in item_lower:
+            if not case["tradable"]:
+                await ctx.send(f"❌ Кейс '{case['name']}' нельзя передавать!")
+                return
+            
+            giver_cases = giver_data.get('cases_dict', {})
+            target_cases = target_data.get('cases_dict', {})
+            
+            if giver_cases.get(case_id, 0) < amount:
+                await ctx.send(f"❌ У вас недостаточно кейсов '{case['name']}'! Есть: {giver_cases.get(case_id, 0)}, нужно: {amount}")
+                return
+            
+            giver_cases[case_id] = giver_cases.get(case_id, 0) - amount
+            target_cases[case_id] = target_cases.get(case_id, 0) + amount
+            
+            update_user_data(guild_id, giver_id, cases_dict=giver_cases)
+            update_user_data(guild_id, target_id, cases_dict=target_cases)
+            
+            embed = discord.Embed(
+                title=f"{case['emoji']} Передача кейса",
+                description=f"**{giver.mention}** передал кейс **{target.mention}**!",
+                color=0xffaa00
+            )
+            
+            embed.add_field(name="📦 Кейс", value=f"{case['name']} x{amount}", inline=True)
+            embed.add_field(name="📤 У вас осталось", value=f"{giver_cases.get(case_id, 0)} шт", inline=True)
+            embed.add_field(name="📥 У получателя", value=f"{target_cases.get(case_id, 0)} шт", inline=True)
+            
+            await ctx.send(embed=embed)
+            return
+    
+    # Проверяем автобургер
+    is_autoburger = any(word in item_lower for word in ["автобургер", "бургер", "autoburger"])
+    
+    if is_autoburger:
+        if giver_data['autoburger_count'] < amount:
+            await ctx.send(f"❌ У вас недостаточно автобургеров! Есть: {giver_data['autoburger_count']}, нужно: {amount}")
+            return
+        
+        new_giver_burgers = giver_data['autoburger_count'] - amount
+        new_target_burgers = target_data['autoburger_count'] + amount
+        
+        new_target_next_burger = None
+        if new_target_burgers > 0:
+            interval = get_autoburger_interval(new_target_burgers)
+            if interval:
+                new_target_next_burger = datetime.now() + timedelta(hours=interval)
+        
+        update_user_data(guild_id, giver_id, autoburger_count=new_giver_burgers)
+        update_user_data(guild_id, target_id, autoburger_count=new_target_burgers, next_autoburger_time=new_target_next_burger)
+        
+        embed = discord.Embed(
+            title="🍔 Передача автобургера",
+            description=f"**{giver.mention}** передал автобургер **{target.mention}**!",
+            color=0xffaa00
+        )
+        
+        embed.add_field(name="📦 Количество", value=f"{amount} шт", inline=True)
+        embed.add_field(name="📤 У вас осталось", value=f"{new_giver_burgers} 🍔", inline=True)
+        embed.add_field(name="📥 У получателя", value=f"{new_target_burgers} 🍔", inline=True)
+        
+        await ctx.send(embed=embed)
+        return
+    
+    # Обычные предметы
+    giver_items = get_user_items(giver_data['item_counts'])
+    target_items = get_user_items(target_data['item_counts'])
+    
+    item_name = item_name.strip()
+    
+    found_item = None
+    for key in giver_items.keys():
+        if key.lower() == item_name.lower():
+            found_item = key
+            break
+    
+    if not found_item:
+        available_items = list(giver_items.keys())
+        if available_items:
+            items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
+            await ctx.send(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
+        else:
+            await ctx.send("❌ У вас нет предметов в инвентаре!")
+        return
+    
+    if giver_items[found_item] < amount:
+        await ctx.send(f"❌ У вас недостаточно '{found_item}'! Есть: {giver_items[found_item]}, нужно: {amount}")
+        return
+    
+    legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
+    if found_item in legendary_burger_names:
+        await ctx.send(f"❌ Легендарные бургеры нельзя передавать!")
+        return
+    
+    giver_items[found_item] -= amount
+    if giver_items[found_item] <= 0:
+        del giver_items[found_item]
+    
+    target_items[found_item] = target_items.get(found_item, 0) + amount
+    
+    update_user_data(guild_id, giver_id, item_counts=save_user_items(giver_items))
+    update_user_data(guild_id, target_id, item_counts=save_user_items(target_items))
+    
+    embed = discord.Embed(
+        title="🎁 Передача предмета",
+        description=f"**{giver.mention}** передал предмет **{target.mention}**!",
+        color=0xffaa00
+    )
+    
+    embed.add_field(name="📦 Предмет", value=f"**{found_item}** x{amount}", inline=False)
+    
+    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
+    if len(giver_items) > 5:
+        giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
+    embed.add_field(name="📤 Ваш инвентарь", value=giver_inv or "Пусто", inline=True)
+    
+    target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
+    if len(target_items) > 5:
+        target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
+    embed.add_field(name="📥 Инвентарь получателя", value=target_inv or "Пусто", inline=True)
+    
+    await ctx.send(embed=embed)
+
+
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
     bot.run(TOKEN)
-
