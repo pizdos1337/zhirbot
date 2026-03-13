@@ -930,6 +930,10 @@ def update_user_data(guild_id, user_id, **kwargs):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
+    # Получаем список существующих колонок
+    cursor.execute("PRAGMA table_info(user_fat)")
+    existing_columns = [col[1] for col in cursor.fetchall()]
+    
     updates = []
     values = []
     
@@ -941,32 +945,42 @@ def update_user_data(guild_id, user_id, **kwargs):
     
     for key, value in kwargs.items():
         if key == 'user_name':
-            updates.append(f"{key} = ?")
-            values.append(value)
+            if 'user_name' in existing_columns:
+                updates.append(f"{key} = ?")
+                values.append(value)
         elif key == 'cases_dict':
             if value:
                 for case_id, count in value.items():
                     if case_id != "daily":
-                        # ВАЖНО: Здесь имя колонки должно соответствовать тому, что в БД
                         col_name = f"case_{case_id}_count"
-                        updates.append(f"{col_name} = ?")
-                        values.append(count)
+                        # ВАЖНО: Проверяем, существует ли колонка
+                        if col_name in existing_columns:
+                            updates.append(f"{col_name} = ?")
+                            values.append(count)
+                        else:
+                            print(f"⚠️ Колонка {col_name} не существует в БД!")
         elif key in field_map:
-            updates.append(f"{field_map[key]} = ?")
-            values.append(value)
+            db_col = field_map[key]
+            if db_col in existing_columns:
+                updates.append(f"{db_col} = ?")
+                values.append(value)
         else:
-            updates.append(f"{key} = ?")
-            values.append(value)
+            if key in existing_columns:
+                updates.append(f"{key} = ?")
+                values.append(value)
     
-    updates.append("last_command_time = ?")
-    values.append(datetime.now())
+    # Добавляем время последнего обновления
+    if 'last_command_time' in existing_columns:
+        updates.append("last_command_time = ?")
+        values.append(datetime.now())
+    
+    if not updates:
+        # Нет полей для обновления
+        conn.close()
+        return
     
     values.append(str(user_id))
     query = f"UPDATE user_fat SET {', '.join(updates)} WHERE user_id = ?"
-    
-    # Добавим отладку
-    print(f"DEBUG - Query: {query}")
-    print(f"DEBUG - Values: {values}")
     
     try:
         cursor.execute(query, values)
@@ -974,9 +988,11 @@ def update_user_data(guild_id, user_id, **kwargs):
         print(f"❌ Ошибка SQL: {e}")
         print(f"❌ Запрос: {query}")
         print(f"❌ Значения: {values}")
+        conn.close()
         raise e
     
     if cursor.rowcount == 0:
+        # Создаем новую запись
         user_data = get_user_data(guild_id, user_id, kwargs.get('user_name'))
         for key, value in kwargs.items():
             if key == 'number':
@@ -5155,81 +5171,54 @@ async def choose_upgrade(ctx, choice: str = None):
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
 
-@bot.command(name='диагностика_кейса')
+@bot.command(name='отладка_жир')
 @commands.has_permissions(administrator=True)
-async def diagnose_case_column(ctx):
-    """Диагностирует проблему с колонкой case_shop_case_count"""
+async def debug_fat(ctx):
+    """Отлаживает команду !жир"""
     guild_id = ctx.guild.id
-    db_path = get_db_path(guild_id)
+    member = ctx.author
+    user_id = str(member.id)
     
+    # 1. Получаем данные пользователя
+    data = get_user_data(guild_id, user_id, member.name)
+    
+    embed = discord.Embed(
+        title="🔍 Отладка !жир",
+        color=0xffaa00
+    )
+    
+    # 2. Показываем содержимое cases_dict
+    cases_dict = data.get('cases_dict', {})
+    cases_text = "\n".join([f"`{k}`: {v}" for k, v in cases_dict.items()])
+    embed.add_field(name="📦 cases_dict", value=cases_text or "Пусто", inline=False)
+    
+    # 3. Проверяем структуру БД
+    db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Получаем все колонки
     cursor.execute("PRAGMA table_info(user_fat)")
     columns = cursor.fetchall()
     
-    embed = discord.Embed(
-        title="🔍 Диагностика колонок кейсов",
-        color=0x3498db
-    )
+    # Ищем колонки для кейсов
+    case_columns = [col[1] for col in columns if 'case_' in col[1]]
+    embed.add_field(name="🗄️ Колонки в БД", value="\n".join([f"`{c}`" for c in case_columns]) or "Нет", inline=False)
     
-    # Ищем все колонки с case_
-    case_columns = []
-    for col in columns:
-        if 'case_' in col[1]:
-            case_columns.append(f"`{col[1]}`")
-    
-    if case_columns:
-        embed.add_field(name="📦 Существующие колонки", value="\n".join(case_columns), inline=False)
+    # 4. Проверяем, есть ли у пользователя запись
+    cursor.execute("SELECT * FROM user_fat WHERE user_id = ?", (str(user_id),))
+    user_row = cursor.fetchone()
+    if user_row:
+        # Получаем имена колонок
+        col_names = [description[0] for description in cursor.description]
+        embed.add_field(name="📊 Данные пользователя", 
+                       value=f"Запись найдена, колонок: {len(col_names)}", 
+                       inline=False)
     else:
-        embed.add_field(name="📦 Колонки кейсов", value="Не найдены", inline=False)
+        embed.add_field(name="📊 Данные пользователя", value="Запись не найдена", inline=False)
     
-    # Проверяем CASES словарь
-    case_ids = [cid for cid in CASES.keys() if cid != "daily"]
-    expected_columns = [f"case_{cid}_count" for cid in case_ids]
-    
-    embed.add_field(name="📋 Ожидаемые колонки", value="\n".join([f"`{col}`" for col in expected_columns]), inline=False)
-    
-    # Проверяем, какие колонки отсутствуют
-    missing = [col for col in expected_columns if col not in [c[1] for c in columns]]
-    if missing:
-        embed.add_field(name="❌ Отсутствуют", value="\n".join([f"`{col}`" for col in missing]), inline=False)
+    conn.close()
     
     await ctx.send(embed=embed)
-    conn.close()
-
-@bot.command(name='создать_колонку')
-@commands.has_permissions(administrator=True)
-async def create_correct_column(ctx):
-    """Создает правильную колонку для магазинного кейса"""
-    guild_id = ctx.guild.id
-    db_path = get_db_path(guild_id)
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    try:
-        # Сначала проверим, существует ли неправильная колонка
-        cursor.execute("PRAGMA table_info(user_fat)")
-        columns = [col[1] for col in cursor.fetchall()]
-        
-        if 'case_shop_count' in columns:
-            # Переименовываем неправильную колонку
-            cursor.execute("ALTER TABLE user_fat RENAME COLUMN case_shop_count TO case_shop_case_count")
-            await ctx.send("✅ Колонка `case_shop_count` переименована в `case_shop_case_count`!")
-        elif 'case_shop_case_count' not in columns:
-            # Создаем правильную колонку
-            cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
-            await ctx.send("✅ Колонка `case_shop_case_count` создана!")
-        else:
-            await ctx.send("ℹ️ Колонка `case_shop_case_count` уже существует!")
-        
-        conn.commit()
-    except Exception as e:
-        await ctx.send(f"❌ Ошибка: {e}")
-    finally:
-        conn.close()
 
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
