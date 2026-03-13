@@ -5139,7 +5139,41 @@ async def choose_upgrade(ctx, choice: str = None):
     
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
-
+    
+@bot.command(name='исправить_кейс')
+@commands.has_permissions(administrator=True)
+async def fix_case_column(ctx):
+    """Исправляет название колонки для магазинного кейса"""
+    guild_id = ctx.guild.id
+    db_path = get_db_path(guild_id)
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем, какая колонка существует
+        cursor.execute("PRAGMA table_info(user_fat)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'case_shop_count' in columns:
+            # Создаем правильную колонку
+            cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
+            # Копируем данные
+            cursor.execute("UPDATE user_fat SET case_shop_case_count = case_shop_count")
+            conn.commit()
+            await ctx.send("✅ Колонка `case_shop_case_count` создана и данные скопированы!")
+        elif 'case_shop_case_count' in columns:
+            await ctx.send("✅ Колонка `case_shop_case_count` уже существует!")
+        else:
+            # Создаем новую колонку
+            cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
+            conn.commit()
+            await ctx.send("✅ Колонка `case_shop_case_count` создана!")
+    except Exception as e:
+        await ctx.send(f"❌ Ошибка: {e}")
+    finally:
+        conn.close()
+        
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
