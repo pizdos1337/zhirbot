@@ -913,7 +913,9 @@ def create_new_user(cursor, user_data):
         user_data['duel_message_id'], user_data['duel_channel_id'], user_data['duel_initiator']
     ]
     
+    # ВАЖНО: Здесь добавляются колонки для каждого кейса
     for case_id, count in user_data['cases_dict'].items():
+        # Для "shop_case" получится "case_shop_case_count"
         cols.append(f"case_{case_id}_count")
         values.append(count)
     
@@ -945,7 +947,9 @@ def update_user_data(guild_id, user_id, **kwargs):
             if value:
                 for case_id, count in value.items():
                     if case_id != "daily":
-                        updates.append(f"case_{case_id}_count = ?")
+                        # ВАЖНО: Здесь имя колонки должно соответствовать тому, что в БД
+                        col_name = f"case_{case_id}_count"
+                        updates.append(f"{col_name} = ?")
                         values.append(count)
         elif key in field_map:
             updates.append(f"{field_map[key]} = ?")
@@ -959,7 +963,18 @@ def update_user_data(guild_id, user_id, **kwargs):
     
     values.append(str(user_id))
     query = f"UPDATE user_fat SET {', '.join(updates)} WHERE user_id = ?"
-    cursor.execute(query, values)
+    
+    # Добавим отладку
+    print(f"DEBUG - Query: {query}")
+    print(f"DEBUG - Values: {values}")
+    
+    try:
+        cursor.execute(query, values)
+    except sqlite3.OperationalError as e:
+        print(f"❌ Ошибка SQL: {e}")
+        print(f"❌ Запрос: {query}")
+        print(f"❌ Значения: {values}")
+        raise e
     
     if cursor.rowcount == 0:
         user_data = get_user_data(guild_id, user_id, kwargs.get('user_name'))
@@ -5139,11 +5154,55 @@ async def choose_upgrade(ctx, choice: str = None):
     
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
-    
-@bot.command(name='исправить_кейс')
+
+@bot.command(name='диагностика_кейса')
 @commands.has_permissions(administrator=True)
-async def fix_case_column(ctx):
-    """Исправляет название колонки для магазинного кейса"""
+async def diagnose_case_column(ctx):
+    """Диагностирует проблему с колонкой case_shop_case_count"""
+    guild_id = ctx.guild.id
+    db_path = get_db_path(guild_id)
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Получаем все колонки
+    cursor.execute("PRAGMA table_info(user_fat)")
+    columns = cursor.fetchall()
+    
+    embed = discord.Embed(
+        title="🔍 Диагностика колонок кейсов",
+        color=0x3498db
+    )
+    
+    # Ищем все колонки с case_
+    case_columns = []
+    for col in columns:
+        if 'case_' in col[1]:
+            case_columns.append(f"`{col[1]}`")
+    
+    if case_columns:
+        embed.add_field(name="📦 Существующие колонки", value="\n".join(case_columns), inline=False)
+    else:
+        embed.add_field(name="📦 Колонки кейсов", value="Не найдены", inline=False)
+    
+    # Проверяем CASES словарь
+    case_ids = [cid for cid in CASES.keys() if cid != "daily"]
+    expected_columns = [f"case_{cid}_count" for cid in case_ids]
+    
+    embed.add_field(name="📋 Ожидаемые колонки", value="\n".join([f"`{col}`" for col in expected_columns]), inline=False)
+    
+    # Проверяем, какие колонки отсутствуют
+    missing = [col for col in expected_columns if col not in [c[1] for c in columns]]
+    if missing:
+        embed.add_field(name="❌ Отсутствуют", value="\n".join([f"`{col}`" for col in missing]), inline=False)
+    
+    await ctx.send(embed=embed)
+    conn.close()
+
+@bot.command(name='создать_колонку')
+@commands.has_permissions(administrator=True)
+async def create_correct_column(ctx):
+    """Создает правильную колонку для магазинного кейса"""
     guild_id = ctx.guild.id
     db_path = get_db_path(guild_id)
     
@@ -5151,52 +5210,27 @@ async def fix_case_column(ctx):
     cursor = conn.cursor()
     
     try:
-        # Проверяем, какая колонка существует
+        # Сначала проверим, существует ли неправильная колонка
         cursor.execute("PRAGMA table_info(user_fat)")
         columns = [col[1] for col in cursor.fetchall()]
         
         if 'case_shop_count' in columns:
+            # Переименовываем неправильную колонку
+            cursor.execute("ALTER TABLE user_fat RENAME COLUMN case_shop_count TO case_shop_case_count")
+            await ctx.send("✅ Колонка `case_shop_count` переименована в `case_shop_case_count`!")
+        elif 'case_shop_case_count' not in columns:
             # Создаем правильную колонку
             cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
-            # Копируем данные
-            cursor.execute("UPDATE user_fat SET case_shop_case_count = case_shop_count")
-            conn.commit()
-            await ctx.send("✅ Колонка `case_shop_case_count` создана и данные скопированы!")
-        elif 'case_shop_case_count' in columns:
-            await ctx.send("✅ Колонка `case_shop_case_count` уже существует!")
-        else:
-            # Создаем новую колонку
-            cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
-            conn.commit()
             await ctx.send("✅ Колонка `case_shop_case_count` создана!")
+        else:
+            await ctx.send("ℹ️ Колонка `case_shop_case_count` уже существует!")
+        
+        conn.commit()
     except Exception as e:
         await ctx.send(f"❌ Ошибка: {e}")
     finally:
         conn.close()
-        
-@bot.command(name='миграция_кейса')
-@commands.has_permissions(administrator=True)
-async def migrate_shop_case(ctx):
-    """Добавляет правильную колонку для магазинного кейса"""
-    guild_id = ctx.guild.id
-    db_path = get_db_path(guild_id)
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    try:
-        # Добавляем правильную колонку
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
-        conn.commit()
-        await ctx.send("✅ Колонка `case_shop_case_count` успешно добавлена!")
-    except sqlite3.OperationalError as e:
-        if "duplicate column name" in str(e):
-            await ctx.send("ℹ️ Колонка уже существует!")
-        else:
-            await ctx.send(f"❌ Ошибка: {e}")
-    finally:
-        conn.close()
-        
+
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
