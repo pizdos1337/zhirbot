@@ -246,7 +246,6 @@ CASES = {
             {"value": "water", "chance": 2, "emoji": "💧"}
         ]
 }
-}
 
 # ===== НАСТРОЙКИ МАГАЗИНА =====
 SHOP_SLOTS = 10
@@ -389,6 +388,22 @@ else:
         prize["chance"] = (prize["chance"] / total) * 100
 
 CASES["shop_case"]["prizes"] = shop_case_prizes
+
+# ===== ТЕНЕВАЯ СТОИМОСТЬ ДЛЯ РАСЧЕТА ШАНСОВ АПГРЕЙДА =====
+LEGENDARY_UPGRADE_PRICES = {
+    "Святой сэндвич": 20000,
+    "Гнилая ножка KFC": 5000,
+    "Стакан воды": 3000,
+    "Автохолестерол": 5000,
+    "Холестеринимус": 2500,
+    "Яблоко": 1500,
+    "Золотое Яблоко": 3000,
+    "Апельсин": 2000,
+    "Золотой Апельсин": 4000,
+    "Драгонфрукт": 4000,
+    "Золотой Драгонфрукт": 8000,
+    "Снатчер": 20000
+}
 
 print("="*60)
 print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
@@ -1943,46 +1958,271 @@ async def on_ready():
     bot.loop.create_task(snatcher_loop())
     bot.loop.create_task(apply_hourly_effects())
 
-async def duel_animation(msg, challenger, opponent, winner_is_challenger):
-    """Анимация дуэли с меняющимися стрелками"""
+async def duel_animation(msg, challenger, opponent):
+    """Анимация дуэли с меняющимися эмодзи (⬆️, ⬇️, ⚔️)"""
     
+    # Получаем имена пользователей
     c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
     o_name = opponent.display_name[:15] + "..." if len(opponent.display_name) > 15 else opponent.display_name
     
+    # Выравниваем имена для красоты
     max_len = max(len(c_name), len(o_name))
     c_name = c_name.ljust(max_len)
     o_name = o_name.ljust(max_len)
     
-    frames = 15
-    arrows = ["/\\", "\\/"] * (frames // 2 + 1)
-    arrows = arrows[:frames]
+    # Эмодзи для анимации
+    duel_emojis = ["⬆️", "⬇️", "⚔️"]
     
-    delays = [0.3] * 8 + [0.5] * 4 + [0.8] * 3
+    # Генерируем линию из 100 эмодзи
+    line = []
+    for i in range(100):
+        line.append(random.choice(duel_emojis))
     
-    for i, arrow in enumerate(arrows):
-        anim_text = f"```\n⚔️ ДУЭЛЬ ⚔️\n\n{c_name}\n    {arrow}    \n{o_name}\n```"
-        
-        embed = discord.Embed(
-            description=anim_text,
-            color=0xff5500
-        )
-        
-        await msg.edit(embed=embed)
-        await asyncio.sleep(delays[i])
+    # Предопределяем результат (0 - challenger, 1 - opponent, 2 - ничья)
+    result = random.randint(0, 2)
     
-    if winner_is_challenger:
-        final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{c_name}\n    ⬆️    \n{o_name}\n```"
-        color = 0xffd700
+    # Ставим результат на 58 место (индекс 57)
+    if result == 0:
+        result_emoji = "⬆️"
+        result_text = f"🏆 **Победитель:** {challenger.mention}"
+        result_color = 0xffd700  # Золотой
+    elif result == 1:
+        result_emoji = "⬇️"
+        result_text = f"🏆 **Победитель:** {opponent.mention}"
+        result_color = 0xc0c0c0  # Серебряный
     else:
-        final_text = f"```\n⚔️ ПОБЕДА! ⚔️\n\n{c_name}\n    ⬇️    \n{o_name}\n```"
-        color = 0xc0c0c0
+        result_emoji = "⚔️"
+        result_text = "🤝 **НИЧЬЯ!** 🤝"
+        result_color = 0x9b59b6  # Фиолетовый
     
-    final_embed = discord.Embed(
-        description=final_text,
-        color=color
+    line[57] = result_emoji
+    
+    # Embed для анимации
+    anim_embed = discord.Embed(
+        title="⚔️ **ДУЭЛЬ** ⚔️",
+        description="",
+        color=0xff5500
     )
-    await msg.edit(embed=final_embed)
+    
+    # Анимация 20 кадров (как в кейсах)
+    animation_frames = [
+        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+    ]
+    
+    for frame_num, center_pos in animation_frames:
+        # Показываем 9 эмодзи с центром в center_pos
+        visible = line[center_pos-4:center_pos+5]
+        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        
+        # Формируем сообщение с именами и линией эмодзи
+        anim_embed.description = f"**{c_name}**\n**{display_line}**\n**{o_name}**"
+        
+        await msg.edit(embed=anim_embed)
+        await asyncio.sleep(0.5)
+    
+    # Показываем результат
+    result_embed = discord.Embed(
+        title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
+        description=f"**{c_name}**\n**{display_line}**\n**{o_name}**\n\n{result_text}",
+        color=result_color
+    )
+    await msg.edit(embed=result_embed)
     await asyncio.sleep(1.5)
+    
+    return result  # Возвращаем результат для дальнейшей обработки
+
+def get_item_price(item_name):
+    """Возвращает цену предмета для расчета шансов апгрейда"""
+    # Проверяем, есть ли предмет в списке легендарных
+    if item_name in LEGENDARY_UPGRADE_PRICES:
+        return LEGENDARY_UPGRADE_PRICES[item_name]
+    
+    # Ищем в обычных предметах магазина
+    for shop_item in SHOP_ITEMS:
+        if shop_item["name"] == item_name:
+            return shop_item["price"]
+    
+    return 0  # Если предмет не найден
+
+def get_possible_upgrades(item_name, item_count):
+    """Возвращает список предметов, до которых можно улучшить данный предмет"""
+    if item_count <= 0:
+        return []
+    
+    current_price = get_item_price(item_name)
+    if current_price == 0:
+        return []
+    
+    possible_upgrades = []
+    
+    # Проверяем обычные предметы из магазина
+    for shop_item in SHOP_ITEMS:
+        target_price = get_item_price(shop_item["name"])
+        
+        # Пропускаем предметы дешевле или равные текущему
+        if target_price <= current_price:
+            continue
+        
+        # Рассчитываем шанс
+        chance = current_price / target_price
+        
+        # Если шанс меньше 1% - не добавляем
+        if chance < 0.01:
+            continue
+        
+        possible_upgrades.append({
+            "name": shop_item["name"],
+            "price": target_price,
+            "chance": chance,
+            "emoji": ITEM_EMOJIS.get(shop_item["name"], "🎁")
+        })
+    
+    # Проверяем легендарные предметы (только если текущий предмет стоит >= 1000кг)
+    if current_price >= 1000:
+        for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
+            # Проверяем, что такой предмет вообще существует в игре
+            item_exists = False
+            for shop_item in SHOP_ITEMS:
+                if shop_item["name"] == leg_name:
+                    item_exists = True
+                    break
+            
+            if not item_exists:
+                continue
+            
+            # Пропускаем если целевой предмет дешевле или равен текущему
+            if leg_price <= current_price:
+                continue
+            
+            # Рассчитываем шанс
+            chance = current_price / leg_price
+            
+            # Если шанс меньше 1% - не добавляем
+            if chance < 0.01:
+                continue
+            
+            possible_upgrades.append({
+                "name": leg_name,
+                "price": leg_price,
+                "chance": chance,
+                "emoji": ITEM_EMOJIS.get(leg_name, "✨")
+            })
+    
+    # Сортируем по возрастанию цены (от самых дешевых к дорогим)
+    possible_upgrades.sort(key=lambda x: x["price"])
+    
+    return possible_upgrades
+
+async def upgrade_animation(ctx, member, source_item, target_item, item_count):
+    """Анимация апгрейда с эмодзи 🟥 (проигрыш) и 🟩 (выигрыш)"""
+    guild_id = ctx.guild.id
+    user_id = str(member.id)
+    user_name = member.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    items_dict = get_user_items(data['item_counts'])
+    
+    # Эмодзи для анимации
+    upgrade_emojis = ["🟥", "🟩"]
+    
+    # Генерируем линию из 100 эмодзи
+    line = []
+    for i in range(100):
+        line.append(random.choice(upgrade_emojis))
+    
+    # Определяем результат (успех/неудача)
+    roll = random.random()
+    success = roll < target_item['chance']
+    
+    # Ставим результат на 58 место (индекс 57)
+    if success:
+        result_emoji = "🟩"
+        result_text = f"✅ **УСПЕХ!** ✅"
+        result_color = 0x00ff00
+    else:
+        result_emoji = "🟥"
+        result_text = f"❌ **НЕУДАЧА!** ❌"
+        result_color = 0xff0000
+    
+    line[57] = result_emoji
+    
+    # Embed для анимации
+    anim_embed = discord.Embed(
+        title="🔧 **АПГРЕЙД** 🔧",
+        description=f"**{member.display_name}** улучшает:\n"
+                   f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n"
+                   f"Шанс: **{target_item['chance']*100:.1f}%**",
+        color=0xff5500
+    )
+    
+    # Отправляем начальное сообщение
+    upgrade_msg = await ctx.send(embed=anim_embed)
+    
+    # Анимация 20 кадров
+    animation_frames = [
+        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+    ]
+    
+    for frame_num, center_pos in animation_frames:
+        visible = line[center_pos-4:center_pos+5]
+        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        
+        anim_embed.description = f"**{member.display_name}** улучшает:\n" \
+                                 f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n" \
+                                 f"**{display_line}**\n\n" \
+                                 f"Шанс: **{target_item['chance']*100:.1f}%**"
+        
+        await upgrade_msg.edit(embed=anim_embed)
+        await asyncio.sleep(0.5)
+    
+    # Обрабатываем результат
+    if success:
+        # Успех - заменяем предмет
+        items_dict[source_item] -= 1
+        if items_dict[source_item] <= 0:
+            del items_dict[source_item]
+        
+        items_dict[target_item['name']] = items_dict.get(target_item['name'], 0) + 1
+        
+        result_description = f"✅ **Поздравляем!**\n\n" \
+                            f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n" \
+                            f"Предмет успешно улучшен!"
+        
+    else:
+        # Неудача - предмет исчезает
+        items_dict[source_item] -= 1
+        if items_dict[source_item] <= 0:
+            del items_dict[source_item]
+        
+        result_description = f"❌ **Неудача!**\n\n" \
+                            f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** был утерян в процессе улучшения!"
+    
+    # Обновляем данные в БД
+    update_user_data(
+        guild_id, user_id,
+        item_counts=save_user_items(items_dict),
+        last_command=None,
+        last_command_target=None,
+        last_command_use_time=None
+    )
+    
+    # Обновляем ник если нужно (но обычно апгрейд не меняет вес)
+    
+    # Показываем результат
+    result_embed = discord.Embed(
+        title="🔧 **РЕЗУЛЬТАТ АПГРЕЙДА** 🔧",
+        description=f"**{display_line}**\n\n{result_text}\n\n{result_description}",
+        color=result_color
+    )
+    result_embed.set_footer(text=f"Шанс был: {target_item['chance']*100:.1f}%")
+    
+    await upgrade_msg.edit(embed=result_embed)
 
 @bot.event
 async def on_guild_join(guild):
@@ -2695,7 +2935,7 @@ async def fat_stats(ctx, member: discord.Member = None):
 
 @bot.command(name='жир_инфо')
 async def fat_info(ctx, member: discord.Member = None):
-    """Информация о пользователе"""
+    """Информация о пользователе с пассивным доходом"""
     guild_id = ctx.guild.id
     target = member or ctx.author
     user_id = str(target.id)
@@ -2711,6 +2951,29 @@ async def fat_info(ctx, member: discord.Member = None):
         actual_case_cooldown = BURGER_RANKS[data['legendary_burger']]["case_cooldown"]
     
     items_dict = get_user_items(data['item_counts'])
+    
+    # ===== РАСЧЕТ ПАССИВНОГО ДОХОДА =====
+    total_passive_income = 0
+    income_details = []
+    
+    for item_name, count in items_dict.items():
+        for shop_item in SHOP_ITEMS:
+            if shop_item["name"] == item_name:
+                gain = shop_item.get("gain_per_24h", 0)
+                if gain > 0:
+                    item_total = gain * count
+                    total_passive_income += item_total
+                    income_details.append(f"{item_name} x{count}: +{item_total} кг/24ч")
+                break
+    
+    # Применяем множитель от легендарного бургера
+    multiplier = 1.0
+    if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
+        multiplier = BURGER_RANKS[data['legendary_burger']]["multiplier"]
+        if multiplier != 1.0:
+            total_passive_income = int(total_passive_income * multiplier)
+    
+    # Применяем эффекты яблок и апельсинов
     for item_name, count in items_dict.items():
         if item_name == "Яблоко":
             actual_fat_cooldown *= (1 - count * 0.05)
@@ -2737,6 +3000,25 @@ async def fat_info(ctx, member: discord.Member = None):
         embed.add_field(name=f"{burger['emoji']} Легендарный бургер", 
                        value=f"**{burger['name']}**\nМножитель: x{burger['multiplier']}", 
                        inline=True)
+    
+    # ===== НОВОЕ: Информация о пассивном доходе =====
+    if total_passive_income > 0:
+        passive_text = f"**{total_passive_income} кг/24ч**"
+        if multiplier != 1.0:
+            passive_text += f" (с учётом множителя x{multiplier})"
+        embed.add_field(name="💰 Пассивный доход", value=passive_text, inline=True)
+        
+        # Добавляем детали если их немного
+        if len(income_details) <= 5:
+            details_text = "\n".join(income_details)
+            embed.add_field(name="📋 Источники дохода", value=details_text, inline=False)
+        else:
+            embed.add_field(name="📋 Источники дохода", 
+                           value=f"Всего предметов: {len(income_details)}\n"
+                                 f"Суммарный доход: **{total_passive_income} кг/24ч**", 
+                           inline=False)
+    else:
+        embed.add_field(name="💰 Пассивный доход", value="Нет предметов, дающих доход", inline=True)
     
     pity_emojis = []
     if data['consecutive_plus'] > 0:
@@ -2812,7 +3094,6 @@ async def fat_info(ctx, member: discord.Member = None):
         )
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='возвышение')
 async def ascension_command(ctx):
@@ -3582,6 +3863,21 @@ async def fat_help(ctx):
         `!дуэль @User все` - дуэль на всё, что есть
         """,
         inline=False
+    )
+
+    embed.add_field(
+        name="🔧 **АПГРЕЙДЫ**",
+        value="""
+        `!апгрейд` - улучшить предмет
+        `!выбрать [номер]` - выбрать цель апгрейда
+    
+        • Шанс = стоимость текущего предмета / стоимость целевого
+        • При успехе предмет заменяется
+        • При неудаче предмет исчезает
+        • Минимальный шанс: 1%
+        • Легендарные предметы доступны от 1000кг
+        """,
+        inline=False
     ) 
    
     embed.add_field(
@@ -4026,7 +4322,6 @@ async def global_leaderboard(ctx):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='дуэль')
 async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     """
@@ -4040,6 +4335,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     challenger_id = str(challenger.id)
     opponent_id = str(opponent.id)
     
+    # Проверки
     if challenger_id == opponent_id:
         await ctx.send("❌ Нельзя вызвать на дуэль самого себя!")
         return
@@ -4161,64 +4457,93 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         if duel_cancelled:
             return
         
+        # Оба приняли - запускаем анимацию
         await duel_msg.clear_reactions()
         
-        winner_is_challenger = random.choice([True, False])
+        # Запускаем анимацию и получаем результат
+        result = await duel_animation(duel_msg, challenger, opponent)
         
-        await duel_animation(duel_msg, challenger, opponent, winner_is_challenger)
-        
-        if winner_is_challenger:
+        # Обрабатываем результат
+        if result == 0:  # Победил challenger
             winner = challenger
             winner_id = challenger_id
             loser = opponent
             loser_id = opponent_id
             winner_new_weight = challenger_data['current_number'] + duel_amount
             loser_new_weight = opponent_data['current_number'] - duel_amount
-        else:
+            
+            update_user_data(guild_id, winner_id, number=winner_new_weight)
+            update_user_data(guild_id, loser_id, number=loser_new_weight)
+            
+            result_description = f"**Победитель:** {winner.mention}\n\n"
+            result_description += f"📊 **Результаты:**\n"
+            result_description += f"{winner.mention}: {challenger_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n"
+            result_description += f"{loser.mention}: {opponent_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})"
+            
+        elif result == 1:  # Победил opponent
             winner = opponent
             winner_id = opponent_id
             loser = challenger
             loser_id = challenger_id
             winner_new_weight = opponent_data['current_number'] + duel_amount
             loser_new_weight = challenger_data['current_number'] - duel_amount
+            
+            update_user_data(guild_id, winner_id, number=winner_new_weight)
+            update_user_data(guild_id, loser_id, number=loser_new_weight)
+            
+            result_description = f"**Победитель:** {winner.mention}\n\n"
+            result_description += f"📊 **Результаты:**\n"
+            result_description += f"{winner.mention}: {opponent_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n"
+            result_description += f"{loser.mention}: {challenger_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})"
+            
+        else:  # Ничья (result == 2)
+            # Вес не меняется
+            update_user_data(guild_id, challenger_id, number=challenger_data['current_number'])
+            update_user_data(guild_id, opponent_id, number=opponent_data['current_number'])
+            
+            result_description = f"🤝 **НИЧЬЯ!** 🤝\n\n"
+            result_description += f"📊 **Результаты:**\n"
+            result_description += f"{challenger.mention}: {challenger_data['current_number']}кг → **{challenger_data['current_number']}кг** (без изменений)\n"
+            result_description += f"{opponent.mention}: {opponent_data['current_number']}кг → **{opponent_data['current_number']}кг** (без изменений)"
         
-        update_user_data(guild_id, winner_id, number=winner_new_weight,
-                       duel_active=0, duel_opponent=None, duel_amount=0,
+        # Разблокируем пользователей
+        update_user_data(guild_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0,
+                       duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+        update_user_data(guild_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0,
                        duel_message_id=None, duel_channel_id=None, duel_initiator=0)
         
-        update_user_data(guild_id, loser_id, number=loser_new_weight,
-                       duel_active=0, duel_opponent=None, duel_amount=0,
-                       duel_message_id=None, duel_channel_id=None, duel_initiator=0)
-        
+        # Обновляем ники
         try:
-            winner_data = get_user_data(guild_id, winner_id, winner.name)
-            display_name = winner.display_name
+            winner_data = get_user_data(guild_id, challenger_id, challenger.name)
+            display_name = challenger.display_name
             clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
-            new_nick = format_nick_with_icon(winner_new_weight, clean_name, winner_data['legendary_burger'])
+            new_nick = format_nick_with_icon(challenger_data['current_number'] if result == 2 else 
+                                            (winner_new_weight if result == 0 else loser_new_weight), 
+                                            clean_name, winner_data['legendary_burger'])
             if len(new_nick) > 32:
                 new_nick = new_nick[:32]
-            await winner.edit(nick=new_nick)
+            await challenger.edit(nick=new_nick)
         except:
             pass
         
         try:
-            loser_data = get_user_data(guild_id, loser_id, loser.name)
-            display_name = loser.display_name
+            loser_data = get_user_data(guild_id, opponent_id, opponent.name)
+            display_name = opponent.display_name
             clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
-            new_nick = format_nick_with_icon(loser_new_weight, clean_name, loser_data['legendary_burger'])
+            new_nick = format_nick_with_icon(opponent_data['current_number'] if result == 2 else 
+                                            (loser_new_weight if result == 0 else winner_new_weight), 
+                                            clean_name, loser_data['legendary_burger'])
             if len(new_nick) > 32:
                 new_nick = new_nick[:32]
-            await loser.edit(nick=new_nick)
+            await opponent.edit(nick=new_nick)
         except:
             pass
         
+        # Финальное сообщение
         result_embed = discord.Embed(
             title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
-            description=f"**Победитель:** {winner.mention}\n\n"
-                       f"📊 **Результаты:**\n"
-                       f"{winner.mention}: {challenger_data['current_number'] if winner == challenger else opponent_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n"
-                       f"{loser.mention}: {opponent_data['current_number'] if loser == opponent else challenger_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})",
-            color=0xffd700 if winner == challenger else 0xc0c0c0
+            description=result_description,
+            color=0xffd700 if result == 0 else (0xc0c0c0 if result == 1 else 0x9b59b6)
         )
         result_embed.set_footer(text="⚔️ Следующая дуэль доступна!")
         
@@ -4238,7 +4563,6 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             color=0xffaa00
         )
         await duel_msg.edit(embed=timeout_embed)
-
 
 @bot.command(name='отмена')
 async def cancel_duel(ctx):
@@ -4627,7 +4951,7 @@ async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str)
     
     embed.add_field(name="📦 Предмет", value=f"**{found_item}** x{amount}", inline=False)
     
-    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
+    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])	
     if len(giver_items) > 5:
         giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
     embed.add_field(name="📤 Ваш инвентарь", value=giver_inv or "Пусто", inline=True)
@@ -4639,6 +4963,176 @@ async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str)
     
     await ctx.send(embed=embed)
 
+@bot.command(name='апгрейд')
+async def upgrade_command(ctx, choice: str = None):
+    """
+    Улучшает предметы
+    Использование: !апгрейд [номер предмета]
+    """
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    items_dict = get_user_items(data['item_counts'])
+    
+    # Фильтруем предметы, которые есть у пользователя (количество > 0)
+    available_items = []
+    for item_name, count in items_dict.items():
+        if count > 0:
+            price = get_item_price(item_name)
+            available_items.append({
+                "name": item_name,
+                "count": count,
+                "price": price,
+                "emoji": ITEM_EMOJIS.get(item_name, "📦")
+            })
+    
+    # Сортируем по цене (от самых дешевых к дорогим)
+    available_items.sort(key=lambda x: x["price"])
+    
+    if not available_items:
+        embed = discord.Embed(
+            title="❌ Нет предметов",
+            description=f"{member.mention}, у вас нет предметов для улучшения!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Если пользователь не указал номер предмета - показываем список
+    if choice is None:
+        embed = discord.Embed(
+            title="🔧 **АПГРЕЙД ПРЕДМЕТОВ** 🔧",
+            description=f"{member.mention}, выберите предмет для улучшения:\n\n"
+                       f"Используйте `!апгрейд [номер]`",
+            color=0x3498db
+        )
+        
+        items_text = ""
+        for i, item in enumerate(available_items, 1):
+            items_text += f"**{i}.** {item['emoji']} **{item['name']}** — {item['count']} шт — {item['price']} кг\n"
+        
+        embed.add_field(name="📦 Ваши предметы", value=items_text, inline=False)
+        embed.set_footer(text="Улучшение может быть рискованным! Шанс зависит от стоимости.")
+        
+        await ctx.send(embed=embed)
+        return
+    
+    # Пользователь выбрал предмет по номеру
+    try:
+        item_index = int(choice) - 1
+        if item_index < 0 or item_index >= len(available_items):
+            await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(available_items)}")
+            return
+    except ValueError:
+        await ctx.send("❌ Введите корректный номер!")
+        return
+    
+    selected_item = available_items[item_index]
+    
+    # Получаем возможные апгрейды для выбранного предмета
+    possible_upgrades = get_possible_upgrades(selected_item["name"], selected_item["count"])
+    
+    if not possible_upgrades:
+        embed = discord.Embed(
+            title="❌ Нет доступных апгрейдов",
+            description=f"{member.mention}, для **{selected_item['emoji']} {selected_item['name']}** нет доступных улучшений!\n\n"
+                       f"Причина: либо нет предметов дороже, либо шанс меньше 1%.",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Сохраняем в данные пользователя выбранный предмет для апгрейда
+    update_user_data(
+        guild_id, user_id,
+        last_command="upgrade_select",
+        last_command_target=selected_item["name"],
+        last_command_use_time=datetime.now()
+    )
+    
+    embed = discord.Embed(
+        title="🔧 **ВЫБОР ЦЕЛИ АПГРЕЙДА** 🔧",
+        description=f"{member.mention}, вы выбрали: **{selected_item['emoji']} {selected_item['name']}**\n\n"
+                   f"Теперь выберите, во что хотите его улучшить:\n"
+                   f"Используйте `!выбрать [номер]`",
+        color=0x3498db
+    )
+    
+    upgrades_text = ""
+    for i, upgrade in enumerate(possible_upgrades, 1):
+        chance_percent = upgrade['chance'] * 100
+        upgrades_text += f"**{i}.** {upgrade['emoji']} **{upgrade['name']}** — {chance_percent:.1f}% шанс\n"
+    
+    embed.add_field(name="📈 Возможные улучшения", value=upgrades_text, inline=False)
+    embed.set_footer(text="Шанс = стоимость текущего предмета / стоимость целевого")
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='выбрать')
+async def choose_upgrade(ctx, choice: str = None):
+    """
+    Подтверждает выбор цели для апгрейда
+    Использование: !выбрать [номер]
+    """
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    
+    # Проверяем, что пользователь использовал !апгрейд недавно
+    if data.get('last_command') != "upgrade_select" or not data.get('last_command_use_time'):
+        await ctx.send("❌ Сначала используйте `!апгрейд` для выбора предмета!")
+        return
+    
+    last_use = data['last_command_use_time']
+    if isinstance(last_use, str):
+        last_use = datetime.fromisoformat(last_use)
+    
+    if datetime.now() - last_use > timedelta(minutes=5):
+        await ctx.send("❌ Время ожидания истекло. Используйте `!апгрейд` заново!")
+        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        return
+    
+    source_item_name = data.get('last_command_target')
+    if not source_item_name:
+        await ctx.send("❌ Ошибка: не выбран исходный предмет!")
+        return
+    
+    items_dict = get_user_items(data['item_counts'])
+    
+    # Проверяем, что предмет еще есть у пользователя
+    if items_dict.get(source_item_name, 0) <= 0:
+        await ctx.send(f"❌ У вас больше нет **{source_item_name}** для улучшения!")
+        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        return
+    
+    # Получаем возможные апгрейды
+    possible_upgrades = get_possible_upgrades(source_item_name, items_dict[source_item_name])
+    
+    if not possible_upgrades:
+        await ctx.send("❌ Для этого предмета больше нет доступных улучшений!")
+        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        return
+    
+    # Парсим выбор пользователя
+    try:
+        upgrade_index = int(choice) - 1
+        if upgrade_index < 0 or upgrade_index >= len(possible_upgrades):
+            await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+            return
+    except (ValueError, TypeError):
+        await ctx.send("❌ Введите корректный номер!")
+        return
+    
+    target_item = possible_upgrades[upgrade_index]
+    
+    # Запускаем анимацию апгрейда
+    await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
 
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
