@@ -570,6 +570,7 @@ def add_missing_columns(db_path, existing_columns):
             except Exception as e:
                 print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
     
+    # Добавляем колонки для кейсов - ВАЖНО: теперь включает shop_case
     for case_id in CASES.keys():
         if case_id != "daily":
             col_name = f"case_{case_id}_count"
@@ -635,7 +636,7 @@ def migrate_old_database(guild_id):
             except Exception as e:
                 print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
     
-    # Добавляем колонки для кейсов
+    # Добавляем колонки для кейсов - ВАЖНО: теперь включает shop_case
     for case_id in CASES.keys():
         if case_id != "daily":
             col_name = f"case_{case_id}_count"
@@ -652,6 +653,9 @@ def migrate_old_database(guild_id):
             col_name = f"case_{case_id}_count"
             if col_name in existing_columns:
                 cursor.execute(f"UPDATE user_fat SET {col_name} = COALESCE({col_name}, 0)")
+            else:
+                # Для новых колонок значения уже 0 по умолчанию
+                pass
     
     conn.commit()
     conn.close()
@@ -740,6 +744,7 @@ def init_guild_database(guild_id):
         duel_initiator INTEGER DEFAULT 0
     '''
     
+    # Добавляем колонки для каждого типа кейса
     case_columns = []
     for case_id in CASES.keys():
         if case_id != "daily":
