@@ -245,6 +245,7 @@ CASES = {
             {"value": 0, "chance": 98, "emoji": "🔄"},
             {"value": "water", "chance": 2, "emoji": "💧"}
         ]
+    }
 }
 
 # ===== НАСТРОЙКИ МАГАЗИНА =====
