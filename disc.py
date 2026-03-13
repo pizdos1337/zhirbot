@@ -245,7 +245,7 @@ CASES = {
             {"value": 0, "chance": 98, "emoji": "🔄"},
             {"value": "water", "chance": 2, "emoji": "💧"}
         ]
-    }
+}
 }
 
 # ===== НАСТРОЙКИ МАГАЗИНА =====
@@ -323,6 +323,72 @@ SHOP_ITEMS = [
     {"name": "Снатчер", "chance": 0.001, "min_amount": 1, "max_amount": 1,
      "price": 2000, "gain_per_24h": 0, "description": "👾 **СНАТЧЕР** 👾\nКаждые 6 часов с шансом 20% генерирует 1 случайный предмет из магазина\nВыбирает случайный слот из виртуального магазина (10 слотов)\nЕсли в слоте есть предмет - даёт 1 шт\nРаботает пассивно, уведомления в ЛС"},
 ]
+
+ITEM_EMOJIS = {
+    "Горелый бекон": "🥓",
+    "Горелый бутерброд": "🥪", 
+    "Горелый додстер": "🌯",
+    "Тарелка макарон": "🍝",
+    "Тарелка хинкалей": "🥟",
+    "Бургер": "🍔",
+    "Пицца": "🍕",
+    "Ведро KFC": "🍗",
+    "Комбо за 1000!": "🍱",
+    "Бездонное ведро KFC": "🪣",
+    "Бездонная пачка чипсов": "🥨",
+    "Пожизненный запас чикенбургеров": "🍔🍔🍔",
+    "Автоматическая система подачи холестерина": "⚙️💉",
+    "Святой сэндвич": "✨",
+    "Гнилая ножка KFC": "💀",
+    "Стакан воды": "💧",
+    "Автохолестерол": "💊",
+    "Холестеринимус": "💊",
+    "Яблоко": "🍎",
+    "Апельсин": "🍊",
+    "Золотое Яблоко": "🍎✨",
+    "Золотой Апельсин": "🍊✨",
+    "Драгонфрукт": "🐉🍈",
+    "Золотой Драгонфрукт": "🐉🍈✨",
+    "Снатчер": "👾"
+}
+CASES["shop_case"] = {
+    "name": "Магазинный кейс",
+    "emoji": "🏪",
+    "tradable": True,
+    "daily": False,
+    "shop_chance": 0.3,
+    "min_shop": 1,
+    "max_shop": 5,
+    "price": 150,
+    "prizes": []
+}
+
+# Заполняем призы
+shop_case_prizes = []
+for item in SHOP_ITEMS:
+    chance_percent = item["chance"] * 100
+    emoji = ITEM_EMOJIS.get(item["name"], "🎁")
+    shop_case_prizes.append({
+        "value": item["name"],
+        "chance": chance_percent,
+        "emoji": emoji,
+        "name": item["name"]
+    })
+
+# Добавляем "ничего"
+total = sum(p["chance"] for p in shop_case_prizes)
+if total < 100:
+    shop_case_prizes.append({
+        "value": 0,
+        "chance": 100 - total,
+        "emoji": "🔄",
+        "name": "Ничего"
+    })
+else:
+    for prize in shop_case_prizes:
+        prize["chance"] = (prize["chance"] / total) * 100
+
+CASES["shop_case"]["prizes"] = shop_case_prizes
 
 print("="*60)
 print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
@@ -2284,6 +2350,7 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
         
+        # ===== ОБРАБОТКА ПРИЗА (обновленная) =====
         items_dict = get_user_items(data['item_counts'])
         new_number = data['current_number']
         new_autoburger_count = data['autoburger_count']
@@ -2292,6 +2359,7 @@ async def fat_case_command(ctx):
         
         has_water = items_dict.get("Стакан воды", 0) > 0
         
+        # Определяем тип приза и обрабатываем
         if prize_value == "autoburger":
             new_autoburger_count += 1
             interval = get_autoburger_interval(new_autoburger_count)
@@ -2299,15 +2367,26 @@ async def fat_case_command(ctx):
                 new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
             result_display = f"🎉 **АВТОБУРГЕР!** 🍔✨"
             result_color = 0xffd700
+            
         elif prize_value == "rotten_leg":
             items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
             result_display = f"💀 **Гнилая ножка KFC!** 💀"
             result_color = 0x993366
+            
         elif prize_value == "water":
             items_dict["Стакан воды"] = items_dict.get("Стакан воды", 0) + 1
             result_display = f"💧 **Стакан воды!** 💧"
             result_color = 0x66ccff
+            
+        elif isinstance(prize_value, str):
+            # Это предмет из магазина (для Магазинного кейса)
+            items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
+            result_display = f"🎁 **{prize_value}** {prize_emoji}"
+            result_color = 0x9b59b6  # Фиолетовый
+            # Вес не меняется
+            
         else:
+            # Это кг (число)
             if has_water and case_to_open != "daily":
                 prize_value = prize_value // 3
             new_number = data['current_number'] + prize_value
@@ -2322,7 +2401,8 @@ async def fat_case_command(ctx):
         await case_msg.edit(embed=result_embed)
         await asyncio.sleep(1.5)
         
-        if prize_value not in ["autoburger", "rotten_leg", "water"] and prize_value != 0:
+        # Обновляем ник если изменился вес
+        if isinstance(prize_value, int) and prize_value not in [0] and prize_value not in ["autoburger", "rotten_leg", "water"] and prize_value != 0:
             try:
                 display_name = member.display_name
                 clean_name = display_name
@@ -2346,6 +2426,7 @@ async def fat_case_command(ctx):
             except:
                 pass
         
+        # Обновляем данные в БД
         update_user_data(
             guild_id, user_id,
             number=new_number,
@@ -2360,6 +2441,7 @@ async def fat_case_command(ctx):
             cases_dict=cases_dict
         )
         
+        # ===== ФИНАЛЬНОЕ СООБЩЕНИЕ =====
         rank_name, rank_emoji = get_rank(new_number)
         
         if prize_value == "autoburger":
@@ -2373,6 +2455,7 @@ async def fat_case_command(ctx):
                                      f"Интервал: **каждые {get_autoburger_interval(new_autoburger_count)} ч**\n"
                                      f"Бонус: **+{AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100:.1f}%**",
                                inline=False)
+                               
         elif prize_value in ["rotten_leg", "water"]:
             final_embed = discord.Embed(
                 title=f"{case_emoji} Открытие {case['name']}",
@@ -2381,9 +2464,23 @@ async def fat_case_command(ctx):
             )
             final_embed.add_field(name="🎁 Приз", value=result_display, inline=False)
             final_embed.add_field(name="📦 Предмет добавлен в инвентарь", 
-                               value=f"Теперь у вас: {items_dict.get('Гнилая ножка KFC' if prize_value == 'rotten_leg' else 'Стакан воды', 0)} шт", 
+                               value=f"Теперь у вас: {items_dict.get(prize_value, 0)} шт", 
                                inline=False)
+                               
+        elif isinstance(prize_value, str):
+            # Предмет из магазина
+            final_embed = discord.Embed(
+                title=f"{case_emoji} Открытие {case['name']}",
+                description=f"**{member.mention}** открыл кейс и получил предмет!",
+                color=result_color
+            )
+            final_embed.add_field(name="🎁 Приз", value=result_display, inline=False)
+            final_embed.add_field(name="📦 Предмет добавлен в инвентарь", 
+                               value=f"Теперь у вас: {items_dict.get(prize_value, 0)} шт", 
+                               inline=False)
+            
         else:
+            # Обычные кг
             final_embed = discord.Embed(
                 title=f"{case_emoji} Открытие {case['name']}",
                 description=f"**{member.mention}** открыл кейс и получил:",
