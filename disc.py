@@ -5174,6 +5174,29 @@ async def fix_case_column(ctx):
     finally:
         conn.close()
         
+@bot.command(name='миграция_кейса')
+@commands.has_permissions(administrator=True)
+async def migrate_shop_case(ctx):
+    """Добавляет правильную колонку для магазинного кейса"""
+    guild_id = ctx.guild.id
+    db_path = get_db_path(guild_id)
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    try:
+        # Добавляем правильную колонку
+        cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
+        conn.commit()
+        await ctx.send("✅ Колонка `case_shop_case_count` успешно добавлена!")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" in str(e):
+            await ctx.send("ℹ️ Колонка уже существует!")
+        else:
+            await ctx.send(f"❌ Ошибка: {e}")
+    finally:
+        conn.close()
+        
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
