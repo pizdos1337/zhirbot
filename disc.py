@@ -2301,8 +2301,8 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
     new_number = data['current_number']
     
     if success:
-        # Успех - списываем кг и добавляем предмет
-        new_number = data['current_number'] - target_item['price']
+        # УСПЕХ: списываем ВСЕ amount, добавляем предмет
+        new_number = data['current_number'] - amount
         
         if target_item.get("is_case", False):
             cases_dict = data.get('cases_dict', {}).copy()
@@ -2316,7 +2316,7 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
             )
             result_description = f"✅ **Поздравляем!**\n\n" \
                                 f"{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\n" \
-                                f"Предмет успешно получен! Потрачено: {target_item['price']} кг"
+                                f"Предмет успешно получен! Потрачено: {amount} кг"
         else:
             items_dict = get_user_items(data['item_counts'])
             items_dict[target_item["name"]] = items_dict.get(target_item["name"], 0) + 1
@@ -2329,9 +2329,9 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
             )
             result_description = f"✅ **Поздравляем!**\n\n" \
                                 f"{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\n" \
-                                f"Предмет успешно получен! Потрачено: {target_item['price']} кг"
+                                f"Предмет успешно получен! Потрачено: {amount} кг"
     else:
-        # Неудача - кг сгорают
+        # НЕУДАЧА: списываем ВСЕ amount, предмет не получаем
         new_number = data['current_number'] - amount
         update_user_data(
             guild_id, user_id,
@@ -5405,7 +5405,7 @@ async def upgrade_kg_command(ctx, amount: int):
     """
     Улучшает кг в предметы (как обычный апгрейд)
     Использование: !апгрейдкг [количество кг]
-    Пример: !апгрейдкг 1000 - попытаться улучшить 1000 кг в предмет
+    Пример: !апгрейдкг 1000 - улучшить 1000 кг в предмет (шанс = цена предмета / 1000)
     """
     if amount <= 0:
         await ctx.send("❌ Количество кг должно быть больше 0!")
@@ -5425,88 +5425,96 @@ async def upgrade_kg_command(ctx, amount: int):
     
     # Получаем все предметы, в которые можно улучшить эти кг
     possible_upgrades = []
+    seen_items = set()  # Для избежания дубликатов
     
-    # Проверяем обычные предметы из магазина
+    # Сначала добавляем предметы из магазина, у которых цена >= amount
     for shop_item in SHOP_ITEMS:
+        item_name = shop_item["name"]
+        if item_name in seen_items:
+            continue
+            
         target_price = shop_item["price"]
         
-        # Пропускаем предметы дороже, чем у нас кг
-        if target_price > amount:
+        # Показываем только предметы ДОРОЖЕ или РАВНЫЕ amount
+        if target_price < amount:
             continue
-        
-        # Рассчитываем шанс
-        chance = amount / target_price
+            
+        # Шанс = цена предмета / amount (как в обычном апгрейде)
+        chance = target_price / amount
         
         # Если шанс меньше 1% - не добавляем
         if chance < 0.01:
             continue
-        
+            
         possible_upgrades.append({
-            "name": shop_item["name"],
+            "name": item_name,
             "price": target_price,
-            "chance": min(chance, 1.0),  # Шанс не может быть больше 100%
-            "emoji": ITEM_EMOJIS.get(shop_item["name"], "🎁"),
-            "description": shop_item["description"]
+            "chance": chance,
+            "emoji": ITEM_EMOJIS.get(item_name, "🎁"),
+            "description": shop_item["description"],
+            "is_case": False
         })
+        seen_items.add(item_name)
     
-    # Проверяем легендарные предметы (только если кг >= 1000)
-    if amount >= 1000:
-        for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
-            # Проверяем, что такой предмет вообще существует в игре
-            item_exists = False
-            for shop_item in SHOP_ITEMS:
-                if shop_item["name"] == leg_name:
-                    item_exists = True
-                    break
+    # Добавляем легендарные предметы из LEGENDARY_UPGRADE_PRICES
+    for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
+        if leg_name in seen_items:
+            continue
             
-            if not item_exists:
-                continue
+        # Проверяем, что предмет существует в SHOP_ITEMS
+        item_exists = any(shop_item["name"] == leg_name for shop_item in SHOP_ITEMS)
+        if not item_exists:
+            continue
             
-            # Пропускаем если предмет дороже, чем у нас кг
-            if leg_price > amount:
-                continue
+        # Показываем только предметы ДОРОЖЕ или РАВНЫЕ amount
+        if leg_price < amount:
+            continue
             
-            # Рассчитываем шанс
-            chance = amount / leg_price
+        chance = leg_price / amount
+        if chance < 0.01:
+            continue
             
-            # Если шанс меньше 1% - не добавляем
-            if chance < 0.01:
-                continue
-            
-            possible_upgrades.append({
-                "name": leg_name,
-                "price": leg_price,
-                "chance": min(chance, 1.0),
-                "emoji": ITEM_EMOJIS.get(leg_name, "✨"),
-                "description": "Легендарный предмет"
-            })
+        possible_upgrades.append({
+            "name": leg_name,
+            "price": leg_price,
+            "chance": chance,
+            "emoji": ITEM_EMOJIS.get(leg_name, "✨"),
+            "description": "Легендарный предмет",
+            "is_case": False
+        })
+        seen_items.add(leg_name)
     
-    # Добавляем кейсы (их тоже можно получить)
+    # Добавляем кейсы (только дороже или равные amount)
     for case_id, case in CASES.items():
         if case_id == "daily" or not case.get("tradable", False):
             continue
-        
+            
+        case_name = case["name"]
+        if case_name in seen_items:
+            continue
+            
         target_price = case["price"]
         
-        if target_price > amount:
+        if target_price < amount:
             continue
-        
-        chance = amount / target_price
+            
+        chance = target_price / amount
         if chance < 0.01:
             continue
-        
+            
         possible_upgrades.append({
-            "name": case["name"],
+            "name": case_name,
             "price": target_price,
-            "chance": min(chance, 1.0),
+            "chance": chance,
             "emoji": case["emoji"],
             "description": f"Кейс с случайными призами",
             "is_case": True,
             "case_id": case_id
         })
+        seen_items.add(case_name)
     
     if not possible_upgrades:
-        await ctx.send(f"❌ На {amount} кг нет доступных улучшений! (минимальный шанс 1%)")
+        await ctx.send(f"❌ На {amount} кг нет доступных улучшений! (нужны предметы дороже или равные {amount} кг)")
         return
     
     # Сортируем по цене (от самых дешевых к дорогим)
@@ -5528,11 +5536,10 @@ async def upgrade_kg_command(ctx, amount: int):
         color=0xffaa00
     )
     
-    # Разбиваем на части если много
     upgrades_text = ""
     for i, upgrade in enumerate(possible_upgrades, 1):
         chance_percent = upgrade['chance'] * 100
-        upgrade_line = f"**{i}.** {upgrade['emoji']} **{upgrade['name']}** — {chance_percent:.1f}% шанс (цена: {upgrade['price']} кг)\n"
+        upgrade_line = f"**{i}.** {upgrade['emoji']} **{upgrade['name']}** — {chance_percent:.1f}% шанс (нужно: {upgrade['price']} кг)\n"
         
         if len(upgrades_text + upgrade_line) <= 900:
             upgrades_text += upgrade_line
@@ -5553,7 +5560,7 @@ async def upgrade_kg_command(ctx, amount: int):
         else:
             embed.add_field(name=f"📈 Возможные улучшения (часть {part_num})", value=upgrades_text, inline=False)
     
-    embed.set_footer(text="Шанс = ваши кг / цена предмета")
+    embed.set_footer(text="Шанс = цена предмета / ваши кг")
     await ctx.send(embed=embed)
 
 # ===== ЗАПУСК БОТА =====
