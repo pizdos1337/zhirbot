@@ -749,7 +749,20 @@ def get_user_data(guild_id, user_id, user_name=None):
         for i, case_col in enumerate(case_cols):
             case_id = case_col.replace("case_", "").replace("_count", "")
             cases_dict[case_id] = data[idx + i] or 0
+
+        # ====== ЭТОТ КОД ИСПРАВЛЯЕТ ПРОБЛЕМУ ======
+        # Переименовываем 'shop' в 'shop_case' если нашли
+        if 'shop' in cases_dict:
+            cases_dict['shop_case'] = cases_dict.get('shop_case', 0) + cases_dict['shop']
+            del cases_dict['shop']
+            print(f"🔧 Автоисправление: shop -> shop_case для пользователя {user_id}")
         
+        # Удаляем все ключи, которых нет в CASES
+        for key in list(cases_dict.keys()):
+            if key not in CASES and key != 'daily':
+                print(f"⚠️ Удаляем неизвестный ключ: {key}")
+                del cases_dict[key]
+
         user_data['cases_dict'] = cases_dict
         
     else:
@@ -3341,7 +3354,18 @@ async def show_inventory(ctx, member: discord.Member = None):
     user_id = str(target.id)
     
     data = get_user_data(guild_id, user_id, target.name)
-    
+
+    if 'cases_dict' in data:
+        # Создаём новый словарь только с правильными ключами
+        clean_cases = {}
+        for case_id, count in data['cases_dict'].items():
+            if case_id in CASES:  # Только те, что есть в CASES
+                clean_cases[case_id] = count
+            elif case_id == 'shop':  # Если нашли shop - добавляем в shop_case
+                clean_cases['shop_case'] = clean_cases.get('shop_case', 0) + count
+                print(f"Найден shop у {target.name}, перенесено {count} в shop_case")
+        data['cases_dict'] = clean_cases
+
     embed = discord.Embed(
         title=f"🎒 Инвентарь - {target.display_name}",
         color=0x3498db
@@ -4984,138 +5008,7 @@ async def choose_upgrade(ctx, choice: str = None):
     
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
-    
-@bot.command(name='глобальный_фикс')
-async def global_fix(ctx):
-    """Глобальное исправление проблемы с кейсами (работает без прав админа)"""
-    guild_id = ctx.guild.id
-    db_path = get_db_path(guild_id)
-    
-    await ctx.send("🔄 Запускаю глобальное исправление кейсов...")
-    
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # 1. Получаем список всех колонок
-        cursor.execute("PRAGMA table_info(user_fat)")
-        columns = cursor.fetchall()
-        column_names = [col[1] for col in columns]
-        
-        # 2. Проверяем наличие проблемных колонок
-        problematic_columns = []
-        for col in column_names:
-            if col == 'shop' or col == 'case_shop' or (col.startswith('case_') and col not in [f"case_{k}_count" for k in CASES.keys()]):
-                problematic_columns.append(col)
-        
-        if problematic_columns:
-            await ctx.send(f"🔍 Найдены проблемные колонки: {', '.join(problematic_columns)}")
-            
-            # 3. Для каждого пользователя переносим данные
-            cursor.execute("SELECT user_id, user_name FROM user_fat")
-            users = cursor.fetchall()
-            
-            fixed_count = 0
-            for user_id, user_name in users:
-                try:
-                    # Получаем данные пользователя
-                    user_data = get_user_data(guild_id, user_id, user_name)
-                    cases_dict = user_data.get('cases_dict', {}).copy()
-                    
-                    changed = False
-                    
-                    # Переносим данные из проблемных ключей
-                    for problem_col in problematic_columns:
-                        # Пробуем получить значение напрямую из БД
-                        cursor.execute(f"SELECT {problem_col} FROM user_fat WHERE user_id = ?", (user_id,))
-                        result = cursor.fetchone()
-                        if result and result[0]:
-                            value = result[0]
-                            # Добавляем в правильный ключ
-                            if 'shop' in problem_col:
-                                cases_dict['shop_case'] = cases_dict.get('shop_case', 0) + value
-                            changed = True
-                    
-                    # Удаляем старые ключи из cases_dict
-                    for key in list(cases_dict.keys()):
-                        if key not in CASES and key != 'daily':
-                            del cases_dict[key]
-                            changed = True
-                    
-                    if changed:
-                        # Сохраняем исправленные данные
-                        update_user_data(guild_id, user_id, cases_dict=cases_dict)
-                        fixed_count += 1
-                        
-                except Exception as e:
-                    print(f"Ошибка при обработке {user_id}: {e}")
-            
-            await ctx.send(f"✅ Исправлено пользователей: {fixed_count}")
-        else:
-            await ctx.send("✅ Проблемных колонок не найдено!")
-        
-        conn.close()
-        
-    except Exception as e:
-        await ctx.send(f"❌ Ошибка: {e}")
 
-@bot.command(name='мой_фикс')
-async def my_fix(ctx):
-    """Быстрое исправление только для тебя"""
-    guild_id = ctx.guild.id
-    user_id = str(ctx.author.id)
-    
-    try:
-        # Получаем твои данные
-        data = get_user_data(guild_id, user_id, ctx.author.name)
-        cases_dict = data.get('cases_dict', {}).copy()
-        
-        # Удаляем все неправильные ключи
-        original = cases_dict.copy()
-        cases_dict = {k: v for k, v in cases_dict.items() if k in CASES or k == 'daily'}
-        
-        # Проверяем, есть ли shop_case, если нет - добавляем из старых данных
-        if 'shop_case' not in cases_dict:
-            # Ищем любые ключи с shop
-            shop_value = 0
-            for key, value in original.items():
-                if 'shop' in key and key != 'shop_case':
-                    shop_value += value
-            
-            if shop_value > 0:
-                cases_dict['shop_case'] = shop_value
-        
-        if cases_dict != original:
-            update_user_data(guild_id, user_id, cases_dict=cases_dict)
-            await ctx.send(f"✅ Починил твои кейсы! Теперь у тебя: {cases_dict.get('shop_case', 0)} магазинных кейсов")
-        else:
-            await ctx.send("✅ У тебя всё в порядке!")
-            
-    except Exception as e:
-        await ctx.send(f"❌ Ошибка: {e}")
-
-@bot.command(name='проверка')
-async def check_me(ctx):
-    """Проверяет состояние твоих кейсов"""
-    guild_id = ctx.guild.id
-    user_id = str(ctx.author.id)
-    
-    data = get_user_data(guild_id, user_id, ctx.author.name)
-    cases_dict = data.get('cases_dict', {})
-    
-    response = f"**Твои кейсы:**\n"
-    for case_id, count in cases_dict.items():
-        if count > 0:
-            if case_id in CASES:
-                response += f"✅ {CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
-            else:
-                response += f"❌ Проблемный ключ '{case_id}': {count}\n"
-    
-    if 'shop_case' in cases_dict:
-        response += f"\n👍 Магазинных кейсов: {cases_dict['shop_case']}"
-    
-    await ctx.send(response)
-    
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
