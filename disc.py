@@ -4985,154 +4985,44 @@ async def choose_upgrade(ctx, choice: str = None):
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
     
-@bot.command(name='починить_мои_кейсы')
-async def fix_my_cases(ctx):
-    """Исправляет ваши собственные кейсы (без прав администратора)"""
+@bot.command(name='починить_кейсы')
+async def fix_my_cases_simple(ctx):
+    """Простая команда для исправления ваших кейсов"""
     guild_id = ctx.guild.id
-    user = ctx.author
-    user_id = str(user.id)
+    user_id = str(ctx.author.id)
+    db_path = get_db_path(guild_id)
     
-    # Получаем текущие данные
-    data = get_user_data(guild_id, user_id, user.name)
-    cases_dict = data.get('cases_dict', {}).copy()
-    changed = False
-    
-    # Проверяем наличие проблемных ключей
-    problem_keys = []
-    
-    # Исправляем старый ключ 'shop' на 'shop_case'
-    if 'shop' in cases_dict:
-        old_value = cases_dict['shop']
-        cases_dict['shop_case'] = cases_dict.get('shop_case', 0) + old_value
-        del cases_dict['shop']
-        changed = True
-        problem_keys.append(f"'shop' ({old_value} шт → перенесено в shop_case)")
-    
-    # Также проверяем другие возможные проблемные ключи
-    for key in list(cases_dict.keys()):
-        if key not in CASES and key != "daily" and key != 'shop_case':
-            # Если ключ не из списка допустимых, но похож на shop
-            if 'shop' in key:
-                old_value = cases_dict[key]
-                cases_dict['shop_case'] = cases_dict.get('shop_case', 0) + old_value
-                del cases_dict[key]
-                changed = True
-                problem_keys.append(f"'{key}' ({old_value} шт → перенесено в shop_case)")
-    
-    if changed:
-        # Сохраняем исправленные данные
-        update_user_data(guild_id, user_id, cases_dict=cases_dict)
+    try:
+        # Подключаемся напрямую к БД
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
         
-        embed = discord.Embed(
-            title="✅ Кейсы исправлены!",
-            description=f"{user.mention}, ваши кейсы успешно починены!",
-            color=0x00ff00
-        )
+        # Получаем текущие значения
+        cursor.execute("SELECT case_shop_count, case_shop_case_count FROM user_fat WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
         
-        if problem_keys:
-            embed.add_field(
-                name="🔧 Что было исправлено",
-                value="\n".join(problem_keys),
-                inline=False
-            )
-        
-        # Показываем текущее количество кейсов
-        cases_text = ""
-        for case_id, count in cases_dict.items():
-            if count > 0 and case_id in CASES:
-                cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
-        
-        if cases_text:
-            embed.add_field(name="📦 Ваши кейсы сейчас", value=cases_text, inline=False)
-        
-        await ctx.send(embed=embed)
-    else:
-        # Если проблем не найдено
-        embed = discord.Embed(
-            title="✅ Всё хорошо!",
-            description=f"{user.mention}, у вас нет проблем с кейсами!",
-            color=0xffaa00
-        )
-        
-        # Показываем текущие кейсы
-        cases_text = ""
-        for case_id, count in cases_dict.items():
-            if count > 0 and case_id in CASES:
-                cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
-        
-        if cases_text:
-            embed.add_field(name="📦 Ваши кейсы", value=cases_text, inline=False)
+        if result:
+            shop_count = result[0] or 0
+            shop_case_count = result[1] or 0
+            
+            if shop_count > 0:
+                # Переносим значения
+                new_shop_case = shop_case_count + shop_count
+                cursor.execute("UPDATE user_fat SET case_shop_count = 0, case_shop_case_count = ? WHERE user_id = ?", 
+                             (new_shop_case, user_id))
+                conn.commit()
+                
+                await ctx.send(f"✅ {ctx.author.mention}, ваши кейсы починены! Перенесено **{shop_count}** магазинных кейсов.")
+            else:
+                await ctx.send(f"✅ {ctx.author.mention}, у вас нет проблем с кейсами!")
         else:
-            embed.add_field(name="📦 Ваши кейсы", value="У вас нет кейсов", inline=False)
+            await ctx.send(f"❌ {ctx.author.mention}, вы не найдены в базе данных!")
         
-        await ctx.send(embed=embed)
-
-@bot.command(name='проверить_мои_кейсы')
-async def check_my_cases(ctx):
-    """Проверяет ваши кейсы на наличие проблем"""
-    guild_id = ctx.guild.id
-    user = ctx.author
-    user_id = str(user.id)
-    
-    data = get_user_data(guild_id, user_id, user.name)
-    cases_dict = data.get('cases_dict', {})
-    
-    embed = discord.Embed(
-        title=f"🔍 Проверка кейсов - {user.display_name}",
-        color=0x3498db
-    )
-    
-    # Показываем все ключи, которые есть в БД
-    all_keys = list(cases_dict.keys())
-    keys_text = ""
-    problem_found = False
-    
-    for key in all_keys:
-        if key in CASES:
-            # Нормальный ключ
-            keys_text += f"✅ `{key}`: {cases_dict[key]} шт - {CASES[key]['emoji']} {CASES[key]['name']}\n"
-        elif key == 'shop':
-            # Проблемный ключ
-            keys_text += f"❌ `{key}`: {cases_dict[key]} шт - **ПРОБЛЕМА!** (должен быть 'shop_case')\n"
-            problem_found = True
-        elif 'shop' in key:
-            # Похоже на проблему
-            keys_text += f"⚠️ `{key}`: {cases_dict[key]} шт - **ПОДОЗРИТЕЛЬНО**\n"
-            problem_found = True
-        else:
-            # Неизвестный ключ
-            keys_text += f"❓ `{key}`: {cases_dict[key]} шт - **НЕИЗВЕСТНЫЙ КЛЮЧ**\n"
-            problem_found = True
-    
-    if not keys_text:
-        keys_text = "У вас нет кейсов"
-    
-    embed.add_field(name="📊 Состояние кейсов", value=keys_text[:1024], inline=False)
-    
-    if problem_found:
-        embed.add_field(
-            name="⚠️ Обнаружены проблемы!",
-            value=f"Используйте `!починить_мои_кейсы` чтобы исправить",
-            inline=False
-        )
-        embed.color = 0xff0000
-    else:
-        embed.add_field(
-            name="✅ Всё хорошо",
-            value="Проблем не обнаружено",
-            inline=False
-        )
-    
-    # Добавляем список доступных кейсов для справки
-    available_cases = "\n".join([f"{case['emoji']} `{case_id}` - {case['name']}" 
-                                 for case_id, case in CASES.items() if case_id != "daily"])
-    embed.add_field(
-        name="📋 Доступные типы кейсов",
-        value=available_cases[:1024],
-        inline=False
-    )
-    
-    await ctx.send(embed=embed)
+        conn.close()
+        
+    except Exception as e:
+        await ctx.send(f"❌ Ошибка: {e}")
+        print(f"Ошибка в fix_my_cases_simple: {e}")
     
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
