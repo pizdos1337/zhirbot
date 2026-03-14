@@ -4985,38 +4985,53 @@ async def choose_upgrade(ctx, choice: str = None):
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
     
-@bot.command(name='починить_срочно')
-async def fix_urgent(ctx):
-    """СРОЧНОЕ исправление кейсов"""
+@bot.command(name='очистить_мусор')
+async def clean_trash(ctx):
+    """Удаляет только проблемные данные, сохраняя прогресс"""
     guild_id = ctx.guild.id
     user_id = str(ctx.author.id)
     db_path = get_db_path(guild_id)
     
     try:
-        # Подключаемся к базе
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # 1. Сначала проверим, сколько у вас кейсов
-        cursor.execute("SELECT case_shop_case_count FROM user_fat WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
+        # 1. Получаем текущие данные пользователя
+        cursor.execute("SELECT * FROM user_fat WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
         
-        if result:
-            current = result[0] or 0
-            # Добавляем 3 кейса (принудительно)
-            new_value = current + 3
-            cursor.execute("UPDATE user_fat SET case_shop_case_count = ? WHERE user_id = ?", (new_value, user_id))
-            conn.commit()
-            
-            await ctx.send(f"✅ Исправлено! Было: {current}, стало: {new_value} кейсов\nТеперь команда !жиркейс должна работать!")
-        else:
-            # Если записи нет - создаём
-            cursor.execute("INSERT INTO user_fat (user_id, user_name, case_shop_case_count) VALUES (?, ?, ?)", 
-                         (user_id, ctx.author.name, 3))
-            conn.commit()
-            await ctx.send(f"✅ Создана запись с 3 кейсами!")
+        if not user_data:
+            await ctx.send("❌ Ты не найден в базе")
+            conn.close()
+            return
         
+        # 2. Получаем названия всех колонок
+        cursor.execute("PRAGMA table_info(user_fat)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        # 3. Собираем всё что нужно сохранить
+        preserve_data = {}
+        for i, col in enumerate(columns):
+            if col not in ['case_shop_count', 'case_shop']:  # пропускаем проблемные
+                preserve_data[col] = user_data[i]
+        
+        # 4. Удаляем пользователя
+        cursor.execute("DELETE FROM user_fat WHERE user_id = ?", (user_id,))
+        
+        # 5. Создаём заново с чистыми данными
+        cols = []
+        values = []
+        for col, value in preserve_data.items():
+            cols.append(col)
+            values.append(value)
+        
+        placeholders = ','.join(['?'] * len(cols))
+        cursor.execute(f"INSERT INTO user_fat ({','.join(cols)}) VALUES ({placeholders})", values)
+        
+        conn.commit()
         conn.close()
+        
+        await ctx.send(f"✅ Очистил мусор! Весь твой прогресс сохранён, проблемные данные удалены.\nПробуй !жиркейс теперь")
         
     except Exception as e:
         await ctx.send(f"❌ Ошибка: {e}")
