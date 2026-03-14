@@ -2510,14 +2510,19 @@ async def cmd_buy(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.full_name
     
-    args = message.get_args().split()
-    if len(args) < 2:
+    # ИСПРАВЛЕНО: парсим аргументы вручную
+    if not message.text or ' ' not in message.text:
+        await message.reply("❌ Использование: `/купить [номер слота] [количество]`\nПример: `/купить 1 2`")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
         await message.reply("❌ Использование: `/купить [номер слота] [количество]`\nПример: `/купить 1 2`")
         return
     
     try:
-        slot = int(args[0])
-        amount = int(args[1])
+        slot = int(parts[1])
+        amount = int(parts[2])
     except ValueError:
         await message.reply("❌ Номер слота и количество должны быть числами!")
         return
@@ -2628,14 +2633,19 @@ async def cmd_give_fat(message: types.Message):
     giver_id = message.from_user.id
     giver_name = message.from_user.full_name
     
-    args = message.get_args().split()
-    if len(args) < 2:
+    # ИСПРАВЛЕНО: парсим аргументы вручную
+    if not message.text or ' ' not in message.text:
         await message.reply("❌ Использование: `/датьжир @username [количество]`\nПример: `/датьжир @user 100`")
         return
     
-    target_username = args[0].replace('@', '')
+    parts = message.text.split()
+    if len(parts) < 3:
+        await message.reply("❌ Использование: `/датьжир @username [количество]`\nПример: `/датьжир @user 100`")
+        return
+    
+    target_username = parts[1].replace('@', '')
     try:
-        amount = int(args[1])
+        amount = int(parts[2])
     except ValueError:
         await message.reply("❌ Количество должно быть числом!")
         return
@@ -2701,6 +2711,12 @@ async def cmd_ascension(message: types.Message):
     user_name = message.from_user.full_name
     
     data = get_user_data(chat_id, user_id, user_name)
+    
+    # ИСПРАВЛЕНО: ascension не требует аргументов, просто проверяем
+    # Если нужно обрабатывать аргументы, используйте:
+    # parts = message.text.split() if message.text else []
+    # if len(parts) > 1:
+    #     arg = parts[1]
     
     available, burger_idx, burger_name, req_weight, chance = check_ascension_available(data['current_number'], data['legendary_burger'])
     
@@ -2793,9 +2809,10 @@ async def cmd_upgrade(message: types.Message):
         await message.reply("❌ У вас нет предметов для улучшения!")
         return
     
-    args = message.get_args()
+    # ИСПРАВЛЕНО: парсим аргументы
+    parts = message.text.split() if message.text else []
     
-    if not args:
+    if len(parts) < 2:  # Нет аргументов
         response = f"🔧 **АПГРЕЙД ПРЕДМЕТОВ** 🔧\n\n"
         response += f"{user_name}, выберите предмет для улучшения:\n"
         response += f"Используйте `/апгрейд [номер]`\n\n"
@@ -2815,7 +2832,7 @@ async def cmd_upgrade(message: types.Message):
         return
     
     try:
-        item_index = int(args) - 1
+        item_index = int(parts[1]) - 1
         if item_index < 0 or item_index >= len(available_items):
             await message.reply(f"❌ Неверный номер! Введите число от 1 до {len(available_items)}")
             return
@@ -2863,13 +2880,15 @@ async def cmd_upgrade_kg(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.full_name
     
-    args = message.get_args()
-    if not args:
+    # ИСПРАВЛЕНО: парсим аргументы
+    parts = message.text.split() if message.text else []
+    
+    if len(parts) < 2:
         await message.reply("❌ Использование: `/апгрейдкг [количество кг]`\nПример: `/апгрейдкг 1000`")
         return
     
     try:
-        amount = int(args)
+        amount = int(parts[1])
     except ValueError:
         await message.reply("❌ Количество должно быть числом!")
         return
@@ -2963,14 +2982,16 @@ async def cmd_choose(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.full_name
     
-    args = message.get_args().split()
-    if not args:
+    # ИСПРАВЛЕНО: парсим аргументы
+    parts = message.text.split() if message.text else []
+    
+    if len(parts) < 2:
         await message.reply("❌ Укажите номер!")
         return
     
     try:
-        choice = args[0]
-        count = int(args[1]) if len(args) > 1 else 1
+        choice = parts[1]
+        count = int(parts[2]) if len(parts) > 2 else 1
     except ValueError:
         await message.reply("❌ Номер должен быть числом!")
         return
@@ -3467,13 +3488,15 @@ async def cmd_duel(message: types.Message):
     chat_id = message.chat.id
     challenger = message.from_user
     
-    args = message.get_args().split()
-    if len(args) < 2:
+    # ИСПРАВЛЕНО: парсим аргументы
+    parts = message.text.split() if message.text else []
+    
+    if len(parts) < 3:
         await message.reply("❌ Использование: `/дуэль @username [количество кг или \"все\"]`\nПример: `/дуэль @user 100`")
         return
     
-    target_username = args[0].replace('@', '')
-    amount_str = args[1]
+    target_username = parts[1].replace('@', '')
+    amount_str = parts[2]
     
     target_user = None
     try:
