@@ -907,6 +907,31 @@ def get_user_cases(guild_id, user_id):
     data = get_user_data(guild_id, user_id)
     return data.get('cases_dict', {})
 
+def add_passive_income_tracking():
+    """Добавляет колонку для отслеживания последнего пассивного дохода"""
+    for guild in bot.guilds:
+        try:
+            db_path = get_db_path(guild.id)
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Проверяем есть ли колонка
+            cursor.execute("PRAGMA table_info(user_fat)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'last_passive_income' not in columns:
+                cursor.execute("ALTER TABLE user_fat ADD COLUMN last_passive_income TIMESTAMP")
+                print(f"✅ Добавлена колонка last_passive_income для сервера {guild.name}")
+            
+            if 'last_hourly_income' not in columns:
+                cursor.execute("ALTER TABLE user_fat ADD COLUMN last_hourly_income TIMESTAMP")
+                print(f"✅ Добавлена колонка last_hourly_income для сервера {guild.name}")
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"❌ Ошибка при добавлении колонок: {e}")
+
 def update_user_cases(guild_id, user_id, case_id, change=1):
     """Обновляет количество конкретного кейса у пользователя"""
     data = get_user_data(guild_id, user_id)
@@ -1414,11 +1439,12 @@ async def autoburger_loop():
         await asyncio.sleep(60)
 
 async def passive_income_loop():
+    """Начисляет пассивный доход раз в 24 часа с проверкой последнего начисления"""
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
             current_time = datetime.now()
-            print(f"💰 Начисление пассивного дохода: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"💰 Проверка пассивного дохода: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
             
             for guild in bot.guilds:
                 guild_id = guild.id
@@ -1434,77 +1460,117 @@ async def passive_income_loop():
                     cursor.execute("PRAGMA table_info(user_fat)")
                     columns = [col[1] for col in cursor.fetchall()]
                     
-                    if 'item_counts' not in columns:
+                    if 'item_counts' not in columns or 'last_passive_income' not in columns:
                         conn.close()
                         continue
                     
-                    cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
+                    # Получаем всех пользователей, у которых есть предметы
+                    cursor.execute('''SELECT user_id, user_name, current_number, item_counts, 
+                                      legendary_burger, last_passive_income 
+                                      FROM user_fat WHERE item_counts != '{}' AND item_counts IS NOT NULL''')
                     users = cursor.fetchall()
                     conn.close()
                     
-                    for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
+                    for user_id, user_name, current_number, item_counts_str, legendary_burger, last_income in users:
                         try:
-                            items_dict = get_user_items(item_counts_str)
-                            if not items_dict:
-                                continue
+                            # Проверяем, когда было последнее начисление
+                            should_pay = False
                             
-                            total_gain = 0
-                            gained_items = []
-                            
-                            for item_name, count in items_dict.items():
-                                for shop_item in SHOP_ITEMS:
-                                    if shop_item["name"] == item_name:
-                                        gain = shop_item.get("gain_per_24h", 0) * count
-                                        if gain > 0:
-                                            total_gain += gain
-                                            gained_items.append(f"{item_name} x{count} (+{gain}кг)")
-                                        break
-                            
-                            if total_gain > 0:
-                                multiplier = 1.0
-                                if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-                                    multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                            if not last_income:
+                                # Никогда не было начисления - пропускаем
+                                print(f"⏭️ {user_name}: первое начисление, пропускаем")
+                                should_pay = False
+                            else:
+                                if isinstance(last_income, str):
+                                    last_time = datetime.fromisoformat(last_income)
+                                else:
+                                    last_time = last_income
                                 
-                                final_gain = int(total_gain * multiplier)
-                                new_number = current_number + final_gain
+                                # Прошло больше 24 часов?
+                                time_diff = current_time - last_time
+                                if time_diff.total_seconds() >= 24 * 60 * 60:
+                                    should_pay = True
+                            
+                            if should_pay:
+                                items_dict = get_user_items(item_counts_str)
+                                if not items_dict:
+                                    continue
                                 
+                                total_gain = 0
+                                gained_items = []
+                                
+                                for item_name, count in items_dict.items():
+                                    for shop_item in SHOP_ITEMS:
+                                        if shop_item["name"] == item_name:
+                                            gain = shop_item.get("gain_per_24h", 0) * count
+                                            if gain > 0:
+                                                total_gain += gain
+                                                gained_items.append(f"{item_name} x{count} (+{gain}кг)")
+                                            break
+                                
+                                if total_gain > 0:
+                                    multiplier = 1.0
+                                    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
+                                        multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                                    
+                                    final_gain = int(total_gain * multiplier)
+                                    new_number = current_number + final_gain
+                                    
+                                    # Обновляем данные
+                                    conn2 = sqlite3.connect(db_path)
+                                    c = conn2.cursor()
+                                    c.execute('''UPDATE user_fat SET 
+                                                current_number = ?, 
+                                                last_passive_income = ? 
+                                                WHERE user_id = ?''', 
+                                             (new_number, current_time, user_id))
+                                    conn2.commit()
+                                    conn2.close()
+                                    
+                                    # Обновляем ник
+                                    try:
+                                        guild_obj = bot.get_guild(guild_id)
+                                        if guild_obj:
+                                            member = guild_obj.get_member(int(user_id))
+                                            if member:
+                                                display_name = member.display_name
+                                                clean_name = display_name
+                                                if "kg" in display_name:
+                                                    parts = display_name.split("kg", 1)
+                                                    if len(parts) > 1:
+                                                        clean_name = parts[1].strip()
+                                                        if not clean_name:
+                                                            clean_name = user_name
+                                                else:
+                                                    clean_name = display_name
+                                                if not clean_name or len(clean_name) > 30:
+                                                    clean_name = user_name
+                                                new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+                                                if len(new_nick) > 32:
+                                                    new_nick = new_nick[:32]
+                                                await member.edit(nick=new_nick)
+                                    except:
+                                        pass
+                                    
+                                    print(f"💰 {user_name} получил {final_gain}кг от предметов: {', '.join(gained_items)}")
+                            else:
+                                # Обновляем время, чтобы при следующем запуске отсчёт пошёл правильно
                                 conn2 = sqlite3.connect(db_path)
                                 c = conn2.cursor()
-                                c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
+                                c.execute('''UPDATE user_fat SET last_passive_income = ? 
+                                           WHERE user_id = ? AND last_passive_income IS NULL''', 
+                                         (current_time, user_id))
                                 conn2.commit()
                                 conn2.close()
                                 
-                                try:
-                                    guild_obj = bot.get_guild(guild_id)
-                                    if guild_obj:
-                                        member = guild_obj.get_member(int(user_id))
-                                        if member:
-                                            display_name = member.display_name
-                                            clean_name = display_name
-                                            if "kg" in display_name:
-                                                parts = display_name.split("kg", 1)
-                                                if len(parts) > 1:
-                                                    clean_name = parts[1].strip()
-                                                    if not clean_name:
-                                                        clean_name = user_name
-                                            else:
-                                                clean_name = display_name
-                                            if not clean_name or len(clean_name) > 30:
-                                                clean_name = user_name
-                                            new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
-                                            if len(new_nick) > 32:
-                                                new_nick = new_nick[:32]
-                                            await member.edit(nick=new_nick)
-                                except:
-                                    pass
-                                
-                                print(f"💰 {user_name} получил {final_gain}кг от предметов: {', '.join(gained_items)}")
                         except Exception as e:
                             print(f"❌ Ошибка при начислении дохода для {user_id}: {e}")
                 except Exception as e:
                     print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
         except Exception as e:
             print(f"❌ Ошибка в цикле пассивного дохода: {e}")
+        
+        # Ждём 24 часа
         await asyncio.sleep(24 * 60 * 60)
 
 async def apply_snatcher_effect(guild_id, user_id, user_name):
@@ -1663,72 +1729,82 @@ async def apply_hourly_effects():
                     cursor.execute("PRAGMA table_info(user_fat)")
                     columns = [col[1] for col in cursor.fetchall()]
                     
-                    if 'item_counts' not in columns:
+                    if 'item_counts' not in columns or 'last_hourly_income' not in columns:
                         conn.close()
                         continue
                     
-                    cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
+                    cursor.execute('''SELECT user_id, user_name, current_number, item_counts, 
+                                      legendary_burger, last_hourly_income 
+                                      FROM user_fat''')
                     users = cursor.fetchall()
                     conn.close()
                     
-                    for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
+                    for user_id, user_name, current_number, item_counts_str, legendary_burger, last_hourly in users:
                         try:
-                            items_dict = get_user_items(item_counts_str)
-                            if not items_dict:
-                                continue
+                            # Проверяем, когда было последнее начисление
+                            should_pay = False
                             
-                            total_gain = 0
-                            gained_items = []
-                            
-                            for item_name, count in items_dict.items():
-                                if item_name == "Автохолестерол":
-                                    gain = random.randint(1, 10) * count
-                                    total_gain += gain
-                                    gained_items.append(f"Автохолестерол x{count} (+{gain}кг)")
-                                elif item_name == "Холестеринимус":
-                                    gain = random.randint(1, 5) * count
-                                    total_gain += gain
-                                    gained_items.append(f"Холестеринимус x{count} (+{gain}кг)")
-                            
-                            if total_gain > 0:
-                                multiplier = 1.0
-                                if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-                                    multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                            if not last_hourly:
+                                # Никогда не было - пропускаем
+                                should_pay = False
+                            else:
+                                if isinstance(last_hourly, str):
+                                    last_time = datetime.fromisoformat(last_hourly)
+                                else:
+                                    last_time = last_hourly
                                 
-                                final_gain = int(total_gain * multiplier)
-                                new_number = current_number + final_gain
+                                # Прошёл хотя бы час?
+                                time_diff = current_time - last_time
+                                if time_diff.total_seconds() >= 3600:
+                                    should_pay = True
+                            
+                            if should_pay:
+                                items_dict = get_user_items(item_counts_str)
+                                if not items_dict:
+                                    continue
                                 
+                                total_gain = 0
+                                gained_items = []
+                                
+                                for item_name, count in items_dict.items():
+                                    if item_name == "Автохолестерол":
+                                        gain = random.randint(1, 10) * count
+                                        total_gain += gain
+                                        gained_items.append(f"Автохолестерол x{count} (+{gain}кг)")
+                                    elif item_name == "Холестеринимус":
+                                        gain = random.randint(1, 5) * count
+                                        total_gain += gain
+                                        gained_items.append(f"Холестеринимус x{count} (+{gain}кг)")
+                                
+                                if total_gain > 0:
+                                    multiplier = 1.0
+                                    if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
+                                        multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                                    
+                                    final_gain = int(total_gain * multiplier)
+                                    new_number = current_number + final_gain
+                                    
+                                    conn2 = sqlite3.connect(db_path)
+                                    c = conn2.cursor()
+                                    c.execute('''UPDATE user_fat SET 
+                                                current_number = ?, 
+                                                last_hourly_income = ? 
+                                                WHERE user_id = ?''', 
+                                             (new_number, current_time, user_id))
+                                    conn2.commit()
+                                    conn2.close()
+                                    
+                                    print(f"💊 {user_name} получил {final_gain}кг от почасовых предметов: {', '.join(gained_items)}")
+                            else:
+                                # Обновляем время для новых пользователей
                                 conn2 = sqlite3.connect(db_path)
                                 c = conn2.cursor()
-                                c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
+                                c.execute('''UPDATE user_fat SET last_hourly_income = ? 
+                                           WHERE user_id = ? AND last_hourly_income IS NULL''', 
+                                         (current_time, user_id))
                                 conn2.commit()
                                 conn2.close()
                                 
-                                try:
-                                    guild_obj = bot.get_guild(guild_id)
-                                    if guild_obj:
-                                        member = guild_obj.get_member(int(user_id))
-                                        if member:
-                                            display_name = member.display_name
-                                            clean_name = display_name
-                                            if "kg" in display_name:
-                                                parts = display_name.split("kg", 1)
-                                                if len(parts) > 1:
-                                                    clean_name = parts[1].strip()
-                                                    if not clean_name:
-                                                        clean_name = user_name
-                                            else:
-                                                clean_name = display_name
-                                            if not clean_name or len(clean_name) > 30:
-                                                clean_name = user_name
-                                            new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
-                                            if len(new_nick) > 32:
-                                                new_nick = new_nick[:32]
-                                            await member.edit(nick=new_nick)
-                                except:
-                                    pass
-                                
-                                print(f"💊 {user_name} получил {final_gain}кг от почасовых предметов: {', '.join(gained_items)}")
                         except Exception as e:
                             print(f"❌ Ошибка при начислении почасового дохода для {user_id}: {e}")
                 except Exception as e:
@@ -1737,6 +1813,7 @@ async def apply_hourly_effects():
         except Exception as e:
             print(f"❌ Ошибка в цикле почасовых эффектов: {e}")
         
+        # Ждём час
         await asyncio.sleep(3600)
 
 def check_databases_on_startup():
@@ -1820,7 +1897,23 @@ async def on_ready():
     
     # Мигрируем старые ключи
     await migrate_old_case_keys()
-    
+    add_passive_income_tracking()
+    # Добавь в on_ready после add_passive_income_tracking()
+    print("\n📊 Статистика пассивного дохода:")
+    total_users_with_items = 0
+    for guild in bot.guilds:
+        try:
+        db_path = get_db_path(guild.id)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM user_fat WHERE item_counts != '{}' AND item_counts IS NOT NULL")
+        count = cursor.fetchone()[0]
+        total_users_with_items += count
+        conn.close()
+    except:
+        pass
+    print(f"   👥 Пользователей с предметами: {total_users_with_items}")
+
     print(f"\n📋 Серверы, на которых присутствует бот:")
     for guild in bot.guilds:
         print(f"  - {guild.name} (ID: {guild.id}, участников: {guild.member_count})")
