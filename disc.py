@@ -4979,11 +4979,34 @@ async def upgrade_command(ctx, choice: str = None):
             color=0x3498db
         )
         
+        # Разбиваем список предметов на части, если их много
         items_text = ""
         for i, item in enumerate(available_items, 1):
-            items_text += f"**{i}.** {item['emoji']} **{item['name']}** — {item['count']} шт — {item['price']} кг\n"
+            item_line = f"**{i}.** {item['emoji']} **{item['name']}** — {item['count']} шт — {item['price']} кг\n"
+            
+            # Если текущая строка + новая не превышает лимит
+            if len(items_text + item_line) <= 900:
+                items_text += item_line
+            else:
+                # Если превышает - отправляем текущую часть и начинаем новую
+                if items_text:
+                    embed.add_field(name="📦 Ваши предметы (часть 1)", value=items_text, inline=False)
+                    items_text = item_line
+                else:
+                    items_text = item_line
         
-        embed.add_field(name="📦 Ваши предметы", value=items_text, inline=False)
+        # Добавляем последнюю часть
+        if items_text:
+            # Определяем номер части
+            part_num = 1
+            if len(embed.fields) > 0:
+                part_num = 2
+            
+            if part_num == 1:
+                embed.add_field(name="📦 Ваши предметы", value=items_text, inline=False)
+            else:
+                embed.add_field(name=f"📦 Ваши предметы (часть {part_num})", value=items_text, inline=False)
+        
         embed.set_footer(text="Улучшение может быть рискованным! Шанс зависит от стоимости.")
         
         await ctx.send(embed=embed)
@@ -5030,12 +5053,32 @@ async def upgrade_command(ctx, choice: str = None):
         color=0x3498db
     )
     
+    # Разбиваем список улучшений на части, если их много
     upgrades_text = ""
     for i, upgrade in enumerate(possible_upgrades, 1):
         chance_percent = upgrade['chance'] * 100
-        upgrades_text += f"**{i}.** {upgrade['emoji']} **{upgrade['name']}** — {chance_percent:.1f}% шанс\n"
+        upgrade_line = f"**{i}.** {upgrade['emoji']} **{upgrade['name']}** — {chance_percent:.1f}% шанс\n"
+        
+        if len(upgrades_text + upgrade_line) <= 900:
+            upgrades_text += upgrade_line
+        else:
+            if upgrades_text:
+                embed.add_field(name="📈 Возможные улучшения (часть 1)", value=upgrades_text, inline=False)
+                upgrades_text = upgrade_line
+            else:
+                upgrades_text = upgrade_line
     
-    embed.add_field(name="📈 Возможные улучшения", value=upgrades_text, inline=False)
+    # Добавляем последнюю часть
+    if upgrades_text:
+        part_num = 1
+        if len(embed.fields) > 0:
+            part_num = 2
+        
+        if part_num == 1:
+            embed.add_field(name="📈 Возможные улучшения", value=upgrades_text, inline=False)
+        else:
+            embed.add_field(name=f"📈 Возможные улучшения (часть {part_num})", value=upgrades_text, inline=False)
+    
     embed.set_footer(text="Шанс = стоимость текущего предмета / стоимость целевого")
     
     await ctx.send(embed=embed)
