@@ -10,12 +10,13 @@ import glob
 from datetime import datetime, timedelta
 from typing import Optional, Union
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 # ===== НАСТРОЙКИ =====
 TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -401,8 +402,7 @@ logging.basicConfig(level=logging.INFO)
 # ===== ИНИЦИАЛИЗАЦИЯ БОТА =====
 storage = MemoryStorage()
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot, storage=storage)
-dp.middleware.setup(LoggingMiddleware())
+dp = Dispatcher(storage=storage)
 
 # ===== СИСТЕМА ЗВАНИЙ =====
 RANKS = [
