@@ -5035,6 +5035,41 @@ async def clean_trash(ctx):
         
     except Exception as e:
         await ctx.send(f"❌ Ошибка: {e}")
+
+@bot.command(name='убрать_shop')
+async def remove_shop_key(ctx):
+    """Убирает проблемный ключ 'shop' из твоих данных"""
+    guild_id = ctx.guild.id
+    user_id = str(ctx.author.id)
+    db_path = get_db_path(guild_id)
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Получаем текущие данные
+        data = get_user_data(guild_id, user_id, ctx.author.name)
+        cases_dict = data.get('cases_dict', {}).copy()
+        
+        # Проверяем есть ли ключ 'shop'
+        if 'shop' in cases_dict:
+            # Запоминаем сколько было кейсов в shop
+            shop_count = cases_dict['shop']
+            
+            # Удаляем ключ 'shop'
+            del cases_dict['shop']
+            
+            # Сохраняем обратно
+            update_user_data(guild_id, user_id, cases_dict=cases_dict)
+            
+            await ctx.send(f"✅ Удалил ключ 'shop'! У тебя было {shop_count} кейсов в нём, но они никуда не делись - они уже есть в case_shop_case_count (3 шт)")
+        else:
+            await ctx.send(f"✅ У тебя нет проблемного ключа 'shop'")
+        
+        conn.close()
+        
+    except Exception as e:
+        await ctx.send(f"❌ Ошибка: {e}")
     
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
