@@ -1791,8 +1791,11 @@ async def cmd_fat_case(message: types.Message):
         )
         return
     
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("🖱️ ОТКРЫТЬ КЕЙС", callback_data=f"open_case_{case_to_open}"))
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton("🖱️ ОТКРЫТЬ КЕЙС", callback_data=f"open_case_{case_to_open}")]
+        ]
+    )
     
     case_text = f"{case['emoji']} **{case['name']}** {case['emoji']}\n\n"
     case_text += f"{message.from_user.full_name}, у вас есть кейс!\n\n"
@@ -3327,10 +3330,11 @@ async def cmd_reset_all_users(message: types.Message):
     
     chat_id = message.chat.id
     
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton("✅ ДА", callback_data="reset_confirm"),
-        InlineKeyboardButton("❌ НЕТ", callback_data="reset_cancel")
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton("✅ ДА", callback_data="reset_confirm")],
+            [InlineKeyboardButton("❌ НЕТ", callback_data="reset_cancel")]
+        ]
     )
     
     await message.reply(
@@ -3494,10 +3498,13 @@ async def cmd_duel(message: types.Message):
         await message.reply(f"❌ У {target_user.full_name} недостаточно кг! У него: {opponent_data['current_number']}кг")
         return
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("✅ ПРИНЯТЬ", callback_data=f"duel_accept_{challenger.id}_{target_user.id}_{duel_amount}"),
-        InlineKeyboardButton("❌ ОТКЛОНИТЬ", callback_data=f"duel_decline_{challenger.id}_{target_user.id}")
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton("✅ ПРИНЯТЬ", callback_data=f"duel_accept_{challenger.id}_{target_user.id}_{duel_amount}"),
+                InlineKeyboardButton("❌ ОТКЛОНИТЬ", callback_data=f"duel_decline_{challenger.id}_{target_user.id}")
+            ]
+        ]
     )
     
     duel_msg = await message.reply(
