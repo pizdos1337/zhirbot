@@ -1791,9 +1791,10 @@ async def cmd_fat_case(message: types.Message):
         )
         return
     
+    # ИСПРАВЛЕНО: используем правильный синтаксис для aiogram 3.x
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton("🖱️ ОТКРЫТЬ КЕЙС", callback_data=f"open_case_{case_to_open}")]
+            [InlineKeyboardButton(text="🖱️ ОТКРЫТЬ КЕЙС", callback_data=f"open_case_{case_to_open}")]
         ]
     )
     
@@ -3498,11 +3499,12 @@ async def cmd_duel(message: types.Message):
         await message.reply(f"❌ У {target_user.full_name} недостаточно кг! У него: {opponent_data['current_number']}кг")
         return
     
+    # ИСПРАВЛЕНО
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton("✅ ПРИНЯТЬ", callback_data=f"duel_accept_{challenger.id}_{target_user.id}_{duel_amount}"),
-                InlineKeyboardButton("❌ ОТКЛОНИТЬ", callback_data=f"duel_decline_{challenger.id}_{target_user.id}")
+                InlineKeyboardButton(text="✅ ПРИНЯТЬ", callback_data=f"duel_accept_{challenger.id}_{target_user.id}_{duel_amount}"),
+                InlineKeyboardButton(text="❌ ОТКЛОНИТЬ", callback_data=f"duel_decline_{challenger.id}_{target_user.id}")
             ]
         ]
     )
