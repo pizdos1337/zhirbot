@@ -1603,7 +1603,7 @@ async def duel_animation(message: types.Message, challenger_name, opponent_name)
     return result
 
 # ===== КОМАНДЫ =====
-@dp.message_handler(commands=['start', 'help'])
+@dp.message(commands=['start', 'help'])
 async def cmd_start(message: types.Message):
     register_chat(message.chat.id)
     help_text = """
@@ -1641,7 +1641,7 @@ async def cmd_start(message: types.Message):
     """
     await message.reply(help_text)
 
-@dp.message_handler(commands=['жир'])
+@dp.message(commands=['жир'])
 async def cmd_fat(message: types.Message):
     register_chat(message.chat.id)
     chat_id = message.chat.id
@@ -1740,7 +1740,7 @@ async def cmd_fat(message: types.Message):
     
     await message.reply(response)
 
-@dp.message_handler(commands=['жиркейс'])
+@dp.message(commands=['жиркейс'])
 async def cmd_fat_case(message: types.Message):
     register_chat(message.chat.id)
     chat_id = message.chat.id
