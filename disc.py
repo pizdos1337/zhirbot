@@ -5291,61 +5291,50 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             await ctx.send("❌ Ошибка в данных апгрейда!")
             return
         
-        # Получаем список возможных улучшений (как в upgrade_kg_command)
+        # Генерируем список ТОЧНО ТАК ЖЕ, как в upgrade_kg_command
         possible_upgrades = []
+        seen_items = set()
         
-        # Обычные предметы
+        # Используем ТУ ЖЕ логику - все предметы через get_item_price
+        all_game_items = set()
         for shop_item in SHOP_ITEMS:
-            target_price = shop_item["price"]
-            if target_price > amount:
+            all_game_items.add(shop_item["name"])
+        for leg_name in LEGENDARY_UPGRADE_PRICES.keys():
+            all_game_items.add(leg_name)
+        
+        for item_name in all_game_items:
+            if item_name in seen_items:
                 continue
+                
+            target_price = get_item_price(item_name)
+            if target_price == 0 or target_price < amount:
+                continue
+                
             chance = amount / target_price
+            chance = min(chance, 1.0)
+            
             if chance < 0.01:
                 continue
+            
+            is_case = False
+            case_id = None
+            for cid, case in CASES.items():
+                if case.get("name") == item_name:
+                    is_case = True
+                    case_id = cid
+                    break
+            
             possible_upgrades.append({
-                "name": shop_item["name"],
+                "name": item_name,
                 "price": target_price,
-                "chance": min(chance, 1.0),
-                "emoji": ITEM_EMOJIS.get(shop_item["name"], "🎁"),
-                "is_case": False
-            })
-        
-        # Легендарные предметы
-        if amount >= 1000:
-            for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
-                item_exists = any(shop_item["name"] == leg_name for shop_item in SHOP_ITEMS)
-                if not item_exists or leg_price > amount:
-                    continue
-                chance = amount / leg_price
-                if chance < 0.01:
-                    continue
-                possible_upgrades.append({
-                    "name": leg_name,
-                    "price": leg_price,
-                    "chance": min(chance, 1.0),
-                    "emoji": ITEM_EMOJIS.get(leg_name, "✨"),
-                    "is_case": False
-                })
-        
-        # Кейсы
-        for case_id, case in CASES.items():
-            if case_id == "daily" or not case.get("tradable", False):
-                continue
-            target_price = case["price"]
-            if target_price > amount:
-                continue
-            chance = amount / target_price
-            if chance < 0.01:
-                continue
-            possible_upgrades.append({
-                "name": case["name"],
-                "price": target_price,
-                "chance": min(chance, 1.0),
-                "emoji": case["emoji"],
-                "is_case": True,
+                "chance": chance,
+                "emoji": ITEM_EMOJIS.get(item_name, "🎁"),
+                "is_case": is_case,
                 "case_id": case_id
             })
+            seen_items.add(item_name)
         
+        # СОРТИРУЕМ ТАК ЖЕ - по цене
         possible_upgrades.sort(key=lambda x: x["price"])
         
         # Проверяем выбор
@@ -5360,7 +5349,7 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
         
         target_item = possible_upgrades[item_index]
         
-        # Запускаем анимацию апгрейда кг
+        # Запускаем анимацию
         await upgrade_kg_animation(ctx, member, amount, target_item)
     
     # ===== ОБРАБОТКА ОБЫЧНОГО АПГРЕЙДА ПРЕДМЕТОВ =====
