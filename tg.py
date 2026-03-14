@@ -11,7 +11,15 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    Message, 
+    CallbackQuery, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton,
+    BotCommand,  # ← вот этот отсутствовал
+    BotCommandScopeDefault,
+    BotCommandScopeChat
+)
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
