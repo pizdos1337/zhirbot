@@ -860,13 +860,14 @@ def update_user_data(guild_id, user_id, **kwargs):
     updates = []
     values = []
     
-    # ===== ДИАГНОСТИКА =====
-    if 'number' in kwargs:
-        print(f"🔍 update_user_data: number = {kwargs['number']} (тип: {type(kwargs['number'])})")
-    
     # Обрабатываем переданные аргументы
     for key, value in kwargs.items():
-        if key == 'cases_dict' and isinstance(value, dict):
+        if key == 'number':  # ← ЯВНО ОБРАБАТЫВАЕМ number
+            if 'current_number' in existing_columns:
+                updates.append("current_number = ?")
+                values.append(value)
+                print(f"✅ Добавлено обновление current_number = {value}")
+        elif key == 'cases_dict' and isinstance(value, dict):
             # Обновляем отдельные колонки кейсов
             for case_id, count in value.items():
                 col_name = f"case_{case_id}_count"
@@ -874,12 +875,6 @@ def update_user_data(guild_id, user_id, **kwargs):
                     updates.append(f"{col_name} = ?")
                     values.append(count)
         elif key in existing_columns:
-            # Если это number, убедимся что это int
-            if key == 'number':
-                try:
-                    value = int(value)
-                except:
-                    pass
             updates.append(f"{key} = ?")
             values.append(value)
     
@@ -890,17 +885,13 @@ def update_user_data(guild_id, user_id, **kwargs):
     values.append(str(user_id))
     query = f"UPDATE user_fat SET {', '.join(updates)} WHERE user_id = ?"
     
-    # ===== ДИАГНОСТИКА =====
-    print(f"🔍 SQL: {query}")
-    print(f"🔍 Values: {values}")
+    print(f"🔍 ИТОГОВЫЙ SQL: {query}")
+    print(f"🔍 ИТОГОВЫЕ ЗНАЧЕНИЯ: {values}")
     
     try:
         cursor.execute(query, values)
-        print(f"✅ UPDATE выполнен, затронуто строк: {cursor.rowcount}")
     except sqlite3.OperationalError as e:
         print(f"❌ Ошибка SQL: {e}")
-        print(f"❌ Запрос: {query}")
-        print(f"❌ Значения: {values}")
         conn.close()
         return
     
