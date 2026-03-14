@@ -200,8 +200,7 @@ CASES = {
             {"value": 750, "chance": 1, "emoji": "✨"},
             {"value": 1000, "chance": 1, "emoji": "✨"},
             {"value": 1200, "chance": 1, "emoji": "✨"},
-            {"value": 1500, "chance": 1, "emoji": "✨"},
-            {"value": 1600, "chance": 1, "emoji": "✨"}
+            {"value": 1500, "chance": 1, "emoji": "✨"}
         ]
     },
     "autoburger_pack": {
@@ -351,6 +350,8 @@ ITEM_EMOJIS = {
     "Золотой Драгонфрукт": "🐉🍈✨",
     "Снатчер": "👾"
 }
+
+# Добавляем магазинный кейс
 CASES["shop_case"] = {
     "name": "Магазинный кейс",
     "emoji": "🏪",
@@ -363,7 +364,7 @@ CASES["shop_case"] = {
     "prizes": []
 }
 
-# Заполняем призы
+# Заполняем призы для магазинного кейса
 shop_case_prizes = []
 for item in SHOP_ITEMS:
     chance_percent = item["chance"] * 100
@@ -540,6 +541,7 @@ def get_db_path(guild_id):
     return os.path.join(DB_FOLDER, f"guild_{guild_id}.db")
 
 def add_missing_columns(db_path, existing_columns):
+    """Добавляет недостающие колонки в БД без потери данных"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -570,7 +572,7 @@ def add_missing_columns(db_path, existing_columns):
             except Exception as e:
                 print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
     
-    # Добавляем колонки для кейсов - ВАЖНО: теперь включает shop_case
+    # Добавляем колонки для кейсов
     for case_id in CASES.keys():
         if case_id != "daily":
             col_name = f"case_{case_id}_count"
@@ -594,120 +596,43 @@ def add_missing_columns(db_path, existing_columns):
     conn.commit()
     conn.close()
 
-def migrate_old_database(guild_id):
-    """Миграция старой базы данных к новой структуре"""
+def safe_init_guild_database(guild_id, guild_name="Unknown"):
+    """Безопасная инициализация БД без потери данных"""
     db_path = get_db_path(guild_id)
-    if not os.path.exists(db_path):
-        return
     
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Получаем существующие колонки
-    cursor.execute("PRAGMA table_info(user_fat)")
-    existing_columns = [col[1] for col in cursor.fetchall()]
-    
-    # Список всех новых колонок, которые должны быть
-    required_columns = {
-        'legendary_burger': "INTEGER DEFAULT -1",
-        'item_counts': "TEXT DEFAULT '{}'",
-        'last_command': "TEXT",
-        'last_command_target': "TEXT",
-        'last_command_use_time': "TIMESTAMP",
-        'fat_cooldown_time': "TIMESTAMP",
-        'active_case_message_id': "TEXT",
-        'active_case_channel_id': "TEXT",
-        'daily_case_last_time': "TIMESTAMP",
-        'snatcher_last_time': "TIMESTAMP",
-        'duel_active': "INTEGER DEFAULT 0",
-        'duel_opponent': "TEXT",
-        'duel_amount': "INTEGER DEFAULT 0",
-        'duel_message_id': "TEXT",
-        'duel_channel_id': "TEXT",
-        'duel_initiator': "INTEGER DEFAULT 0",
-    }
-    
-    # Добавляем недостающие колонки
-    for col_name, col_type in required_columns.items():
-        if col_name not in existing_columns:
-            try:
-                print(f"📦 Миграция: добавляю колонку {col_name} для сервера {guild_id}")
-                cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} {col_type}")
-            except Exception as e:
-                print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
-    
-    # Добавляем колонки для кейсов - ВАЖНО: теперь включает shop_case
-    for case_id in CASES.keys():
-        if case_id != "daily":
-            col_name = f"case_{case_id}_count"
-            if col_name not in existing_columns:
-                try:
-                    print(f"📦 Миграция: добавляю колонку {col_name} для сервера {guild_id}")
-                    cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} INTEGER DEFAULT 0")
-                except Exception as e:
-                    print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
-    
-    # Обновляем существующие записи, устанавливая значения по умолчанию
-    for case_id in CASES.keys():
-        if case_id != "daily":
-            col_name = f"case_{case_id}_count"
-            if col_name in existing_columns:
-                cursor.execute(f"UPDATE user_fat SET {col_name} = COALESCE({col_name}, 0)")
-            else:
-                # Для новых колонок значения уже 0 по умолчанию
-                pass
-    
-    conn.commit()
-    conn.close()
-    print(f"✅ Миграция базы данных для сервера {guild_id} завершена")
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Проверяем существование таблицы
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_fat'")
+            if not cursor.fetchone():
+                conn.close()
+                print(f"⚠️ Таблица user_fat не найдена в БД сервера {guild_name}, создаю заново")
+                return create_new_database(db_path, guild_id, guild_name)
+            
+            # Получаем существующие колонки
+            cursor.execute("PRAGMA table_info(user_fat)")
+            columns = [col[1] for col in cursor.fetchall()]
+            conn.close()
+            
+            # Добавляем недостающие колонки
+            add_missing_columns(db_path, columns)
+            
+            print(f"✅ База данных для сервера {guild_name} в порядке")
+            return True
+            
+        except sqlite3.DatabaseError:
+            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
+            repair_database(db_path)
+            return create_new_database(db_path, guild_id, guild_name)
+    else:
+        print(f"📁 Создаю новую БД для сервера {guild_name} (ID: {guild_id})")
+        return create_new_database(db_path, guild_id, guild_name)
 
-def migrate_database_if_needed(guild_id):
-    db_path = get_db_path(guild_id)
-    if not os.path.exists(db_path):
-        return
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute("PRAGMA table_info(user_fat)")
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    if 'legendary_burger' not in columns:
-        print(f"📦 Добавляю колонку legendary_burger для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN legendary_burger INTEGER DEFAULT -1")
-    if 'item_counts' not in columns:
-        print(f"📦 Добавляю колонку item_counts для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN item_counts TEXT DEFAULT '{}'")
-    if 'last_command' not in columns:
-        print(f"📦 Добавляю колонку last_command для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command TEXT")
-    if 'last_command_target' not in columns:
-        print(f"📦 Добавляю колонку last_command_target для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command_target TEXT")
-    if 'last_command_use_time' not in columns:
-        print(f"📦 Добавляю колонку last_command_use_time для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN last_command_use_time TIMESTAMP")
-    if 'fat_cooldown_time' not in columns:
-        print(f"📦 Добавляю колонку fat_cooldown_time для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN fat_cooldown_time TIMESTAMP")
-    if 'active_case_message_id' not in columns:
-        print(f"📦 Добавляю колонку active_case_message_id для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN active_case_message_id TEXT")    
-    if 'active_case_channel_id' not in columns:
-        print(f"📦 Добавляю колонку active_case_channel_id для сервера {guild_id}")
-        cursor.execute("ALTER TABLE user_fat ADD COLUMN active_case_channel_id TEXT")
-    
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shop'")
-    if not cursor.fetchone():
-        print(f"📦 Создаю таблицу shop для сервера {guild_id}")
-        cursor.execute('''CREATE TABLE shop (guild_id TEXT PRIMARY KEY, slots TEXT, last_update TIMESTAMP, next_update TIMESTAMP)''')
-    
-    conn.commit()
-    conn.close()
-    
-    add_missing_columns(db_path, columns)
-
-def init_guild_database(guild_id):
-    db_path = get_db_path(guild_id)
+def create_new_database(db_path, guild_id, guild_name):
+    """Создаёт новую БД с правильной структурой"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -744,7 +669,6 @@ def init_guild_database(guild_id):
         duel_initiator INTEGER DEFAULT 0
     '''
     
-    # Добавляем колонки для каждого типа кейса
     case_columns = []
     for case_id in CASES.keys():
         if case_id != "daily":
@@ -752,7 +676,7 @@ def init_guild_database(guild_id):
     
     all_columns = base_columns + ", " + ", ".join(case_columns) if case_columns else base_columns
     
-    cursor.execute(f'''CREATE TABLE IF NOT EXISTS user_fat ({all_columns})''')
+    cursor.execute(f'''CREATE TABLE user_fat ({all_columns})''')
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS shop (
         guild_id TEXT PRIMARY KEY, 
@@ -763,21 +687,24 @@ def init_guild_database(guild_id):
     
     conn.commit()
     conn.close()
-    migrate_database_if_needed(guild_id)
-    print(f"✅ База данных инициализирована для сервера {guild_id}")
+    print(f"✅ Новая база данных создана для сервера {guild_name}")
+    return True
 
 def get_user_data(guild_id, user_id, user_name=None):
-    """Возвращает словарь с данными пользователя"""
-    migrate_old_database(guild_id)
+    """Возвращает словарь с данными пользователя (безопасно)"""
+    # Сначала инициализируем БД если нужно
     safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
+    
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
+    # Получаем список всех колонок
     cursor.execute("PRAGMA table_info(user_fat)")
-    columns = [col[1] for col in cursor.fetchall()]
+    all_columns = [col[1] for col in cursor.fetchall()]
     
-    select_cols = [
+    # Формируем список колонок для SELECT
+    base_cols = [
         'user_id', 'user_name', 'current_number', 'last_command_time',
         'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
         'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
@@ -789,62 +716,44 @@ def get_user_data(guild_id, user_id, user_name=None):
         'duel_channel_id', 'duel_initiator'
     ]
     
+    # Добавляем только существующие колонки
+    select_cols = [col for col in base_cols if col in all_columns]
+    
+    # Добавляем колонки кейсов
     case_cols = []
     for case_id in CASES.keys():
         if case_id != "daily":
             col_name = f"case_{case_id}_count"
-            if col_name in columns:
+            if col_name in all_columns:
                 case_cols.append(col_name)
     
-    all_cols = select_cols + case_cols
-    query = f"SELECT {', '.join(all_cols)} FROM user_fat WHERE user_id = ?"
+    all_select_cols = select_cols + case_cols
+    query = f"SELECT {', '.join(all_select_cols)} FROM user_fat WHERE user_id = ?"
+    
     cursor.execute(query, (str(user_id),))
     result = cursor.fetchone()
     
     if result:
-       data = list(result)
-       idx = 0
-    
-       user_data = {}
-       user_data['user_id'] = data[idx]; idx += 1
-       user_data['user_name'] = data[idx]; idx += 1
-       user_data['current_number'] = data[idx]; idx += 1
-       user_data['last_command_time'] = data[idx]; idx += 1
-       user_data['consecutive_plus'] = data[idx]; idx += 1
-       user_data['consecutive_minus'] = data[idx]; idx += 1
-       user_data['jackpot_pity'] = data[idx]; idx += 1
-       user_data['autoburger_count'] = data[idx]; idx += 1
-       user_data['last_case_time'] = data[idx]; idx += 1
-       user_data['next_autoburger_time'] = data[idx]; idx += 1
-       user_data['total_autoburger_activations'] = data[idx]; idx += 1
-       user_data['total_autoburger_gain'] = data[idx]; idx += 1
-       user_data['last_autoburger_result'] = data[idx]; idx += 1
-       user_data['last_autoburger_time'] = data[idx]; idx += 1
-       user_data['legendary_burger'] = data[idx]; idx += 1
-       user_data['item_counts'] = data[idx]; idx += 1
-       user_data['last_command'] = data[idx]; idx += 1
-       user_data['last_command_target'] = data[idx]; idx += 1
-       user_data['last_command_use_time'] = data[idx]; idx += 1
-       user_data['fat_cooldown_time'] = data[idx]; idx += 1
-       user_data['active_case_message_id'] = data[idx]; idx += 1
-       user_data['active_case_channel_id'] = data[idx]; idx += 1
-       user_data['daily_case_last_time'] = data[idx]; idx += 1
-       user_data['snatcher_last_time'] = data[idx]; idx += 1
-       user_data['duel_active'] = data[idx]; idx += 1
-       user_data['duel_opponent'] = data[idx]; idx += 1
-       user_data['duel_amount'] = data[idx]; idx += 1
-       user_data['duel_message_id'] = data[idx]; idx += 1
-       user_data['duel_channel_id'] = data[idx]; idx += 1
-       user_data['duel_initiator'] = data[idx]; idx += 1
-    
-       cases_dict = {}
-       for case_col in case_cols:
-           case_id = case_col.replace("case_", "").replace("_count", "")
-           cases_dict[case_id] = data[idx] or 0
-           idx += 1
-    
-       user_data['cases_dict'] = cases_dict
+        # Пользователь найден - заполняем словарь
+        data = list(result)
+        idx = 0
+        user_data = {}
+        
+        # Заполняем базовые поля
+        for col in select_cols:
+            user_data[col] = data[idx]
+            idx += 1
+        
+        # Заполняем кейсы
+        cases_dict = {}
+        for i, case_col in enumerate(case_cols):
+            case_id = case_col.replace("case_", "").replace("_count", "")
+            cases_dict[case_id] = data[idx + i] or 0
+        
+        user_data['cases_dict'] = cases_dict
+        
     else:
+        # Новый пользователь - создаём запись
         user_data = {
             'user_id': str(user_id),
             'user_name': user_name or "Unknown",
@@ -876,106 +785,82 @@ def get_user_data(guild_id, user_id, user_name=None):
             'duel_message_id': None,
             'duel_channel_id': None,
             'duel_initiator': 0,
-            'cases_dict': {case_id: 0 for case_id in CASES.keys() if case_id != "daily"}
+            'cases_dict': {}
         }
         
-        create_new_user(cursor, user_data)
+        # Добавляем кейсы
+        for case_id in CASES.keys():
+            if case_id != "daily":
+                user_data['cases_dict'][case_id] = 0
+        
+        # Создаём запись в БД
+        create_new_user(cursor, user_data, all_columns)
         conn.commit()
     
     conn.close()
     return user_data
 
-def create_new_user(cursor, user_data):
-    """Создает новую запись пользователя"""
-    cols = ['user_id', 'user_name', 'current_number', 'last_command_time',
-            'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
-            'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
-            'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
-            'legendary_burger', 'item_counts', 'last_command', 'last_command_target',
-            'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
-            'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
-            'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
-            'duel_channel_id', 'duel_initiator']
+def create_new_user(cursor, user_data, all_columns):
+    """Создаёт новую запись пользователя"""
+    cols = []
+    values = []
     
-    values = [
-        user_data['user_id'], user_data['user_name'], user_data['current_number'],
-        user_data['last_command_time'], user_data['consecutive_plus'],
-        user_data['consecutive_minus'], user_data['jackpot_pity'],
-        user_data['autoburger_count'], user_data['last_case_time'],
-        user_data['next_autoburger_time'], user_data['total_autoburger_activations'],
-        user_data['total_autoburger_gain'], user_data['last_autoburger_result'],
-        user_data['last_autoburger_time'], user_data['legendary_burger'],
-        user_data['item_counts'], user_data['last_command'], user_data['last_command_target'],
-        user_data['last_command_use_time'], user_data['fat_cooldown_time'],
-        user_data['active_case_message_id'], user_data['active_case_channel_id'],
-        user_data['daily_case_last_time'], user_data['snatcher_last_time'],
-        user_data['duel_active'], user_data['duel_opponent'], user_data['duel_amount'],
-        user_data['duel_message_id'], user_data['duel_channel_id'], user_data['duel_initiator']
-    ]
+    # Добавляем базовые поля
+    base_fields = ['user_id', 'user_name', 'current_number', 'last_command_time',
+                   'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
+                   'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
+                   'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
+                   'legendary_burger', 'item_counts', 'last_command', 'last_command_target',
+                   'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
+                   'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
+                   'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
+                   'duel_channel_id', 'duel_initiator']
     
-    # ВАЖНО: Здесь добавляются колонки для каждого кейса
+    for field in base_fields:
+        if field in all_columns:
+            cols.append(field)
+            values.append(user_data.get(field))
+    
+    # Добавляем кейсы
     for case_id, count in user_data['cases_dict'].items():
-        # Для "shop_case" получится "case_shop_case_count"
-        cols.append(f"case_{case_id}_count")
-        values.append(count)
+        col_name = f"case_{case_id}_count"
+        if col_name in all_columns:
+            cols.append(col_name)
+            values.append(count)
     
     placeholders = ["?"] * len(cols)
     query = f"INSERT INTO user_fat ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
     cursor.execute(query, values)
 
 def update_user_data(guild_id, user_id, **kwargs):
-    """Обновляет данные пользователя. Принимает только измененные поля."""
-    init_guild_database(guild_id)
+    """Обновляет данные пользователя без потери данных"""
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
+    
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Получаем список существующих колонок
+    # Получаем существующие колонки
     cursor.execute("PRAGMA table_info(user_fat)")
     existing_columns = [col[1] for col in cursor.fetchall()]
     
     updates = []
     values = []
     
-    field_map = {
-        'number': 'current_number',
-        'last_time': 'last_command_time',
-        'cases': 'cases_dict'
-    }
-    
+    # Обрабатываем переданные аргументы
     for key, value in kwargs.items():
-        if key == 'user_name':
-            if 'user_name' in existing_columns:
-                updates.append(f"{key} = ?")
-                values.append(value)
-        elif key == 'cases_dict':
-            if value:
-                for case_id, count in value.items():
-                    if case_id != "daily":
-                        col_name = f"case_{case_id}_count"
-                        # ВАЖНО: Проверяем, существует ли колонка
-                        if col_name in existing_columns:
-                            updates.append(f"{col_name} = ?")
-                            values.append(count)
-                        else:
-                            print(f"⚠️ Колонка {col_name} не существует в БД!")
-        elif key in field_map:
-            db_col = field_map[key]
-            if db_col in existing_columns:
-                updates.append(f"{db_col} = ?")
-                values.append(value)
-        else:
-            if key in existing_columns:
-                updates.append(f"{key} = ?")
-                values.append(value)
-    
-    # Добавляем время последнего обновления
-    if 'last_command_time' in existing_columns:
-        updates.append("last_command_time = ?")
-        values.append(datetime.now())
+        if key == 'cases_dict' and isinstance(value, dict):
+            # Обновляем отдельные колонки кейсов
+            for case_id, count in value.items():
+                col_name = f"case_{case_id}_count"
+                if col_name in existing_columns:
+                    updates.append(f"{col_name} = ?")
+                    values.append(count)
+        elif key in existing_columns:
+            updates.append(f"{key} = ?")
+            values.append(value)
     
     if not updates:
-        # Нет полей для обновления
         conn.close()
         return
     
@@ -989,23 +874,12 @@ def update_user_data(guild_id, user_id, **kwargs):
         print(f"❌ Запрос: {query}")
         print(f"❌ Значения: {values}")
         conn.close()
-        raise e
-    
-    if cursor.rowcount == 0:
-        # Создаем новую запись
-        user_data = get_user_data(guild_id, user_id, kwargs.get('user_name'))
-        for key, value in kwargs.items():
-            if key == 'number':
-                user_data['current_number'] = value
-            elif key == 'cases_dict':
-                user_data['cases_dict'] = value
-            elif key in user_data:
-                user_data[key] = value
-        create_new_user(cursor, user_data)
+        return
     
     conn.commit()
     conn.close()
     
+    # Бекап
     try:
         backup_folder = "/tmp/guild_databases_backup"
         os.makedirs(backup_folder, exist_ok=True)
@@ -1023,7 +897,7 @@ def get_user_cases(guild_id, user_id):
 def update_user_cases(guild_id, user_id, case_id, change=1):
     """Обновляет количество конкретного кейса у пользователя"""
     data = get_user_data(guild_id, user_id)
-    cases_dict = data.get('cases_dict', {})
+    cases_dict = data.get('cases_dict', {}).copy()
     
     if case_id in cases_dict:
         cases_dict[case_id] += change
@@ -1059,7 +933,7 @@ def update_daily_case_time(guild_id, user_id, custom_cooldown=None):
     update_user_data(guild_id, user_id, daily_case_last_time=datetime.now())
 
 def reset_all_cooldowns(guild_id):
-    init_guild_database(guild_id)
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -1070,7 +944,7 @@ def reset_all_cooldowns(guild_id):
     return affected_rows
 
 def reset_all_weights(guild_id):
-    init_guild_database(guild_id)
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -1092,15 +966,26 @@ def reset_all_weights(guild_id):
     return affected_rows
 
 def get_all_users_sorted(guild_id):
-    init_guild_database(guild_id)
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute('''SELECT 
-        user_name, current_number, last_command_time, consecutive_plus, 
-        consecutive_minus, jackpot_pity, autoburger_count, 
-        total_autoburger_activations, total_autoburger_gain, legendary_burger 
-        FROM user_fat ORDER BY current_number DESC''')
+    
+    # Получаем список колонок
+    cursor.execute("PRAGMA table_info(user_fat)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    # Формируем SELECT с существующими колонками
+    select_cols = ['user_name', 'current_number', 'last_command_time', 
+                   'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 
+                   'autoburger_count', 'total_autoburger_activations', 
+                   'total_autoburger_gain']
+    
+    if 'legendary_burger' in columns:
+        select_cols.append('legendary_burger')
+    
+    query = f"SELECT {', '.join(select_cols)} FROM user_fat ORDER BY current_number DESC"
+    cursor.execute(query)
     results = cursor.fetchall()
     conn.close()
     return results
@@ -1113,15 +998,16 @@ def get_guild_stats(guild_id):
     positive = sum(1 for u in users if u[1] > 0)
     negative = sum(1 for u in users if u[1] < 0)
     zero = sum(1 for u in users if u[1] == 0)
-    total_autoburgers = sum(u[6] for u in users)
-    total_activations = sum(u[7] for u in users)
-    total_gain = sum(u[8] for u in users)
+    total_autoburgers = sum(u[6] for u in users if len(u) > 6)
+    total_activations = sum(u[7] for u in users if len(u) > 7)
+    total_gain = sum(u[8] for u in users if len(u) > 8)
     
     burger_counts = [0, 0, 0, 0]
     for u in users:
-        burger_idx = u[9] if len(u) > 9 and u[9] is not None and u[9] >= 0 else -1
-        if burger_idx >= 0 and burger_idx < len(burger_counts):
-            burger_counts[burger_idx] += 1
+        if len(u) > 9 and u[9] is not None and u[9] >= 0:
+            burger_idx = u[9]
+            if burger_idx < len(burger_counts):
+                burger_counts[burger_idx] += 1
     
     return {
         'total_users': total_users, 
@@ -1138,7 +1024,7 @@ def get_guild_stats(guild_id):
 
 def get_shop_data(guild_id):
     """Получает данные магазина из БД"""
-    init_guild_database(guild_id)
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -1163,7 +1049,7 @@ def get_shop_data(guild_id):
 
 def update_shop_data(guild_id, slots, last_update, next_update):
     """Сохраняет данные магазина в БД"""
-    init_guild_database(guild_id)
+    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -1427,19 +1313,19 @@ async def apply_autoburger(user_id, guild_id, user_name):
         
         new_number = data['current_number'] + change
         
-        update_user_data(
-            guild_id, user_id,
-            number=new_number,
-            user_name=user_name,
-            consecutive_plus=new_consecutive_plus,
-            consecutive_minus=new_consecutive_minus,
-            jackpot_pity=new_jackpot_pity,
-            total_autoburger_activations=data['total_autoburger_activations'] + 1,
-            total_autoburger_gain=data['total_autoburger_gain'] + change,
-            last_autoburger_result=f"{change:+d} кг",
-            last_autoburger_time=datetime.now(),
-            cases_dict=data.get('cases_dict')
-        )
+        update_data = {
+            'number': new_number,
+            'user_name': user_name,
+            'consecutive_plus': new_consecutive_plus,
+            'consecutive_minus': new_consecutive_minus,
+            'jackpot_pity': new_jackpot_pity,
+            'total_autoburger_activations': data['total_autoburger_activations'] + 1,
+            'total_autoburger_gain': data['total_autoburger_gain'] + change,
+            'last_autoburger_result': f"{change:+d} кг",
+            'last_autoburger_time': datetime.now()
+        }
+        
+        update_user_data(guild_id, user_id, **update_data)
         
         guild = bot.get_guild(guild_id)
         if guild:
@@ -1479,33 +1365,37 @@ async def autoburger_loop():
                 db_path = get_db_path(guild_id)
                 if not os.path.exists(db_path):
                     continue
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute('''SELECT user_id, user_name, autoburger_count, next_autoburger_time 
-                                FROM user_fat WHERE autoburger_count > 0 AND next_autoburger_time IS NOT NULL''')
-                users = cursor.fetchall()
-                conn.close()
                 
-                for user_id, user_name, autoburger_count, next_time_str in users:
-                    try:
-                        if next_time_str:
-                            if isinstance(next_time_str, str):
-                                next_time = datetime.fromisoformat(next_time_str)
-                            else:
-                                next_time = next_time_str
-                            if current_time >= next_time:
-                                await apply_autoburger(user_id, guild_id, user_name)
-                                interval = get_autoburger_interval(autoburger_count)
-                                if interval:
-                                    new_next_time = current_time + timedelta(hours=interval)
-                                    conn = sqlite3.connect(db_path)
-                                    cursor = conn.cursor()
-                                    cursor.execute('''UPDATE user_fat SET next_autoburger_time = ? 
-                                                    WHERE user_id = ?''', (new_next_time, user_id))
-                                    conn.commit()
-                                    conn.close()
-                    except Exception as e:
-                        print(f"❌ Ошибка обработки автобургера для {user_id}: {e}")
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute('''SELECT user_id, user_name, autoburger_count, next_autoburger_time 
+                                    FROM user_fat WHERE autoburger_count > 0 AND next_autoburger_time IS NOT NULL''')
+                    users = cursor.fetchall()
+                    conn.close()
+                    
+                    for user_id, user_name, autoburger_count, next_time_str in users:
+                        try:
+                            if next_time_str:
+                                if isinstance(next_time_str, str):
+                                    next_time = datetime.fromisoformat(next_time_str)
+                                else:
+                                    next_time = next_time_str
+                                if current_time >= next_time:
+                                    await apply_autoburger(user_id, guild_id, user_name)
+                                    interval = get_autoburger_interval(autoburger_count)
+                                    if interval:
+                                        new_next_time = current_time + timedelta(hours=interval)
+                                        conn = sqlite3.connect(db_path)
+                                        cursor = conn.cursor()
+                                        cursor.execute('''UPDATE user_fat SET next_autoburger_time = ? 
+                                                        WHERE user_id = ?''', (new_next_time.isoformat(), user_id))
+                                        conn.commit()
+                                        conn.close()
+                        except Exception as e:
+                            print(f"❌ Ошибка обработки автобургера для {user_id}: {e}")
+                except Exception as e:
+                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
         except Exception as e:
             print(f"❌ Ошибка в цикле автобургеров: {e}")
         await asyncio.sleep(60)
@@ -1523,71 +1413,83 @@ async def passive_income_loop():
                 if not os.path.exists(db_path):
                     continue
                 
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
-                users = cursor.fetchall()
-                conn.close()
-                
-                for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
-                    try:
-                        items_dict = get_user_items(item_counts_str)
-                        if not items_dict:
-                            continue
-                        
-                        total_gain = 0
-                        gained_items = []
-                        
-                        for item_name, count in items_dict.items():
-                            for shop_item in SHOP_ITEMS:
-                                if shop_item["name"] == item_name:
-                                    gain = shop_item["gain_per_24h"] * count
-                                    if gain > 0:
-                                        total_gain += gain
-                                        gained_items.append(f"{item_name} x{count} (+{gain}кг)")
-                                    break
-                        
-                        if total_gain > 0:
-                            multiplier = 1.0
-                            if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-                                multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    
+                    # Проверяем наличие колонок
+                    cursor.execute("PRAGMA table_info(user_fat)")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    
+                    if 'item_counts' not in columns:
+                        conn.close()
+                        continue
+                    
+                    cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
+                    users = cursor.fetchall()
+                    conn.close()
+                    
+                    for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
+                        try:
+                            items_dict = get_user_items(item_counts_str)
+                            if not items_dict:
+                                continue
                             
-                            final_gain = int(total_gain * multiplier)
-                            new_number = current_number + final_gain
+                            total_gain = 0
+                            gained_items = []
                             
-                            conn = sqlite3.connect(db_path)
-                            c = conn.cursor()
-                            c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
-                            conn.commit()
-                            conn.close()
+                            for item_name, count in items_dict.items():
+                                for shop_item in SHOP_ITEMS:
+                                    if shop_item["name"] == item_name:
+                                        gain = shop_item.get("gain_per_24h", 0) * count
+                                        if gain > 0:
+                                            total_gain += gain
+                                            gained_items.append(f"{item_name} x{count} (+{gain}кг)")
+                                        break
                             
-                            try:
-                                guild_obj = bot.get_guild(guild_id)
-                                if guild_obj:
-                                    member = guild_obj.get_member(int(user_id))
-                                    if member:
-                                        display_name = member.display_name
-                                        clean_name = display_name
-                                        if "kg" in display_name:
-                                            parts = display_name.split("kg", 1)
-                                            if len(parts) > 1:
-                                                clean_name = parts[1].strip()
-                                                if not clean_name:
-                                                    clean_name = user_name
-                                        else:
+                            if total_gain > 0:
+                                multiplier = 1.0
+                                if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
+                                    multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                                
+                                final_gain = int(total_gain * multiplier)
+                                new_number = current_number + final_gain
+                                
+                                conn2 = sqlite3.connect(db_path)
+                                c = conn2.cursor()
+                                c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
+                                conn2.commit()
+                                conn2.close()
+                                
+                                try:
+                                    guild_obj = bot.get_guild(guild_id)
+                                    if guild_obj:
+                                        member = guild_obj.get_member(int(user_id))
+                                        if member:
+                                            display_name = member.display_name
                                             clean_name = display_name
-                                        if not clean_name or len(clean_name) > 30:
-                                            clean_name = user_name
-                                        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
-                                        if len(new_nick) > 32:
-                                            new_nick = new_nick[:32]
-                                        await member.edit(nick=new_nick)
-                            except:
-                                pass
-                            
-                            print(f"💰 {user_name} получил {final_gain}кг от предметов: {', '.join(gained_items)}")
-                    except Exception as e:
-                        print(f"❌ Ошибка при начислении дохода для {user_id}: {e}")
+                                            if "kg" in display_name:
+                                                parts = display_name.split("kg", 1)
+                                                if len(parts) > 1:
+                                                    clean_name = parts[1].strip()
+                                                    if not clean_name:
+                                                        clean_name = user_name
+                                            else:
+                                                clean_name = display_name
+                                            if not clean_name or len(clean_name) > 30:
+                                                clean_name = user_name
+                                            new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+                                            if len(new_nick) > 32:
+                                                new_nick = new_nick[:32]
+                                            await member.edit(nick=new_nick)
+                                except:
+                                    pass
+                                
+                                print(f"💰 {user_name} получил {final_gain}кг от предметов: {', '.join(gained_items)}")
+                        except Exception as e:
+                            print(f"❌ Ошибка при начислении дохода для {user_id}: {e}")
+                except Exception as e:
+                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
         except Exception as e:
             print(f"❌ Ошибка в цикле пассивного дохода: {e}")
         await asyncio.sleep(24 * 60 * 60)
@@ -1697,27 +1599,30 @@ async def snatcher_loop():
                 if not os.path.exists(db_path):
                     continue
                 
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute("PRAGMA table_info(user_fat)")
-                columns = [col[1] for col in cursor.fetchall()]
-                
-                if 'snatcher_last_time' not in columns:
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    
+                    cursor.execute("PRAGMA table_info(user_fat)")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    
+                    if 'snatcher_last_time' not in columns or 'item_counts' not in columns:
+                        conn.close()
+                        continue
+                    
+                    cursor.execute('''SELECT user_id, user_name FROM user_fat 
+                                    WHERE item_counts LIKE '%"Снатчер"%' ''')
+                    users = cursor.fetchall()
                     conn.close()
-                    continue
-                
-                cursor.execute('''SELECT user_id, user_name FROM user_fat 
-                                WHERE item_counts LIKE '%"Снатчер"%' ''')
-                users = cursor.fetchall()
-                conn.close()
-                
-                for user_id, user_name in users:
-                    try:
-                        await apply_snatcher_effect(guild_id, user_id, user_name)
-                        await asyncio.sleep(1)
-                    except Exception as e:
-                        print(f"❌ Ошибка при обработке Снатчера для {user_id}: {e}")
+                    
+                    for user_id, user_name in users:
+                        try:
+                            await apply_snatcher_effect(guild_id, user_id, user_name)
+                            await asyncio.sleep(1)
+                        except Exception as e:
+                            print(f"❌ Ошибка при обработке Снатчера для {user_id}: {e}")
+                except Exception as e:
+                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
             
         except Exception as e:
             print(f"❌ Ошибка в цикле Снатчера: {e}")
@@ -1738,72 +1643,83 @@ async def apply_hourly_effects():
                 if not os.path.exists(db_path):
                     continue
                 
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
-                users = cursor.fetchall()
-                conn.close()
-                
-                for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
-                    try:
-                        items_dict = get_user_items(item_counts_str)
-                        if not items_dict:
-                            continue
-                        
-                        total_gain = 0
-                        gained_items = []
-                        
-                        for item_name, count in items_dict.items():
-                            if item_name == "Автохолестерол":
-                                gain = random.randint(1, 10) * count
-                                total_gain += gain
-                                gained_items.append(f"Автохолестерол x{count} (+{gain}кг)")
-                            elif item_name == "Холестеринимус":
-                                gain = random.randint(1, 5) * count
-                                total_gain += gain
-                                gained_items.append(f"Холестеринимус x{count} (+{gain}кг)")
-                        
-                        if total_gain > 0:
-                            multiplier = 1.0
-                            if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
-                                multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    
+                    cursor.execute("PRAGMA table_info(user_fat)")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    
+                    if 'item_counts' not in columns:
+                        conn.close()
+                        continue
+                    
+                    cursor.execute('SELECT user_id, user_name, current_number, item_counts, legendary_burger FROM user_fat')
+                    users = cursor.fetchall()
+                    conn.close()
+                    
+                    for user_id, user_name, current_number, item_counts_str, legendary_burger in users:
+                        try:
+                            items_dict = get_user_items(item_counts_str)
+                            if not items_dict:
+                                continue
                             
-                            final_gain = int(total_gain * multiplier)
-                            new_number = current_number + final_gain
+                            total_gain = 0
+                            gained_items = []
                             
-                            conn2 = sqlite3.connect(db_path)
-                            c = conn2.cursor()
-                            c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
-                            conn2.commit()
-                            conn2.close()
+                            for item_name, count in items_dict.items():
+                                if item_name == "Автохолестерол":
+                                    gain = random.randint(1, 10) * count
+                                    total_gain += gain
+                                    gained_items.append(f"Автохолестерол x{count} (+{gain}кг)")
+                                elif item_name == "Холестеринимус":
+                                    gain = random.randint(1, 5) * count
+                                    total_gain += gain
+                                    gained_items.append(f"Холестеринимус x{count} (+{gain}кг)")
                             
-                            try:
-                                guild_obj = bot.get_guild(guild_id)
-                                if guild_obj:
-                                    member = guild_obj.get_member(int(user_id))
-                                    if member:
-                                        display_name = member.display_name
-                                        clean_name = display_name
-                                        if "kg" in display_name:
-                                            parts = display_name.split("kg", 1)
-                                            if len(parts) > 1:
-                                                clean_name = parts[1].strip()
-                                                if not clean_name:
-                                                    clean_name = user_name
-                                        else:
+                            if total_gain > 0:
+                                multiplier = 1.0
+                                if legendary_burger >= 0 and legendary_burger < len(BURGER_RANKS):
+                                    multiplier = BURGER_RANKS[legendary_burger]["multiplier"]
+                                
+                                final_gain = int(total_gain * multiplier)
+                                new_number = current_number + final_gain
+                                
+                                conn2 = sqlite3.connect(db_path)
+                                c = conn2.cursor()
+                                c.execute('UPDATE user_fat SET current_number = ? WHERE user_id = ?', (new_number, user_id))
+                                conn2.commit()
+                                conn2.close()
+                                
+                                try:
+                                    guild_obj = bot.get_guild(guild_id)
+                                    if guild_obj:
+                                        member = guild_obj.get_member(int(user_id))
+                                        if member:
+                                            display_name = member.display_name
                                             clean_name = display_name
-                                        if not clean_name or len(clean_name) > 30:
-                                            clean_name = user_name
-                                        new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
-                                        if len(new_nick) > 32:
-                                            new_nick = new_nick[:32]
-                                        await member.edit(nick=new_nick)
-                            except:
-                                pass
-                            
-                            print(f"💊 {user_name} получил {final_gain}кг от почасовых предметов: {', '.join(gained_items)}")
-                    except Exception as e:
-                        print(f"❌ Ошибка при начислении почасового дохода для {user_id}: {e}")
+                                            if "kg" in display_name:
+                                                parts = display_name.split("kg", 1)
+                                                if len(parts) > 1:
+                                                    clean_name = parts[1].strip()
+                                                    if not clean_name:
+                                                        clean_name = user_name
+                                            else:
+                                                clean_name = display_name
+                                            if not clean_name or len(clean_name) > 30:
+                                                clean_name = user_name
+                                            new_nick = format_nick_with_icon(new_number, clean_name, legendary_burger)
+                                            if len(new_nick) > 32:
+                                                new_nick = new_nick[:32]
+                                            await member.edit(nick=new_nick)
+                                except:
+                                    pass
+                                
+                                print(f"💊 {user_name} получил {final_gain}кг от почасовых предметов: {', '.join(gained_items)}")
+                        except Exception as e:
+                            print(f"❌ Ошибка при начислении почасового дохода для {user_id}: {e}")
+                except Exception as e:
+                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
             
         except Exception as e:
             print(f"❌ Ошибка в цикле почасовых эффектов: {e}")
@@ -1820,121 +1736,12 @@ def check_databases_on_startup():
     recovered_dbs = 0
     
     for guild in bot.guilds:
-        db_path = get_db_path(guild.id)
-        if os.path.exists(db_path):
-            try:
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute("SELECT count(*) FROM user_fat")
-                user_count = cursor.fetchone()[0]
-                conn.close()
-                existing_dbs += 1
-                print(f"✅ {guild.name}: БД существует, пользователей: {user_count}")
-            except sqlite3.DatabaseError:
-                corrupted_dbs += 1
-                print(f"⚠️ {guild.name}: БД ПОВРЕЖДЕНА - будет восстановлена")
-                if safe_init_guild_database(guild.id, guild.name):
-                    recovered_dbs += 1
-                    print(f"   ✅ Восстановлена")
-        else:
-            new_dbs += 1
-            print(f"📁 {guild.name}: БД отсутствует - будет создана")
-            safe_init_guild_database(guild.id, guild.name)
+        if safe_init_guild_database(guild.id, guild.name):
+            existing_dbs += 1
+            print(f"✅ {guild.name}: БД в порядке")
     
     print("-" * 40)
-    print(f"📊 ИТОГИ ПРОВЕРКИ:")
-    print(f"   ✅ Существовало БД: {existing_dbs}")
-    if corrupted_dbs > 0:
-        print(f"   ⚠️  Было повреждено: {corrupted_dbs}")
-        print(f"   🔧 Восстановлено: {recovered_dbs}")
-    if new_dbs > 0:
-        print(f"   📁 Создано новых БД: {new_dbs}")
-    
     return existing_dbs, new_dbs, corrupted_dbs
-
-def safe_init_guild_database(guild_id, guild_name="Unknown"):
-    db_path = get_db_path(guild_id)
-    if os.path.exists(db_path):
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_fat'")
-            if not cursor.fetchone():
-                conn.close()
-                os.remove(db_path)
-                print(f"⚠️ Таблица user_fat не найдена в БД сервера {guild_name}, создаю заново")
-                return create_new_database(db_path, guild_id, guild_name)
-            cursor.execute("PRAGMA table_info(user_fat)")
-            columns = [col[1] for col in cursor.fetchall()]
-            conn.close()
-            add_missing_columns(db_path, columns)
-            print(f"✅ База данных для сервера {guild_name} в порядке")
-            return True
-        except sqlite3.DatabaseError:
-            print(f"⚠️ Обнаружена повреждённая БД для сервера {guild_name} (ID: {guild_id})")
-            repair_database(db_path)
-            return create_new_database(db_path, guild_id, guild_name)
-    else:
-        print(f"📁 Создаю новую БД для сервера {guild_name} (ID: {guild_id})")
-        return create_new_database(db_path, guild_id, guild_name)
-
-def create_new_database(db_path, guild_id, guild_name):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    base_columns = '''
-        user_id TEXT PRIMARY KEY, 
-        user_name TEXT, 
-        current_number INTEGER DEFAULT 0, 
-        last_command_time TIMESTAMP, 
-        consecutive_plus INTEGER DEFAULT 0, 
-        consecutive_minus INTEGER DEFAULT 0, 
-        jackpot_pity INTEGER DEFAULT 0, 
-        autoburger_count INTEGER DEFAULT 0, 
-        last_case_time TIMESTAMP, 
-        next_autoburger_time TIMESTAMP, 
-        total_autoburger_activations INTEGER DEFAULT 0, 
-        total_autoburger_gain INTEGER DEFAULT 0, 
-        last_autoburger_result TEXT, 
-        last_autoburger_time TIMESTAMP,
-        legendary_burger INTEGER DEFAULT -1,
-        item_counts TEXT DEFAULT '{}',
-        last_command TEXT,
-        last_command_target TEXT,
-        last_command_use_time TIMESTAMP,
-        fat_cooldown_time TIMESTAMP,
-        active_case_message_id TEXT,
-        active_case_channel_id TEXT,
-        daily_case_last_time TIMESTAMP,
-        snatcher_last_time TIMESTAMP,
-        duel_active INTEGER DEFAULT 0,
-        duel_opponent TEXT,
-        duel_amount INTEGER DEFAULT 0,
-        duel_message_id TEXT,
-        duel_channel_id TEXT,
-        duel_initiator INTEGER DEFAULT 0
-    '''
-    
-    case_columns = []
-    for case_id in CASES.keys():
-        if case_id != "daily":
-            case_columns.append(f"case_{case_id}_count INTEGER DEFAULT 0")
-    
-    all_columns = base_columns + ", " + ", ".join(case_columns) if case_columns else base_columns
-    
-    cursor.execute(f'''CREATE TABLE user_fat ({all_columns})''')
-    
-    cursor.execute('''CREATE TABLE IF NOT EXISTS shop (
-        guild_id TEXT PRIMARY KEY, 
-        slots TEXT, 
-        last_update TIMESTAMP, 
-        next_update TIMESTAMP
-    )''')
-    
-    conn.commit()
-    conn.close()
-    print(f"✅ Новая база данных создана для сервера {guild_name}")
-    return True
 
 def can_duel(user_data):
     """Проверяет, может ли пользователь участвовать в дуэли"""
@@ -1951,6 +1758,42 @@ def get_duel_info(user_data):
         'initiator': user_data.get('duel_initiator', 0)
     }
 
+async def migrate_old_case_keys():
+    """Миграция старых ключей кейсов (запускается один раз при старте)"""
+    print("\n🔧 ПРОВЕРКА СТАРЫХ КЛЮЧЕЙ КЕЙСОВ...")
+    
+    fixed_count = 0
+    for guild in bot.guilds:
+        guild_id = guild.id
+        db_path = get_db_path(guild_id)
+        
+        if not os.path.exists(db_path):
+            continue
+            
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Проверяем наличие колонки case_shop_count (старая) и case_shop_case_count (новая)
+            cursor.execute("PRAGMA table_info(user_fat)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            # Если есть старая колонка, но нет новой - переносим данные
+            if 'case_shop_count' in columns and 'case_shop_case_count' not in columns:
+                print(f"📦 Сервер {guild.name}: переношу данные из case_shop_count")
+                cursor.execute("ALTER TABLE user_fat ADD COLUMN case_shop_case_count INTEGER DEFAULT 0")
+                cursor.execute("UPDATE user_fat SET case_shop_case_count = case_shop_count WHERE case_shop_count > 0")
+                fixed_count += 1
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ Ошибка при миграции сервера {guild.name}: {e}")
+    
+    if fixed_count > 0:
+        print(f"✅ Миграция завершена, обновлено серверов: {fixed_count}")
+
 @bot.event
 async def on_ready():
     print(f"\n{'='*60}")
@@ -1959,7 +1802,11 @@ async def on_ready():
     print(f"📅 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}\n")
     
-    existing, new, corrupted = check_databases_on_startup()
+    # Проверяем базы данных
+    check_databases_on_startup()
+    
+    # Мигрируем старые ключи
+    await migrate_old_case_keys()
     
     print(f"\n📋 Серверы, на которых присутствует бот:")
     for guild in bot.guilds:
@@ -1972,24 +1819,15 @@ async def on_ready():
     print(f"  📁 Папка БД: {DB_FOLDER}")
     print(f"  🍔 Бонус автобургеров: +{AUTOBURGER_MAX_BONUS*100}% макс")
     print(f"  🎰 Кейсов в игре: {len(CASES)}")
-    print(f"  🏪 Слотов в магазине: {SHOP_SLOTS} (📦 4 кейса + 🛒 6 предметов)")
+    print(f"  🏪 Слотов в магазине: {SHOP_SLOTS}")
     print(f"  👾 Снатчер активен: Да")
     print(f"  ⚔️ Дуэли активны: Да")
-
-    if new > 0 or corrupted > 0:
-        print(f"\n⚠️ ВНИМАНИЕ: Произошли изменения в базах данных!")
-        if new > 0:
-            print(f"   📁 Добавлено новых БД: {new}")
-        if corrupted > 0:
-            print(f"   🔧 Восстановлено повреждённых: {corrupted}")
-        print(f"   📝 Некоторые данные могли быть сброшены")
-    else:
-        print(f"\n✅ Все базы данных в порядке, данные сохранены")
     
     print(f"\n{'-'*40}")
     print(f"🎮 Доступные команды: !жирхелп")
     print(f"{'='*60}\n")
-    
+
+    # Запускаем фоновые задачи
     bot.loop.create_task(autoburger_loop())
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
@@ -2041,7 +1879,7 @@ async def duel_animation(msg, challenger, opponent):
         color=0xff5500
     )
     
-    # Анимация 20 кадров (как в кейсах)
+    # Анимация 20 кадров
     animation_frames = [
         (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
         (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
@@ -2069,7 +1907,7 @@ async def duel_animation(msg, challenger, opponent):
     await msg.edit(embed=result_embed)
     await asyncio.sleep(1.5)
     
-    return result  # Возвращаем результат для дальнейшей обработки
+    return result
 
 def get_item_price(item_name):
     """Возвращает цену предмета для расчета шансов апгрейда"""
@@ -2082,7 +1920,7 @@ def get_item_price(item_name):
         if shop_item["name"] == item_name:
             return shop_item["price"]
     
-    return 0  # Если предмет не найден
+    return 0
 
 def get_possible_upgrades(item_name, item_count):
     """Возвращает список предметов, до которых можно улучшить данный предмет"""
@@ -2094,6 +1932,13 @@ def get_possible_upgrades(item_name, item_count):
         return []
     
     possible_upgrades = []
+    
+    # Создаём множество всех существующих предметов в игре
+    all_items = set()
+    for shop_item in SHOP_ITEMS:
+        all_items.add(shop_item["name"])
+    for leg_name in LEGENDARY_UPGRADE_PRICES.keys():
+        all_items.add(leg_name)
     
     # Проверяем обычные предметы из магазина
     for shop_item in SHOP_ITEMS:
@@ -2121,13 +1966,7 @@ def get_possible_upgrades(item_name, item_count):
     if current_price >= 1000:
         for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
             # Проверяем, что такой предмет вообще существует в игре
-            item_exists = False
-            for shop_item in SHOP_ITEMS:
-                if shop_item["name"] == leg_name:
-                    item_exists = True
-                    break
-            
-            if not item_exists:
+            if leg_name not in all_items:
                 continue
             
             # Пропускаем если целевой предмет дешевле или равен текущему
@@ -2148,7 +1987,7 @@ def get_possible_upgrades(item_name, item_count):
                 "emoji": ITEM_EMOJIS.get(leg_name, "✨")
             })
     
-    # Сортируем по возрастанию цены (от самых дешевых к дорогим)
+    # Сортируем по возрастанию цены
     possible_upgrades.sort(key=lambda x: x["price"])
     
     return possible_upgrades
@@ -2243,13 +2082,8 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
     # Обновляем данные в БД
     update_user_data(
         guild_id, user_id,
-        item_counts=save_user_items(items_dict),
-        last_command=None,
-        last_command_target=None,
-        last_command_use_time=None
+        item_counts=save_user_items(items_dict)
     )
-    
-    # Обновляем ник если нужно (но обычно апгрейд не меняет вес)
     
     # Показываем результат
     result_embed = discord.Embed(
@@ -2264,7 +2098,7 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
 @bot.event
 async def on_guild_join(guild):
     print(f"✅ Бот добавлен на новый сервер: {guild.name} (ID: {guild.id})")
-    init_guild_database(guild.id)
+    safe_init_guild_database(guild.id, guild.name)
     for channel in guild.text_channels:
         if channel.permissions_for(guild.me).send_messages:
             embed = discord.Embed(title="🍔 Жирбот прибыл!", 
@@ -2315,16 +2149,16 @@ async def fat_command(ctx):
     
     new_number = data['current_number'] + change
     
-    update_user_data(
-        guild_id, user_id,
-        number=new_number,
-        user_name=user_name,
-        consecutive_plus=new_consecutive_plus,
-        consecutive_minus=new_consecutive_minus,
-        jackpot_pity=new_jackpot_pity,
-        fat_cooldown_time=datetime.now(),
-        cases_dict=data.get('cases_dict')
-    )
+    update_data = {
+        'number': new_number,
+        'user_name': user_name,
+        'consecutive_plus': new_consecutive_plus,
+        'consecutive_minus': new_consecutive_minus,
+        'jackpot_pity': new_jackpot_pity,
+        'fat_cooldown_time': datetime.now()
+    }
+    
+    update_user_data(guild_id, user_id, **update_data)
     
     nick_updated = False
     try:
@@ -2418,7 +2252,6 @@ async def fat_command(ctx):
         embed.set_footer(text="⚡ Вес обновлён в БД, но ник не изменён")
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='жиркейс')
 async def fat_case_command(ctx):
@@ -2627,7 +2460,7 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
         
-        # ===== ОБРАБОТКА ПРИЗА (обновленная) =====
+        # ===== ОБРАБОТКА ПРИЗА =====
         items_dict = get_user_items(data['item_counts'])
         new_number = data['current_number']
         new_autoburger_count = data['autoburger_count']
@@ -2659,7 +2492,7 @@ async def fat_case_command(ctx):
             # Это предмет из магазина (для Магазинного кейса)
             items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
             result_display = f"🎁 **{prize_value}** {prize_emoji}"
-            result_color = 0x9b59b6  # Фиолетовый
+            result_color = 0x9b59b6
             # Вес не меняется
             
         else:
@@ -2704,19 +2537,23 @@ async def fat_case_command(ctx):
                 pass
         
         # Обновляем данные в БД
-        update_user_data(
-            guild_id, user_id,
-            number=new_number,
-            user_name=user_name,
-            autoburger_count=new_autoburger_count,
-            last_case_time=datetime.now() if case_to_open == "daily" else data['last_case_time'],
-            next_autoburger_time=new_next_autoburger_time,
-            item_counts=save_user_items(items_dict),
-            active_case_message_id=None,
-            active_case_channel_id=None,
-            daily_case_last_time=datetime.now() if case_to_open == "daily" else data['daily_case_last_time'],
-            cases_dict=cases_dict
-        )
+        update_data = {
+            'number': new_number,
+            'user_name': user_name,
+            'autoburger_count': new_autoburger_count,
+            'next_autoburger_time': new_next_autoburger_time,
+            'item_counts': save_user_items(items_dict),
+            'active_case_message_id': None,
+            'active_case_channel_id': None
+        }
+        
+        if case_to_open == "daily":
+            update_data['daily_case_last_time'] = datetime.now()
+        
+        if case_to_open != "daily":
+            update_data['cases_dict'] = cases_dict
+        
+        update_user_data(guild_id, user_id, **update_data)
         
         # ===== ФИНАЛЬНОЕ СООБЩЕНИЕ =====
         rank_name, rank_emoji = get_rank(new_number)
@@ -2799,7 +2636,6 @@ async def fat_case_command(ctx):
         )
         await case_msg.edit(embed=timeout_embed)
 
-
 @bot.command(name='жиркейс_шансы')
 async def fat_case_chances(ctx):
     embed = discord.Embed(title="📊 **ШАНСЫ В КЕЙСЕ** 📊", 
@@ -2838,7 +2674,6 @@ async def fat_case_chances(ctx):
     embed.set_footer(text="🎰 Удачи в открытии кейсов!")
     await ctx.send(embed=embed)
 
-
 @bot.command(name='жиротрясы')
 async def fat_leaderboard(ctx):
     guild_id = ctx.guild.id
@@ -2854,8 +2689,13 @@ async def fat_leaderboard(ctx):
                          color=0xffaa00)
     
     leaderboard_text = ""
-    for i, (user_name, number, last_update, consecutive_plus, consecutive_minus, 
-            jackpot_pity, autoburger_count, total_acts, total_gain, legendary_burger) in enumerate(users, 1):
+    for i, user_data in enumerate(users, 1):
+        # Распаковываем с учётом возможного отсутствия legendary_burger
+        if len(user_data) >= 10:
+            user_name, number, last_update, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, total_acts, total_gain, legendary_burger = user_data
+        else:
+            user_name, number, last_update, consecutive_plus, consecutive_minus, jackpot_pity, autoburger_count, total_acts, total_gain = user_data
+            legendary_burger = -1
         
         if i == 1:
             place_icon = "🥇"
@@ -2910,7 +2750,6 @@ async def fat_leaderboard(ctx):
         embed.add_field(name="✨ Легендарные бургеры", value=burger_stats, inline=False)
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='жирстат')
 async def fat_stats(ctx, member: discord.Member = None):
@@ -2968,7 +2807,6 @@ async def fat_stats(ctx, member: discord.Member = None):
             pass
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='жир_инфо')
 async def fat_info(ctx, member: discord.Member = None):
@@ -3038,14 +2876,12 @@ async def fat_info(ctx, member: discord.Member = None):
                        value=f"**{burger['name']}**\nМножитель: x{burger['multiplier']}", 
                        inline=True)
     
-    # ===== НОВОЕ: Информация о пассивном доходе =====
     if total_passive_income > 0:
         passive_text = f"**{total_passive_income} кг/24ч**"
         if multiplier != 1.0:
             passive_text += f" (с учётом множителя x{multiplier})"
         embed.add_field(name="💰 Пассивный доход", value=passive_text, inline=True)
         
-        # Добавляем детали если их немного
         if len(income_details) <= 5:
             details_text = "\n".join(income_details)
             embed.add_field(name="📋 Источники дохода", value=details_text, inline=False)
@@ -3208,16 +3044,16 @@ async def ascension_command(ctx):
         except:
             pass
         
-        update_user_data(
-            guild_id, user_id,
-            number=new_number,
-            user_name=user_name,
-            autoburger_count=new_autoburger_count,
-            next_autoburger_time=new_next_autoburger_time,
-            legendary_burger=new_burger_idx,
-            item_counts=save_user_items(items_dict),
-            cases_dict=data.get('cases_dict')
-        )
+        update_data = {
+            'number': new_number,
+            'user_name': user_name,
+            'autoburger_count': new_autoburger_count,
+            'next_autoburger_time': new_next_autoburger_time,
+            'legendary_burger': new_burger_idx,
+            'item_counts': save_user_items(items_dict)
+        }
+        
+        update_user_data(guild_id, user_id, **update_data)
         
         burger_emoji = BURGER_RANKS[new_burger_idx]["emoji"]
         embed = discord.Embed(
@@ -3268,13 +3104,7 @@ async def ascension_command(ctx):
         except:
             pass
         
-        update_user_data(
-            guild_id, user_id,
-            number=new_number,
-            user_name=user_name,
-            item_counts=save_user_items(items_dict),
-            cases_dict=data.get('cases_dict')
-        )
+        update_user_data(guild_id, user_id, number=new_number, item_counts=save_user_items(items_dict))
         
         embed = discord.Embed(
             title="💔 **ВОЗВЫШЕНИЕ НЕ УДАЛОСЬ** 💔",
@@ -3290,7 +3120,6 @@ async def ascension_command(ctx):
     
     embed.set_footer(text="💪 Продолжайте набирать массу!")
     await ctx.send(embed=embed)
-
 
 @bot.command(name='магазин')
 async def shop_command(ctx):
@@ -3365,7 +3194,6 @@ async def shop_command(ctx):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='купить')
 async def buy_command(ctx, slot: int, amount: int = 1):
     """
@@ -3432,12 +3260,17 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     new_number = data['current_number'] - total_price
     item["amount"] -= amount
     
-    cases_dict = data.get('cases_dict', {})
+    cases_dict = data.get('cases_dict', {}).copy()
     
+    # ИСПРАВЛЕНО: правильная обработка покупки кейса
     if item.get("type") == "case" or "case_id" in item:
         case_id = item.get("case_id")
         if not case_id:
             await ctx.send(f"❌ Ошибка: не удалось определить тип кейса!")
+            return
+        
+        if case_id not in CASES:
+            await ctx.send(f"❌ Ошибка: неизвестный тип кейса {case_id}!")
             return
         
         cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
@@ -3499,7 +3332,6 @@ async def buy_command(ctx, slot: int, amount: int = 1):
     embed.add_field(name="💸 Осталось", value=f"{new_number} кг", inline=True)
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='инвентарь')
 async def show_inventory(ctx, member: discord.Member = None):
@@ -3595,7 +3427,6 @@ async def show_inventory(ctx, member: discord.Member = None):
     embed.set_footer(text="💪 Жир, кейсы и предметы!")
     await ctx.send(embed=embed)
 
-
 @bot.command(name='жир_звания')
 async def show_ranks(ctx):
     """Список званий"""
@@ -3616,7 +3447,6 @@ async def show_ranks(ctx):
     embed.add_field(name="Доступные звания", value=ranks_text, inline=False)
     await ctx.send(embed=embed)
 
-
 @bot.command(name='жир_сброс')
 async def fat_reset(ctx, member: discord.Member = None):
     """Сброс веса (только админы)"""
@@ -3630,21 +3460,21 @@ async def fat_reset(ctx, member: discord.Member = None):
     
     data = get_user_data(guild_id, user_id, target.name)
     
-    update_user_data(
-        guild_id, user_id,
-        number=0,
-        consecutive_plus=0,
-        consecutive_minus=0,
-        jackpot_pity=0,
-        autoburger_count=0,
-        total_autoburger_activations=0,
-        total_autoburger_gain=0,
-        last_autoburger_result=None,
-        last_autoburger_time=None,
-        legendary_burger=-1,
-        item_counts='{}',
-        cases_dict=data.get('cases_dict')  # Сохраняем кейсы
-    )
+    update_data = {
+        'number': 0,
+        'consecutive_plus': 0,
+        'consecutive_minus': 0,
+        'jackpot_pity': 0,
+        'autoburger_count': 0,
+        'total_autoburger_activations': 0,
+        'total_autoburger_gain': 0,
+        'last_autoburger_result': None,
+        'last_autoburger_time': None,
+        'legendary_burger': -1,
+        'item_counts': '{}'
+    }
+    
+    update_user_data(guild_id, user_id, **update_data)
     
     try:
         new_nick = f"0kg {target.name}"
@@ -3652,7 +3482,6 @@ async def fat_reset(ctx, member: discord.Member = None):
         await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg")
     except:
         await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg (ник не изменён)")
-
 
 @bot.command(name='сброскд')
 async def reset_cooldowns(ctx):
@@ -3709,7 +3538,6 @@ async def reset_cooldowns(ctx):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='сбросвсех')
 async def reset_all_users_weight(ctx):
     """Глобальный сброс веса (только тестеры)"""
@@ -3738,7 +3566,6 @@ async def reset_all_users_weight(ctx):
     )
     embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
     await ctx.send(embed=embed)
-
 
 @bot.command(name='жир_кулдаун')
 async def cooldown_info(ctx):
@@ -3827,7 +3654,6 @@ async def cooldown_info(ctx):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='жир_серверы')
 async def list_guilds(ctx):
     """Статистика по серверам (только админы)"""
@@ -3857,7 +3683,6 @@ async def list_guilds(ctx):
         )
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='жирхелп')
 async def fat_help(ctx):
@@ -4004,7 +3829,7 @@ async def fat_help(ctx):
         inline=True
     )
     
-    embed.set_footer(text="🔥❄️💰🍔⚡👾 - следите за показателями! | Версия 7.0")
+    embed.set_footer(text="🔥❄️💰🍔⚡👾 - следите за показателями! | Версия 7.1")
     
     try:
         await ctx.send(embed=embed)
@@ -4013,7 +3838,6 @@ async def fat_help(ctx):
             await ctx.author.send("❌ У бота нет прав на отправку сообщений в этом канале. Вот справка в личку:", embed=embed)
         except:
             pass
-
 
 @bot.command(name='автобургер')
 async def give_autoburger(ctx, количество: int = 1):
@@ -4048,8 +3872,7 @@ async def give_autoburger(ctx, количество: int = 1):
     update_user_data(
         guild_id, user_id,
         autoburger_count=new_autoburger_count,
-        next_autoburger_time=new_next_autoburger_time,
-        cases_dict=data.get('cases_dict')
+        next_autoburger_time=new_next_autoburger_time
     )
     
     embed = discord.Embed(
@@ -4071,7 +3894,6 @@ async def give_autoburger(ctx, количество: int = 1):
     embed.set_footer(text="✨ Удачи в наборе массы!")
     await ctx.send(embed=embed)
 
-
 @bot.command(name='автобургер_сброс')
 async def reset_autoburger(ctx, member: discord.Member = None):
     """Сбрасывает количество автобургеров у пользователя (только для тестеров)"""
@@ -4092,8 +3914,7 @@ async def reset_autoburger(ctx, member: discord.Member = None):
     update_user_data(
         guild_id, user_id,
         autoburger_count=0,
-        next_autoburger_time=None,
-        cases_dict=data.get('cases_dict')
+        next_autoburger_time=None
     )
     
     embed = discord.Embed(
@@ -4104,7 +3925,6 @@ async def reset_autoburger(ctx, member: discord.Member = None):
     embed.add_field(name="Было", value=f"{data['autoburger_count']} 🍔", inline=True)
     embed.add_field(name="Стало", value="0 🍔", inline=True)
     await ctx.send(embed=embed)
-
 
 @bot.command(name='автобургер_инфо')
 async def autoburger_info(ctx, member: discord.Member = None):
@@ -4167,7 +3987,6 @@ async def autoburger_info(ctx, member: discord.Member = None):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='выдатьпредмет')
 async def give_shop_item(ctx, amount: int, *, item_name: str):
     """
@@ -4198,7 +4017,7 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     # Проверяем, не кейс ли это
     for case_id, case in CASES.items():
         if case_id != "daily" and case["name"].lower() == item_name.lower():
-            cases_dict = data.get('cases_dict', {})
+            cases_dict = data.get('cases_dict', {}).copy()
             cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
             
             update_user_data(
@@ -4235,8 +4054,7 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     
     update_user_data(
         guild_id, user_id,
-        item_counts=save_user_items(items_dict),
-        cases_dict=data.get('cases_dict')
+        item_counts=save_user_items(items_dict)
     )
     
     embed = discord.Embed(
@@ -4256,7 +4074,6 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     embed.set_footer(text="✨ Только для высших тестеров!")
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='жирглобал')
 async def global_leaderboard(ctx):
@@ -4639,19 +4456,16 @@ async def cancel_duel(ctx):
     
     await ctx.send(f"✅ Дуэль отменена!")
 
-
 # ===== ФУНКЦИИ ДЛЯ МАГАЗИНА =====
 def generate_shop_items():
-    """Генерирует новый набор предметов для магазина (10 слотов: 6 предметов + 4 кейса)"""
+    """Генерирует новый набор предметов для магазина (10 слотов: 4 кейса + 6 предметов)"""
     slots = []
     used_indices = set()
     
-    case_slots = 4
-    item_slots = 6
-    
+    # 4 слота для кейсов
     available_cases = [cid for cid, case in CASES.items() if cid != "daily" and case.get("shop_chance", 0) > 0]
     
-    for _ in range(case_slots):
+    for _ in range(4):
         if random.random() < 0.7 and available_cases:
             case_choices = []
             for cid in available_cases:
@@ -4688,7 +4502,8 @@ def generate_shop_items():
         else:
             slots.append(None)
     
-    for _ in range(item_slots):
+    # 6 слотов для предметов
+    for _ in range(6):
         chosen_item = None
         for _ in range(50):
             item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
@@ -4709,14 +4524,15 @@ def generate_shop_items():
                 "amount": amount,
                 "price": chosen_item["price"],
                 "description": chosen_item["description"],
-                "gain_per_24h": chosen_item.get("gain_per_24h", 0)
+                "gain_per_24h": chosen_item.get("gain_per_24h", 0),
+                "emoji": ITEM_EMOJIS.get(chosen_item["name"], "📦")
             })
         else:
             slots.append(None)
     
+    # Перемешиваем слоты
     random.shuffle(slots)
     return slots
-
 
 async def ensure_shop_updated(guild_id):
     """Проверяет и обновляет магазин если нужно"""
@@ -4753,7 +4569,6 @@ async def ensure_shop_updated(guild_id):
         next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
         update_shop_data(guild_id, new_slots, last_update, next_update)
         return new_slots, last_update, next_update
-
 
 # ===== КОМАНДЫ ДЛЯ ПЕРЕДАЧИ =====
 @bot.command(name='датьжир')
@@ -4848,7 +4663,6 @@ async def give_fat(ctx, target: discord.Member, amount: int):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='датьпредмет')
 async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str):
     """
@@ -4882,8 +4696,8 @@ async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str)
                 await ctx.send(f"❌ Кейс '{case['name']}' нельзя передавать!")
                 return
             
-            giver_cases = giver_data.get('cases_dict', {})
-            target_cases = target_data.get('cases_dict', {})
+            giver_cases = giver_data.get('cases_dict', {}).copy()
+            target_cases = target_data.get('cases_dict', {}).copy()
             
             if giver_cases.get(case_id, 0) < amount:
                 await ctx.send(f"❌ У вас недостаточно кейсов '{case['name']}'! Есть: {giver_cases.get(case_id, 0)}, нужно: {amount}")
@@ -5170,55 +4984,6 @@ async def choose_upgrade(ctx, choice: str = None):
     
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
-
-@bot.command(name='отладка_жир')
-@commands.has_permissions(administrator=True)
-async def debug_fat(ctx):
-    """Отлаживает команду !жир"""
-    guild_id = ctx.guild.id
-    member = ctx.author
-    user_id = str(member.id)
-    
-    # 1. Получаем данные пользователя
-    data = get_user_data(guild_id, user_id, member.name)
-    
-    embed = discord.Embed(
-        title="🔍 Отладка !жир",
-        color=0xffaa00
-    )
-    
-    # 2. Показываем содержимое cases_dict
-    cases_dict = data.get('cases_dict', {})
-    cases_text = "\n".join([f"`{k}`: {v}" for k, v in cases_dict.items()])
-    embed.add_field(name="📦 cases_dict", value=cases_text or "Пусто", inline=False)
-    
-    # 3. Проверяем структуру БД
-    db_path = get_db_path(guild_id)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute("PRAGMA table_info(user_fat)")
-    columns = cursor.fetchall()
-    
-    # Ищем колонки для кейсов
-    case_columns = [col[1] for col in columns if 'case_' in col[1]]
-    embed.add_field(name="🗄️ Колонки в БД", value="\n".join([f"`{c}`" for c in case_columns]) or "Нет", inline=False)
-    
-    # 4. Проверяем, есть ли у пользователя запись
-    cursor.execute("SELECT * FROM user_fat WHERE user_id = ?", (str(user_id),))
-    user_row = cursor.fetchone()
-    if user_row:
-        # Получаем имена колонок
-        col_names = [description[0] for description in cursor.description]
-        embed.add_field(name="📊 Данные пользователя", 
-                       value=f"Запись найдена, колонок: {len(col_names)}", 
-                       inline=False)
-    else:
-        embed.add_field(name="📊 Данные пользователя", value="Запись не найдена", inline=False)
-    
-    conn.close()
-    
-    await ctx.send(embed=embed)
 
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
