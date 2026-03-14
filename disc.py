@@ -5043,6 +5043,59 @@ async def diagnose_my_cases(ctx):
     except Exception as e:
         await ctx.send(f"❌ Ошибка диагностики: {e}")
         print(f"Ошибка: {e}")
+
+@bot.command(name='тест_жиркейс')
+async def test_fat_case(ctx):
+    """Тестовая версия жиркейса для поиска ошибки"""
+    guild_id = ctx.guild.id
+    user_id = str(ctx.author.id)
+    db_path = get_db_path(guild_id)
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # 1. Проверяем, что получаем из БД
+        cursor.execute("SELECT case_shop_case_count FROM user_fat WHERE user_id = ?", (user_id,))
+        shop_cases = cursor.fetchone()
+        
+        response = f"**Тест жиркейса для {ctx.author.name}**\n\n"
+        response += f"1️⃣ case_shop_case_count в БД: **{shop_cases[0] if shop_cases else 0}** шт\n"
+        
+        # 2. Проверяем, что возвращает get_user_data
+        data = get_user_data(guild_id, user_id, ctx.author.name)
+        cases_dict = data.get('cases_dict', {})
+        
+        response += f"2️⃣ cases_dict из get_user_data: `{cases_dict}`\n"
+        
+        # 3. Проверяем конкретно ключ 'shop_case'
+        shop_case_value = cases_dict.get('shop_case', 0)
+        response += f"3️⃣ cases_dict['shop_case'] = **{shop_case_value}**\n"
+        
+        # 4. Проверяем, есть ли ключ 'shop' (старый проблемный)
+        if 'shop' in cases_dict:
+            response += f"4️⃣ ⚠️ Найден СТАРЫЙ ключ 'shop' = {cases_dict['shop']} шт\n"
+        else:
+            response += f"4️⃣ ✅ Старый ключ 'shop' не найден\n"
+        
+        # 5. Проверяем, какие вообще есть ключи
+        all_keys = list(cases_dict.keys())
+        response += f"5️⃣ Все ключи в cases_dict: {all_keys}\n"
+        
+        # 6. Проверяем, есть ли 'shop_case' в CASES словаре
+        if 'shop_case' in CASES:
+            response += f"6️⃣ ✅ 'shop_case' есть в CASES\n"
+        else:
+            response += f"6️⃣ ❌ 'shop_case' ОТСУТСТВУЕТ в CASES!\n"
+        
+        conn.close()
+        
+        # Отправляем результат
+        for i in range(0, len(response), 1900):
+            await ctx.send(response[i:i+1900])
+        
+    except Exception as e:
+        await ctx.send(f"❌ Ошибка теста: {e}\n\nПодробнее: {str(e)}")
     
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
