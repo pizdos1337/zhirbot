@@ -1898,20 +1898,21 @@ async def on_ready():
     # Мигрируем старые ключи
     await migrate_old_case_keys()
     add_passive_income_tracking()
+
     # Добавь в on_ready после add_passive_income_tracking()
     print("\n📊 Статистика пассивного дохода:")
     total_users_with_items = 0
     for guild in bot.guilds:
         try:
-        db_path = get_db_path(guild.id)
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM user_fat WHERE item_counts != '{}' AND item_counts IS NOT NULL")
-        count = cursor.fetchone()[0]
-        total_users_with_items += count
-        conn.close()
-    except:
-        pass
+            db_path = get_db_path(guild.id)
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM user_fat WHERE item_counts != '{}' AND item_counts IS NOT NULL")
+            count = cursor.fetchone()[0]
+            total_users_with_items += count
+            conn.close()
+        except:  # ← вот здесь был пропущен отступ!
+            pass
     print(f"   👥 Пользователей с предметами: {total_users_with_items}")
 
     print(f"\n📋 Серверы, на которых присутствует бот:")
