@@ -2030,7 +2030,7 @@ def get_item_price(item_name):
     return 0
 
 def get_possible_upgrades(item_name, item_count):
-    """Возвращает список предметов, до которых можно улучшить данный предмет"""
+    """Возвращает список предметов, до которых можно улучшить данный предмет (без дубликатов)"""
     if item_count <= 0:
         return []
     
@@ -2039,6 +2039,7 @@ def get_possible_upgrades(item_name, item_count):
         return []
     
     possible_upgrades = []
+    seen_items = set()  # Множество для отслеживания уже добавленных предметов
     
     # Создаём множество всех существующих предметов в игре
     all_items = set()
@@ -2049,7 +2050,13 @@ def get_possible_upgrades(item_name, item_count):
     
     # Проверяем обычные предметы из магазина
     for shop_item in SHOP_ITEMS:
-        target_price = get_item_price(shop_item["name"])
+        item_name_check = shop_item["name"]
+        
+        # Пропускаем если уже добавили
+        if item_name_check in seen_items:
+            continue
+            
+        target_price = get_item_price(item_name_check)
         
         # Пропускаем предметы дешевле или равные текущему
         if target_price <= current_price:
@@ -2063,15 +2070,20 @@ def get_possible_upgrades(item_name, item_count):
             continue
         
         possible_upgrades.append({
-            "name": shop_item["name"],
+            "name": item_name_check,
             "price": target_price,
             "chance": chance,
-            "emoji": ITEM_EMOJIS.get(shop_item["name"], "🎁")
+            "emoji": ITEM_EMOJIS.get(item_name_check, "🎁")
         })
+        seen_items.add(item_name_check)
     
     # Проверяем легендарные предметы (только если текущий предмет стоит >= 1000кг)
     if current_price >= 1000:
         for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
+            # Пропускаем если уже добавили
+            if leg_name in seen_items:
+                continue
+            
             # Проверяем, что такой предмет вообще существует в игре
             if leg_name not in all_items:
                 continue
@@ -2093,6 +2105,7 @@ def get_possible_upgrades(item_name, item_count):
                 "chance": chance,
                 "emoji": ITEM_EMOJIS.get(leg_name, "✨")
             })
+            seen_items.add(leg_name)
     
     # Сортируем по возрастанию цены
     possible_upgrades.sort(key=lambda x: x["price"])
