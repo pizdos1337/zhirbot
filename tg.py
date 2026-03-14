@@ -3736,36 +3736,50 @@ async def cmd_give_item(message: types.Message):
     """Передаёт предметы другому пользователю"""
     register_chat(message.chat.id)
     
-    if not is_tester(message.from_user.id):
-        await message.reply("❌ У вас нет прав для этой команды!")
-        return
-    
     chat_id = message.chat.id
     giver_id = message.from_user.id
     giver_name = message.from_user.full_name
     
-    args = message.get_args().split(maxsplit=2)
-    if len(args) < 3:
+    # Парсим аргументы
+    text = message.text
+    if not text or ' ' not in text:
         await message.reply(
             "❌ Использование: `/датьпредмет @username количество \"название предмета\"`\n"
+            "Пример: `/датьпредмет @user 5 Горелый бекон`\n"
+            "Пример: `/датьпредмет @user 1 Автобургер`"
+        )
+        return
+    
+    # Убираем команду из текста
+    without_command = text.split(' ', 1)[1] if ' ' in text else ''
+    
+    # Парсим @username, количество и название предмета
+    # Формат: @username количество название предмета
+    import re
+    # Регулярка для @username, числа и всего остального как название
+    match = re.match(r'@(\S+)\s+(\d+)\s+(.+)$', without_command)
+    
+    if not match:
+        await message.reply(
+            "❌ Неправильный формат команды!\n"
+            "Использование: `/датьпредмет @username количество \"название предмета\"`\n"
             "Пример: `/датьпредмет @user 5 Горелый бекон`"
         )
         return
     
-    target_username = args[0].replace('@', '')
+    target_username = match.group(1)
     try:
-        amount = int(args[1])
+        amount = int(match.group(2))
+        item_name = match.group(3).strip()
     except ValueError:
         await message.reply("❌ Количество должно быть числом!")
         return
-    
-    item_name = args[2].strip()
     
     if amount <= 0:
         await message.reply("❌ Количество должно быть больше 0!")
         return
     
-    # Ищем цель
+    # Ищем целевого пользователя в чате
     target_user = None
     try:
         chat = await bot.get_chat(chat_id)
@@ -3773,8 +3787,8 @@ async def cmd_give_item(message: types.Message):
             if member.user.username and member.user.username.lower() == target_username.lower():
                 target_user = member.user
                 break
-    except:
-        pass
+    except Exception as e:
+        print(f"Ошибка при поиске пользователя: {e}")
     
     if not target_user:
         await message.reply(f"❌ Пользователь @{target_username} не найден в этом чате!")
@@ -3783,19 +3797,21 @@ async def cmd_give_item(message: types.Message):
     target_id = target_user.id
     target_name = target_user.full_name
     
+    # Нельзя передавать предметы самому себе
     if giver_id == target_id:
         await message.reply("❌ Нельзя передавать предметы самому себе!")
         return
     
+    # Получаем данные отправителя и получателя
     giver_data = get_user_data(chat_id, giver_id, giver_name)
     target_data = get_user_data(chat_id, target_id, target_name)
     
     item_lower = item_name.lower()
     
-    # Проверяем кейсы
+    # ===== ПРОВЕРЯЕМ КЕЙСЫ =====
     for case_id, case in CASES.items():
-        if case_id != "daily" and case["name"].lower() in item_lower:
-            if not case["tradable"]:
+        if case_id != "daily" and case["name"].lower() in item_lower or case_id.lower() in item_lower:
+            if not case.get("tradable", True):
                 await message.reply(f"❌ Кейс '{case['name']}' нельзя передавать!")
                 return
             
@@ -3806,23 +3822,25 @@ async def cmd_give_item(message: types.Message):
                 await message.reply(f"❌ У вас недостаточно кейсов '{case['name']}'! Есть: {giver_cases.get(case_id, 0)}")
                 return
             
+            # Передаём кейсы
             giver_cases[case_id] = giver_cases.get(case_id, 0) - amount
             target_cases[case_id] = target_cases.get(case_id, 0) + amount
             
             update_user_data(chat_id, giver_id, cases_dict=giver_cases)
             update_user_data(chat_id, target_id, cases_dict=target_cases)
             
-            response = f"🎁 **Передача кейса**\n\n"
+            response = f"📦 **Передача кейса**\n\n"
             response += f"**{giver_name}** передал кейс **{target_name}**!\n\n"
-            response += f"📦 Кейс: **{case['name']}** x{amount}\n"
+            response += f"🎁 Кейс: **{case['name']}** x{amount}\n"
             response += f"📤 У вас осталось: {giver_cases.get(case_id, 0)} шт\n"
             response += f"📥 У получателя: {target_cases.get(case_id, 0)} шт"
             
             await message.reply(response)
             return
     
-    # Проверяем автобургер
-    is_autoburger = any(word in item_lower for word in ["автобургер", "бургер", "autoburger"])
+    # ===== ПРОВЕРЯЕМ АВТОБУРГЕРЫ =====
+    autoburger_keywords = ["автобургер", "бургер", "autoburger", "🍔"]
+    is_autoburger = any(word in item_lower for word in autoburger_keywords)
     
     if is_autoburger:
         if giver_data['autoburger_count'] < amount:
@@ -3832,6 +3850,7 @@ async def cmd_give_item(message: types.Message):
         new_giver_burgers = giver_data['autoburger_count'] - amount
         new_target_burgers = target_data['autoburger_count'] + amount
         
+        # Обновляем время следующего автобургера для получателя
         new_target_next_burger = None
         if new_target_burgers > 0:
             interval = get_autoburger_interval(new_target_burgers)
@@ -3839,7 +3858,9 @@ async def cmd_give_item(message: types.Message):
                 new_target_next_burger = datetime.now() + timedelta(hours=interval)
         
         update_user_data(chat_id, giver_id, autoburger_count=new_giver_burgers)
-        update_user_data(chat_id, target_id, autoburger_count=new_target_burgers, next_autoburger_time=new_target_next_burger)
+        update_user_data(chat_id, target_id, 
+                        autoburger_count=new_target_burgers, 
+                        next_autoburger_time=new_target_next_burger)
         
         response = f"🍔 **Передача автобургера**\n\n"
         response += f"**{giver_name}** передал автобургер **{target_name}**!\n\n"
@@ -3847,60 +3868,98 @@ async def cmd_give_item(message: types.Message):
         response += f"📤 У вас осталось: {new_giver_burgers} 🍔\n"
         response += f"📥 У получателя: {new_target_burgers} 🍔"
         
+        if new_target_burgers > 0:
+            interval = get_autoburger_interval(new_target_burgers)
+            response += f"\n⏰ Интервал получателя: каждые {interval} ч"
+        
         await message.reply(response)
         return
     
-    # Обычные предметы
+    # ===== ПРОВЕРЯЕМ ОБЫЧНЫЕ ПРЕДМЕТЫ =====
     giver_items = get_user_items(giver_data['item_counts'])
     target_items = get_user_items(target_data['item_counts'])
     
+    # Ищем предмет в инвентаре отправителя (без учёта регистра)
     found_item = None
+    exact_match = None
+    
+    # Сначала ищем точное совпадение
     for key in giver_items.keys():
-        if key.lower() == item_name.lower():
+        if key.lower() == item_lower:
             found_item = key
             break
     
+    # Если не нашли, ищем частичное совпадение
     if not found_item:
-        available_items = list(giver_items.keys())
-        if available_items:
-            items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
+        for key in giver_items.keys():
+            if item_lower in key.lower():
+                found_item = key
+                break
+    
+    if not found_item:
+        # Показываем, что есть у пользователя
+        if giver_items:
+            items_list = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:10]])
+            if len(giver_items) > 10:
+                items_list += f"\n... и ещё {len(giver_items) - 10} предметов"
             await message.reply(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
         else:
             await message.reply("❌ У вас нет предметов в инвентаре!")
         return
     
+    # Проверяем количество
     if giver_items[found_item] < amount:
         await message.reply(f"❌ У вас недостаточно '{found_item}'! Есть: {giver_items[found_item]}")
         return
     
+    # Проверяем, не легендарный ли это бургер (их нельзя передавать)
     legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
     if found_item in legendary_burger_names:
         await message.reply(f"❌ Легендарные бургеры нельзя передавать!")
         return
     
+    # Проверяем, можно ли передавать этот предмет (если есть флаг tradable)
+    # Для обычных предметов из магазина проверяем по названию
+    for shop_item in SHOP_ITEMS:
+        if shop_item["name"] == found_item:
+            # Если у предмета есть специальный флаг tradable, проверяем его
+            # По умолчанию все предметы из магазина передавать можно
+            break
+    
+    # Передаём предмет
     giver_items[found_item] -= amount
     if giver_items[found_item] <= 0:
         del giver_items[found_item]
     
     target_items[found_item] = target_items.get(found_item, 0) + amount
     
+    # Сохраняем изменения
     update_user_data(chat_id, giver_id, item_counts=save_user_items(giver_items))
     update_user_data(chat_id, target_id, item_counts=save_user_items(target_items))
     
+    # Формируем ответ
     response = f"🎁 **Передача предмета**\n\n"
     response += f"**{giver_name}** передал предмет **{target_name}**!\n\n"
     response += f"📦 Предмет: **{found_item}** x{amount}\n\n"
     
-    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
-    if len(giver_items) > 5:
-        giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
+    # Инвентарь отправителя (первые 5 предметов)
+    if giver_items:
+        giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
+        if len(giver_items) > 5:
+            giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
+    else:
+        giver_inv = "Пусто"
     
-    target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
-    if len(target_items) > 5:
-        target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
+    # Инвентарь получателя (первые 5 предметов)
+    if target_items:
+        target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
+        if len(target_items) > 5:
+            target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
+    else:
+        target_inv = "Пусто"
     
-    response += f"📤 Ваш инвентарь:\n{giver_inv}\n\n"
-    response += f"📥 Инвентарь получателя:\n{target_inv}"
+    response += f"📤 **Ваш инвентарь:**\n{giver_inv}\n\n"
+    response += f"📥 **Инвентарь получателя:**\n{target_inv}"
     
     await message.reply(response)
 
@@ -4303,28 +4362,162 @@ COMMAND_MAP = {
     'giveitems': 'cmd_give_item',
 }
 
+async def force_update_commands():
+    """Принудительно обновляет список команд для всех чатов"""
+    
+    # Полный список команд (латиница для меню, но бот понимает и русские)
+    commands = [
+        BotCommand(command="fat", description="набор массы"),
+        BotCommand(command="fatcase", description="Открыть доступный кейс"),
+        BotCommand(command="fatcase_chances", description="Шансы в ежедневном кейсе"),
+        BotCommand(command="fattys", description="Лидерборд для чата"),
+        BotCommand(command="fatstat", description="Статистика Автобургеров"),
+        BotCommand(command="fatinfo", description="Информация"),
+        BotCommand(command="ranks", description="Звания"),
+        BotCommand(command="cooldowns", description="Информация о кулдаунах"),
+        BotCommand(command="inventory", description="Показывает инвентарь"),
+        BotCommand(command="shop", description="Магазин"),
+        BotCommand(command="buy", description="Купить предмет"),
+        BotCommand(command="givefat", description="Передать кг"),
+        BotCommand(command="ascend", description="Возвышение"),
+        BotCommand(command="upgrade", description="Улучшить предмет"),
+        BotCommand(command="upgradekg", description="Улучшить кг"),
+        BotCommand(command="choose", description="Выбрать цель улучшения"),
+        BotCommand(command="duel", description="Дуэль"),
+        BotCommand(command="giveitems", description="Передать предмет"),
+        BotCommand(command="start", description="Запустить бота"),
+        BotCommand(command="help", description="Помощь"),
+    ]
+    
+    # Устанавливаем для всех чатов
+    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    
+    # Также устанавливаем для конкретных чатов, где уже был бот
+    for chat_id in active_chats:
+        try:
+            await bot.set_my_commands(
+                commands, 
+                scope=BotCommandScopeChat(chat_id=chat_id)
+            )
+        except:
+            pass
+    
+    print("✅ Список команд принудительно обновлен")
+
 @dp.message()
 async def universal_handler(message: types.Message):
     # Проверяем, что это команда
     if not message.text or not message.text.startswith('/'):
         return
     
-    # Извлекаем команду (без слеша и аргументов)
-    full_text = message.text[1:].strip()
-    command = full_text.split()[0].lower()
+    # Получаем username бота (один раз и кэшируем)
+    if not hasattr(universal_handler, "bot_username"):
+        bot_info = await bot.me()
+        universal_handler.bot_username = bot_info.username.lower()
+        print(f"✅ Бот username: @{universal_handler.bot_username}")
     
-    # Ищем в словаре
+    # Полный текст команды
+    full_text = message.text[1:].strip()  # убираем слеш в начале
+    parts = full_text.split()
+    
+    # Первая часть - это команда (может быть с @)
+    raw_command = parts[0].lower()
+    
+    # --- ВАЖНО: Обрабатываем все возможные форматы команд ---
+    
+    # Формат 1: /жир@botusername
+    if '@' in raw_command:
+        cmd_parts = raw_command.split('@')
+        command = cmd_parts[0]
+        mentioned_bot = cmd_parts[1].lower()
+        
+        # Если команда для другого бота - игнорируем
+        if mentioned_bot != universal_handler.bot_username:
+            print(f"Игнорирую команду для @{mentioned_bot}")
+            return
+        
+        print(f"Команда с @: {raw_command} -> {command}")
+    
+    # Формат 2: /жир (без @)
+    else:
+        command = raw_command
+    
+    # Аргументы команды (если есть)
+    args = parts[1:] if len(parts) > 1 else []
+    
+    # Логируем для отладки
+    print(f"🔍 Получено: '{message.text}'")
+    print(f"   → Команда: '{command}', Аргументы: {args}")
+    
+    # Проверяем русские и латинские варианты команд
+    # (на случай если в менюшке одно, а пользователь ввел другое)
+    
+    # Маппинг латинских команд из менюшки на русские (если нужно)
+    latin_to_russian = {
+        'fat': 'жир',
+        'fatcase': 'жиркейс',
+        'fatcase_chances': 'жиркейс_шансы',
+        'fattys': 'жиротрясы',
+        'fatstat': 'жирстат',
+        'fatinfo': 'жиринфо',
+        'ranks': 'жирзвания',
+        'cooldowns': 'жиркулдаун',
+        'inventory': 'инвентарь',
+        'shop': 'магазин',
+        'buy': 'купить',
+        'givefat': 'датьжир',
+        'ascend': 'возвышение',
+        'upgrade': 'апгрейд',
+        'upgradekg': 'апгрейдкг',
+        'choose': 'выбрать',
+        'duel': 'дуэль',
+        'giveitems': 'датьпредмет',
+        'start': 'start',
+        'help': 'help'
+    }
+    
+    # Конвертируем латинскую команду в русскую, если нужно
+    if command in latin_to_russian:
+        original_command = command
+        command = latin_to_russian[command]
+        print(f"   🔄 Конвертация: {original_command} -> {command}")
+    
+    # Ищем в словаре команд
     if command in COMMAND_MAP:
         func_name = COMMAND_MAP[command]
         func = globals().get(func_name)
+        
         if func:
             register_chat(message.chat.id)
-            await func(message)
+            
+            # Подготавливаем "чистый" текст команды для функций,
+            # которые парсят аргументы
+            if args:
+                clean_text = f"/{command} " + " ".join(args)
+            else:
+                clean_text = f"/{command}"
+            
+            # Сохраняем оригинал
+            original_text = message.text
+            # Подменяем на очищенный
+            message.text = clean_text
+            
+            try:
+                print(f"   ✅ Выполняю: {func_name} с текстом '{clean_text}'")
+                await func(message)
+            except Exception as e:
+                print(f"   ❌ Ошибка: {e}")
+                await message.reply(f"❌ Ошибка при выполнении команды: {e}")
+            finally:
+                # Восстанавливаем оригинал
+                message.text = original_text
         else:
             await message.reply(f"❌ Ошибка: функция {func_name} не найдена")
     else:
-        # Неизвестная команда
-        await message.reply(f"❌ Неизвестная команда. Напиши /help")
+        # Неизвестная команда - выводим отладку
+        print(f"❓ Неизвестная команда: '{command}'")
+        # Можно раскомментировать, если хочешь видеть все неизвестные команды
+        # await message.reply(f"❌ Неизвестная команда. Напиши /help")
 
 # ===== ЗАПУСК БОТА =====
 async def on_startup(dp):
@@ -4334,7 +4527,8 @@ async def on_startup(dp):
     print("="*60)
     
     os.makedirs(DB_FOLDER, exist_ok=True)
-    
+
+    await force_update_commands()
     asyncio.create_task(autoburger_loop())
     asyncio.create_task(passive_income_loop())
     asyncio.create_task(snatcher_loop())
