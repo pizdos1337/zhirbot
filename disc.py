@@ -2233,6 +2233,148 @@ async def on_guild_join(guild):
             await channel.send(embed=embed)
             break
 
+async def upgrade_kg_animation(ctx, member, amount, target_item):
+    """Анимация апгрейда кг в предмет"""
+    guild_id = ctx.guild.id
+    user_id = str(member.id)
+    user_name = member.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    
+    # Эмодзи для анимации
+    upgrade_emojis = ["🟥", "🟩"]
+    
+    # Генерируем линию из 100 эмодзи
+    line = []
+    for i in range(100):
+        line.append(random.choice(upgrade_emojis))
+    
+    # Определяем результат (успех/неудача)
+    roll = random.random()
+    success = roll < target_item['chance']
+    
+    # Ставим результат на 58 место
+    if success:
+        result_emoji = "🟩"
+        result_text = f"✅ **УСПЕХ!** ✅"
+        result_color = 0x00ff00
+    else:
+        result_emoji = "🟥"
+        result_text = f"❌ **НЕУДАЧА!** ❌"
+        result_color = 0xff0000
+    
+    line[57] = result_emoji
+    
+    # Embed для анимации
+    anim_embed = discord.Embed(
+        title="💱 **АПГРЕЙД КГ** 💱",
+        description=f"**{member.display_name}** улучшает {amount} кг в:\n"
+                   f"{target_item['emoji']} **{target_item['name']}**\n\n"
+                   f"Шанс: **{target_item['chance']*100:.1f}%**",
+        color=0xff5500
+    )
+    
+    # Отправляем начальное сообщение
+    upgrade_msg = await ctx.send(embed=anim_embed)
+    
+    # Анимация 20 кадров
+    animation_frames = [
+        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+    ]
+    
+    for frame_num, center_pos in animation_frames:
+        visible = line[center_pos-4:center_pos+5]
+        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        
+        anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n" \
+                                 f"{target_item['emoji']} **{target_item['name']}**\n\n" \
+                                 f"**{display_line}**\n\n" \
+                                 f"Шанс: **{target_item['chance']*100:.1f}%**"
+        
+        await upgrade_msg.edit(embed=anim_embed)
+        await asyncio.sleep(0.5)
+    
+    # Обрабатываем результат
+    new_number = data['current_number']
+    
+    if success:
+        # Успех - списываем кг и добавляем предмет
+        new_number = data['current_number'] - target_item['price']
+        
+        if target_item.get("is_case", False):
+            cases_dict = data.get('cases_dict', {}).copy()
+            cases_dict[target_item["case_id"]] = cases_dict.get(target_item["case_id"], 0) + 1
+            update_user_data(
+                guild_id, user_id,
+                number=new_number,
+                cases_dict=cases_dict,
+                last_command=None,
+                last_command_use_time=None
+            )
+            result_description = f"✅ **Поздравляем!**\n\n" \
+                                f"{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\n" \
+                                f"Предмет успешно получен! Потрачено: {target_item['price']} кг"
+        else:
+            items_dict = get_user_items(data['item_counts'])
+            items_dict[target_item["name"]] = items_dict.get(target_item["name"], 0) + 1
+            update_user_data(
+                guild_id, user_id,
+                number=new_number,
+                item_counts=save_user_items(items_dict),
+                last_command=None,
+                last_command_use_time=None
+            )
+            result_description = f"✅ **Поздравляем!**\n\n" \
+                                f"{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\n" \
+                                f"Предмет успешно получен! Потрачено: {target_item['price']} кг"
+    else:
+        # Неудача - кг сгорают
+        new_number = data['current_number'] - amount
+        update_user_data(
+            guild_id, user_id,
+            number=new_number,
+            last_command=None,
+            last_command_use_time=None
+        )
+        result_description = f"❌ **Неудача!**\n\n" \
+                            f"{amount} кг сгорели в процессе улучшения!"
+    
+    # Обновляем ник
+    try:
+        display_name = member.display_name
+        clean_name = display_name
+        if "kg" in display_name:
+            parts = display_name.split("kg", 1)
+            if len(parts) > 1:
+                clean_name = parts[1].strip()
+                if not clean_name:
+                    clean_name = user_name
+        else:
+            clean_name = display_name
+        
+        if not clean_name or len(clean_name) > 30:
+            clean_name = user_name
+        
+        new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        
+        await member.edit(nick=new_nick)
+    except:
+        pass
+    
+    # Показываем результат
+    result_embed = discord.Embed(
+        title="💱 **РЕЗУЛЬТАТ АПГРЕЙДА** 💱",
+        description=f"**{display_line}**\n\n{result_text}\n\n{result_description}",
+        color=result_color
+    )
+    result_embed.set_footer(text=f"Шанс был: {target_item['chance']*100:.1f}%")
+    
+    await upgrade_msg.edit(embed=result_embed)
 # ===== ОСНОВНЫЕ КОМАНДЫ =====
 
 @bot.command(name='жир')
@@ -5107,11 +5249,17 @@ async def upgrade_command(ctx, choice: str = None):
     await ctx.send(embed=embed)
 
 @bot.command(name='выбрать')
-async def choose_upgrade(ctx, choice: str = None):
+async def choose_upgrade(ctx, choice: str = None, count: int = 1):
     """
-    Подтверждает выбор цели для апгрейда
+    Подтверждает выбор для апгрейда
     Использование: !выбрать [номер]
+    Для !апгрейд: выбрать предмет для улучшения
+    Для !апгрейдкг: выбрать цель для улучшения кг
     """
+    if not choice:
+        await ctx.send("❌ Укажите номер!")
+        return
+    
     guild_id = ctx.guild.id
     member = ctx.author
     user_id = str(member.id)
@@ -5119,55 +5267,294 @@ async def choose_upgrade(ctx, choice: str = None):
     
     data = get_user_data(guild_id, user_id, user_name)
     
-    # Проверяем, что пользователь использовал !апгрейд недавно
-    if data.get('last_command') != "upgrade_select" or not data.get('last_command_use_time'):
-        await ctx.send("❌ Сначала используйте `!апгрейд` для выбора предмета!")
+    # Проверяем, что команда была вызвана после !апгрейд или !апгрейдкг
+    last_command = data.get('last_command')
+    last_use = data.get('last_command_use_time')
+    
+    if not last_command or not last_use:
+        await ctx.send("❌ Сначала используйте `!апгрейд` или `!апгрейдкг` для выбора!")
         return
     
-    last_use = data['last_command_use_time']
     if isinstance(last_use, str):
         last_use = datetime.fromisoformat(last_use)
     
     if datetime.now() - last_use > timedelta(minutes=5):
-        await ctx.send("❌ Время ожидания истекло. Используйте `!апгрейд` заново!")
+        await ctx.send("❌ Время ожидания истекло. Используйте команду заново!")
         update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
         return
     
-    source_item_name = data.get('last_command_target')
-    if not source_item_name:
-        await ctx.send("❌ Ошибка: не выбран исходный предмет!")
-        return
+    # ===== ОБРАБОТКА АПГРЕЙДА КГ =====
+    if last_command == "upgrade_kg_select":
+        try:
+            amount = int(data['last_command_target'])
+        except:
+            await ctx.send("❌ Ошибка в данных апгрейда!")
+            return
+        
+        # Получаем список возможных улучшений (как в upgrade_kg_command)
+        possible_upgrades = []
+        
+        # Обычные предметы
+        for shop_item in SHOP_ITEMS:
+            target_price = shop_item["price"]
+            if target_price > amount:
+                continue
+            chance = amount / target_price
+            if chance < 0.01:
+                continue
+            possible_upgrades.append({
+                "name": shop_item["name"],
+                "price": target_price,
+                "chance": min(chance, 1.0),
+                "emoji": ITEM_EMOJIS.get(shop_item["name"], "🎁"),
+                "is_case": False
+            })
+        
+        # Легендарные предметы
+        if amount >= 1000:
+            for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
+                item_exists = any(shop_item["name"] == leg_name for shop_item in SHOP_ITEMS)
+                if not item_exists or leg_price > amount:
+                    continue
+                chance = amount / leg_price
+                if chance < 0.01:
+                    continue
+                possible_upgrades.append({
+                    "name": leg_name,
+                    "price": leg_price,
+                    "chance": min(chance, 1.0),
+                    "emoji": ITEM_EMOJIS.get(leg_name, "✨"),
+                    "is_case": False
+                })
+        
+        # Кейсы
+        for case_id, case in CASES.items():
+            if case_id == "daily" or not case.get("tradable", False):
+                continue
+            target_price = case["price"]
+            if target_price > amount:
+                continue
+            chance = amount / target_price
+            if chance < 0.01:
+                continue
+            possible_upgrades.append({
+                "name": case["name"],
+                "price": target_price,
+                "chance": min(chance, 1.0),
+                "emoji": case["emoji"],
+                "is_case": True,
+                "case_id": case_id
+            })
+        
+        possible_upgrades.sort(key=lambda x: x["price"])
+        
+        # Проверяем выбор
+        try:
+            item_index = int(choice) - 1
+            if item_index < 0 or item_index >= len(possible_upgrades):
+                await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+                return
+        except ValueError:
+            await ctx.send("❌ Введите корректный номер!")
+            return
+        
+        target_item = possible_upgrades[item_index]
+        
+        # Запускаем анимацию апгрейда кг
+        await upgrade_kg_animation(ctx, member, amount, target_item)
     
-    items_dict = get_user_items(data['item_counts'])
+    # ===== ОБРАБОТКА ОБЫЧНОГО АПГРЕЙДА ПРЕДМЕТОВ =====
+    elif last_command == "upgrade_select":
+        source_item_name = data.get('last_command_target')
+        if not source_item_name:
+            await ctx.send("❌ Ошибка: не выбран исходный предмет!")
+            return
+        
+        items_dict = get_user_items(data['item_counts'])
+        
+        if items_dict.get(source_item_name, 0) <= 0:
+            await ctx.send(f"❌ У вас больше нет **{source_item_name}** для улучшения!")
+            update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+            return
+        
+        possible_upgrades = get_possible_upgrades(source_item_name, items_dict[source_item_name])
+        
+        if not possible_upgrades:
+            await ctx.send("❌ Для этого предмета больше нет доступных улучшений!")
+            update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+            return
+        
+        try:
+            upgrade_index = int(choice) - 1
+            if upgrade_index < 0 or upgrade_index >= len(possible_upgrades):
+                await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+                return
+        except (ValueError, TypeError):
+            await ctx.send("❌ Введите корректный номер!")
+            return
+        
+        target_item = possible_upgrades[upgrade_index]
+        await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
     
-    # Проверяем, что предмет еще есть у пользователя
-    if items_dict.get(source_item_name, 0) <= 0:
-        await ctx.send(f"❌ У вас больше нет **{source_item_name}** для улучшения!")
+    else:
+        await ctx.send("❌ Неизвестный тип апгрейда!")
         update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+
+@bot.command(name='апгрейдкг')
+async def upgrade_kg_command(ctx, amount: int):
+    """
+    Улучшает кг в предметы (как обычный апгрейд)
+    Использование: !апгрейдкг [количество кг]
+    Пример: !апгрейдкг 1000 - попытаться улучшить 1000 кг в предмет
+    """
+    if amount <= 0:
+        await ctx.send("❌ Количество кг должно быть больше 0!")
         return
     
-    # Получаем возможные апгрейды
-    possible_upgrades = get_possible_upgrades(source_item_name, items_dict[source_item_name])
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    
+    # Проверяем, хватает ли кг
+    if data['current_number'] < amount:
+        await ctx.send(f"❌ У вас недостаточно кг! Есть: {data['current_number']} кг, нужно: {amount} кг")
+        return
+    
+    # Получаем все предметы, в которые можно улучшить эти кг
+    possible_upgrades = []
+    
+    # Проверяем обычные предметы из магазина
+    for shop_item in SHOP_ITEMS:
+        target_price = shop_item["price"]
+        
+        # Пропускаем предметы дороже, чем у нас кг
+        if target_price > amount:
+            continue
+        
+        # Рассчитываем шанс
+        chance = amount / target_price
+        
+        # Если шанс меньше 1% - не добавляем
+        if chance < 0.01:
+            continue
+        
+        possible_upgrades.append({
+            "name": shop_item["name"],
+            "price": target_price,
+            "chance": min(chance, 1.0),  # Шанс не может быть больше 100%
+            "emoji": ITEM_EMOJIS.get(shop_item["name"], "🎁"),
+            "description": shop_item["description"]
+        })
+    
+    # Проверяем легендарные предметы (только если кг >= 1000)
+    if amount >= 1000:
+        for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
+            # Проверяем, что такой предмет вообще существует в игре
+            item_exists = False
+            for shop_item in SHOP_ITEMS:
+                if shop_item["name"] == leg_name:
+                    item_exists = True
+                    break
+            
+            if not item_exists:
+                continue
+            
+            # Пропускаем если предмет дороже, чем у нас кг
+            if leg_price > amount:
+                continue
+            
+            # Рассчитываем шанс
+            chance = amount / leg_price
+            
+            # Если шанс меньше 1% - не добавляем
+            if chance < 0.01:
+                continue
+            
+            possible_upgrades.append({
+                "name": leg_name,
+                "price": leg_price,
+                "chance": min(chance, 1.0),
+                "emoji": ITEM_EMOJIS.get(leg_name, "✨"),
+                "description": "Легендарный предмет"
+            })
+    
+    # Добавляем кейсы (их тоже можно получить)
+    for case_id, case in CASES.items():
+        if case_id == "daily" or not case.get("tradable", False):
+            continue
+        
+        target_price = case["price"]
+        
+        if target_price > amount:
+            continue
+        
+        chance = amount / target_price
+        if chance < 0.01:
+            continue
+        
+        possible_upgrades.append({
+            "name": case["name"],
+            "price": target_price,
+            "chance": min(chance, 1.0),
+            "emoji": case["emoji"],
+            "description": f"Кейс с случайными призами",
+            "is_case": True,
+            "case_id": case_id
+        })
     
     if not possible_upgrades:
-        await ctx.send("❌ Для этого предмета больше нет доступных улучшений!")
-        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        await ctx.send(f"❌ На {amount} кг нет доступных улучшений! (минимальный шанс 1%)")
         return
     
-    # Парсим выбор пользователя
-    try:
-        upgrade_index = int(choice) - 1
-        if upgrade_index < 0 or upgrade_index >= len(possible_upgrades):
-            await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
-            return
-    except (ValueError, TypeError):
-        await ctx.send("❌ Введите корректный номер!")
-        return
+    # Сортируем по цене (от самых дешевых к дорогим)
+    possible_upgrades.sort(key=lambda x: x["price"])
     
-    target_item = possible_upgrades[upgrade_index]
+    # Сохраняем в данные пользователя
+    update_user_data(
+        guild_id, user_id,
+        last_command="upgrade_kg_select",
+        last_command_target=str(amount),
+        last_command_use_time=datetime.now()
+    )
     
-    # Запускаем анимацию апгрейда
-    await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
+    # Показываем список доступных улучшений
+    embed = discord.Embed(
+        title="💱 **АПГРЕЙД КГ В ПРЕДМЕТЫ** 💱",
+        description=f"{member.mention}, у вас **{amount} кг** для улучшения!\n\n"
+                   f"Выберите, во что хотите их улучшить (используйте `!выбрать [номер]`):",
+        color=0xffaa00
+    )
+    
+    # Разбиваем на части если много
+    upgrades_text = ""
+    for i, upgrade in enumerate(possible_upgrades, 1):
+        chance_percent = upgrade['chance'] * 100
+        upgrade_line = f"**{i}.** {upgrade['emoji']} **{upgrade['name']}** — {chance_percent:.1f}% шанс (цена: {upgrade['price']} кг)\n"
+        
+        if len(upgrades_text + upgrade_line) <= 900:
+            upgrades_text += upgrade_line
+        else:
+            if upgrades_text:
+                embed.add_field(name="📈 Возможные улучшения (часть 1)", value=upgrades_text, inline=False)
+                upgrades_text = upgrade_line
+            else:
+                upgrades_text = upgrade_line
+    
+    if upgrades_text:
+        part_num = 1
+        if len(embed.fields) > 0:
+            part_num = 2
+        
+        if part_num == 1:
+            embed.add_field(name="📈 Возможные улучшения", value=upgrades_text, inline=False)
+        else:
+            embed.add_field(name=f"📈 Возможные улучшения (часть {part_num})", value=upgrades_text, inline=False)
+    
+    embed.set_footer(text="Шанс = ваши кг / цена предмета")
+    await ctx.send(embed=embed)
 
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
