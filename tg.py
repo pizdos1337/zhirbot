@@ -1603,7 +1603,7 @@ async def duel_animation(message: types.Message, challenger_name, opponent_name)
     return result
 
 # ===== КОМАНДЫ =====
-@dp.message(commands=['start', 'help'])
+@dp.message(Command('start', 'help'))
 async def cmd_start(message: types.Message):
     register_chat(message.chat.id)
     help_text = """
@@ -1641,7 +1641,7 @@ async def cmd_start(message: types.Message):
     """
     await message.reply(help_text)
 
-@dp.message(commands=['жир'])
+@dp.message(Command('жир'))
 async def cmd_fat(message: types.Message):
     register_chat(message.chat.id)
     chat_id = message.chat.id
@@ -1740,7 +1740,7 @@ async def cmd_fat(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['жиркейс'])
+@dp.message(Command('жиркейс'))
 async def cmd_fat_case(message: types.Message):
     register_chat(message.chat.id)
     chat_id = message.chat.id
@@ -1994,7 +1994,7 @@ async def process_case_open(callback: CallbackQuery):
     
     await anim_msg.reply(final_text)
 
-@dp.message(commands=['жиркейс_шансы'])
+@dp.message(Command('жиркейс_шансы'))
 async def cmd_fat_case_chances(message: types.Message):
     register_chat(message.chat.id)
     """Шансы в кейсе"""
@@ -2026,7 +2026,7 @@ async def cmd_fat_case_chances(message: types.Message):
     
     await message.reply(embed_text)
 
-@dp.message(commands=['жиротрясы'])
+@dp.message(Command('жиротрясы'))
 async def cmd_fat_leaderboard(message: types.Message):
     register_chat(message.chat.id)
     """Таблица лидеров"""
@@ -2108,7 +2108,7 @@ async def cmd_fat_leaderboard(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['жирстат'])
+@dp.message(Command('жирстат'))
 async def cmd_fat_stats(message: types.Message):
     register_chat(message.chat.id)
     """Статистика автобургеров"""
@@ -2156,7 +2156,7 @@ async def cmd_fat_stats(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['жиринфо'])
+@dp.message(Command('жиринфо'))
 async def cmd_fat_info(message: types.Message):
     register_chat(message.chat.id)
     """Информация о пользователе"""
@@ -2265,7 +2265,7 @@ async def cmd_fat_info(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['жирзвания'])
+@dp.message(Command('жирзвания'))
 async def cmd_show_ranks(message: types.Message):
     register_chat(message.chat.id)
     """Список званий"""
@@ -2280,7 +2280,7 @@ async def cmd_show_ranks(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['жиркулдаун'])
+@dp.message(Command('жиркулдаун'))
 async def cmd_cooldown_info(message: types.Message):
     register_chat(message.chat.id)
     """Информация о кулдаунах"""
@@ -2337,7 +2337,7 @@ async def cmd_cooldown_info(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['инвентарь'])
+@dp.message(Command('инвентарь'))
 async def cmd_show_inventory(message: types.Message):
     register_chat(message.chat.id)
     """Показывает инвентарь"""
@@ -2411,7 +2411,7 @@ async def cmd_show_inventory(message: types.Message):
     
     await message.reply(response[:4000])
 
-@dp.message(commands=['магазин'])
+@dp.message(Command('магазин'))
 async def cmd_shop(message: types.Message):
     register_chat(message.chat.id)
     """Магазин предметов"""
@@ -2478,7 +2478,7 @@ async def cmd_shop(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['купить'])
+@dp.message(Command('купить'))
 async def cmd_buy(message: types.Message):
     register_chat(message.chat.id)
     """Покупка предметов"""
@@ -2597,7 +2597,7 @@ async def cmd_buy(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['датьжир'])
+@dp.message(Command('датьжир'))
 async def cmd_give_fat(message: types.Message):
     register_chat(message.chat.id)
     """Передача кг другому пользователю"""
@@ -2670,7 +2670,7 @@ async def cmd_give_fat(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['возвышение'])
+@dp.message(Command('возвышение'))
 async def cmd_ascension(message: types.Message):
     register_chat(message.chat.id)
     """Возвышение - получение легендарного бургера"""
@@ -2744,7 +2744,7 @@ async def cmd_ascension(message: types.Message):
         
         await message.reply(response)
 
-@dp.message(commands=['апгрейд'])
+@dp.message(Command('апгрейд'))
 async def cmd_upgrade(message: types.Message):
     register_chat(message.chat.id)
     """Улучшение предметов"""
@@ -2835,7 +2835,7 @@ async def cmd_upgrade(message: types.Message):
     response += upgrades_text
     await message.reply(response)
 
-@dp.message(commands=['апгрейдкг'])
+@dp.message(Command('апгрейдкг'))
 async def cmd_upgrade_kg(message: types.Message):
     register_chat(message.chat.id)
     """Улучшение кг в предметы"""
@@ -2936,7 +2936,7 @@ async def cmd_upgrade_kg(message: types.Message):
     response += upgrades_text
     await message.reply(response)
 
-@dp.message(commands=['выбрать'])
+@dp.message(Command('выбрать'))
 async def cmd_choose(message: types.Message):
     register_chat(message.chat.id)
     """Выбор цели для апгрейда"""
@@ -3072,7 +3072,7 @@ async def cmd_choose(message: types.Message):
         update_user_data(chat_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
 
 # ===== ТЕСТОВЫЕ КОМАНДЫ =====
-@dp.message(commands=['автобургер'])
+@dp.message(Command('автобургер'))
 async def cmd_give_autoburger(message: types.Message):
     register_chat(message.chat.id)
     """Выдача автобургеров (только для тестеров)"""
@@ -3126,7 +3126,7 @@ async def cmd_give_autoburger(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['автобургер_сброс'])
+@dp.message(Command('автобургер_сброс'))
 async def cmd_reset_autoburger(message: types.Message):
     register_chat(message.chat.id)
     """Сброс автобургеров (только для тестеров)"""
@@ -3169,7 +3169,7 @@ async def cmd_reset_autoburger(message: types.Message):
     
     await message.reply(f"🔄 Сброс автобургеров у {target_name}")
 
-@dp.message(commands=['автобургер_инфо'])
+@dp.message(Command('автобургер_инфо'))
 async def cmd_autoburger_info(message: types.Message):
     register_chat(message.chat.id)
     """Информация об автобургерах (только для тестеров)"""
@@ -3240,7 +3240,7 @@ async def cmd_autoburger_info(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['выдатьпредмет'])
+@dp.message(Command('выдатьпредмет'))
 async def cmd_give_shop_item(message: types.Message):
     register_chat(message.chat.id)
     """Выдача предмета (только для тестеров)"""
@@ -3317,7 +3317,7 @@ async def cmd_give_shop_item(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(commands=['сброскд'])
+@dp.message(Command('сброскд'))
 async def cmd_reset_cooldowns(message: types.Message):
     register_chat(message.chat.id)
     """Сброс кулдаунов (только для тестеров)"""
@@ -3340,7 +3340,7 @@ async def cmd_reset_cooldowns(message: types.Message):
     else:
         await message.reply("❌ База данных не найдена!")
 
-@dp.message(commands=['сбросвсех'])
+@dp.message(Command('сбросвсех'))
 async def cmd_reset_all_users(message: types.Message):
     register_chat(message.chat.id)
     """Глобальный сброс веса (только для тестеров)"""
@@ -3397,7 +3397,7 @@ async def process_reset_confirmation(callback: CallbackQuery):
     else:
         await callback.message.edit_text("❌ База данных не найдена!")
 
-@dp.message(commands=['жир_сброс'])
+@dp.message(Command('жир_сброс'))
 async def cmd_fat_reset(message: types.Message):
     register_chat(message.chat.id)
     """Сброс веса конкретного пользователя (только для тестеров)"""
@@ -3448,7 +3448,7 @@ async def cmd_fat_reset(message: types.Message):
 class DuelState(StatesGroup):
     waiting_for_accept = State()
 
-@dp.message(commands=['дуэль'])
+@dp.message(Command('дуэль'))
 async def cmd_duel(message: types.Message):
     register_chat(message.chat.id)
     """Вызов на дуэль"""
@@ -3657,7 +3657,7 @@ async def process_duel(callback: CallbackQuery):
             reply_markup=None
         )
 
-@dp.message(commands=['отмена'])
+@dp.message(Command('отмена'))
 async def cmd_cancel_duel(message: types.Message):
     register_chat(message.chat.id)
     """Отмена дуэли (только для тестеров)"""
