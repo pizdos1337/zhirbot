@@ -1874,10 +1874,26 @@ async def process_case_open(callback: CallbackQuery):
         if emoji not in prize_emojis:
             prize_emojis.append(emoji)
     
+    # ИСПРАВЛЕНО: Добавил переменную для хранения последнего текста
+    last_text = None
+    
+    # ИСПРАВЛЕНО: Создаём сообщение для анимации
+    anim_text = f"🎰 **{case['name']}** 🎰"
+    anim_msg = await callback.message.reply(anim_text)
+    
+    animation_frames = [
+        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+    ]
+    
+    # ИСПРАВЛЕНО: Генерируем линию для анимации
     line = []
     for i in range(100):
         line.append(random.choice(prize_emojis))
     
+    # ИСПРАВЛЕНО: Определяем эмодзи приза
     if "emoji" in prize:
         prize_emoji = prize["emoji"]
     elif prize["value"] == "autoburger":
@@ -1904,24 +1920,36 @@ async def process_case_open(callback: CallbackQuery):
     else:
         prize_emoji = "🎁"
     
-    line[57] = prize_emoji
-    
-    anim_text = f"🎰 **{case['name']}** 🎰"
-    anim_msg = await callback.message.reply(anim_text)
-    
-    animation_frames = [
-        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
-        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
-        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
-        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
-    ]
-    
+    # ИСПРАВЛЕНО: Анимация с проверкой на изменение текста
     for frame_num, center_pos in animation_frames:
         visible = line[center_pos-4:center_pos+5]
         display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-        await anim_msg.edit_text(f"**{display_line}**")
+        current_text = f"**{display_line}**"
+        
+        # Проверяем, изменился ли текст
+        if current_text != last_text:
+            try:
+                await anim_msg.edit_text(current_text)
+                last_text = current_text
+            except Exception as e:
+                print(f"Ошибка при анимации: {e}")
+        
         await asyncio.sleep(0.5)
     
+    # ИСПРАВЛЕНО: Показываем результат
+    line[57] = prize_emoji
+    visible = line[52:61]  # Показываем центр
+    display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+    result_embed = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+    
+    try:
+        await anim_msg.edit_text(result_embed)
+    except Exception as e:
+        print(f"Ошибка при показе результата: {e}")
+    
+    await asyncio.sleep(1.5)
+    
+    # ИСПРАВЛЕНО: Обработка приза
     items_dict = get_user_items(data['item_counts'])
     new_number = data['current_number']
     new_autoburger_count = data['autoburger_count']
@@ -1955,10 +1983,7 @@ async def process_case_open(callback: CallbackQuery):
         new_number = data['current_number'] + prize_value
         result_display = f"🎉 **{prize_value:+d} кг** {prize_emoji}"
     
-    result_embed = f"**{display_line}**\n\n**{result_display}**"
-    await anim_msg.edit_text(result_embed)
-    await asyncio.sleep(1.5)
-    
+    # ИСПРАВЛЕНО: Обновляем данные
     update_data = {
         'number': new_number,
         'user_name': user_name,
@@ -1975,6 +2000,7 @@ async def process_case_open(callback: CallbackQuery):
     
     rank_name, rank_emoji = get_rank(new_number)
     
+    # ИСПРАВЛЕНО: Формируем финальное сообщение
     final_text = f"{case['emoji']} Открытие {case['name']}\n\n"
     
     if prize_value == "autoburger":
@@ -1993,7 +2019,13 @@ async def process_case_open(callback: CallbackQuery):
         final_text += f"🍖 Новый вес: {new_number}kg\n"
         final_text += f"🎖️ Звание: {rank_emoji} {rank_name}"
     
-    await anim_msg.reply(final_text)
+    # ИСПРАВЛЕНО: Отправляем финальное сообщение
+    try:
+        await anim_msg.reply(final_text)
+    except Exception as e:
+        print(f"Ошибка при отправке финального сообщения: {e}")
+        # Если не удалось отправить как reply, отправляем новое сообщение
+        await callback.message.reply(final_text)
 
 async def cmd_fat_case_chances(message: types.Message):
     register_chat(message.chat.id)
