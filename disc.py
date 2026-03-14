@@ -4985,117 +4985,41 @@ async def choose_upgrade(ctx, choice: str = None):
     # Запускаем анимацию апгрейда
     await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
     
-@bot.command(name='диагностика_кейсов')
-async def diagnose_my_cases(ctx):
-    """Показывает реальное состояние ваших кейсов"""
+@bot.command(name='починить_срочно')
+async def fix_urgent(ctx):
+    """СРОЧНОЕ исправление кейсов"""
     guild_id = ctx.guild.id
     user_id = str(ctx.author.id)
     db_path = get_db_path(guild_id)
     
     try:
+        # Подключаемся к базе
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Получаем ВСЕ колонки из таблицы
-        cursor.execute("PRAGMA table_info(user_fat)")
-        columns = cursor.fetchall()
-        
-        # Формируем ответ
-        response = f"**Диагностика для {ctx.author.name}**\n\n"
-        response += "**📊 Все колонки в БД:**\n"
-        
-        case_columns = []
-        for col in columns:
-            col_name = col[1]
-            if col_name.startswith('case_'):
-                case_columns.append(col_name)
-                response += f"• `{col_name}`\n"
-        
-        # Получаем значения для пользователя
-        cursor.execute(f"SELECT {', '.join(case_columns)} FROM user_fat WHERE user_id = ?", (user_id,))
-        values = cursor.fetchone()
-        
-        if values:
-            response += "\n**📦 Ваши кейсы:**\n"
-            for i, col_name in enumerate(case_columns):
-                if values[i] and values[i] > 0:
-                    response += f"• `{col_name}` = **{values[i]}** шт\n"
-            
-            # Проверяем наличие проблемного ключа в item_counts
-            cursor.execute("SELECT item_counts FROM user_fat WHERE user_id = ?", (user_id,))
-            item_counts = cursor.fetchone()
-            if item_counts and item_counts[0]:
-                if '"shop"' in item_counts[0] or '"case_shop"' in item_counts[0]:
-                    response += "\n⚠️ **Найдена проблема в item_counts!**"
-        else:
-            response += "\n❌ Пользователь не найден в БД!"
-        
-        conn.close()
-        
-        # Отправляем результат (разбиваем если длинный)
-        if len(response) > 2000:
-            parts = [response[i:i+1900] for i in range(0, len(response), 1900)]
-            for part in parts:
-                await ctx.send(part)
-        else:
-            await ctx.send(response)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Ошибка диагностики: {e}")
-        print(f"Ошибка: {e}")
-
-@bot.command(name='тест_жиркейс')
-async def test_fat_case(ctx):
-    """Тестовая версия жиркейса для поиска ошибки"""
-    guild_id = ctx.guild.id
-    user_id = str(ctx.author.id)
-    db_path = get_db_path(guild_id)
-    
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # 1. Проверяем, что получаем из БД
+        # 1. Сначала проверим, сколько у вас кейсов
         cursor.execute("SELECT case_shop_case_count FROM user_fat WHERE user_id = ?", (user_id,))
-        shop_cases = cursor.fetchone()
+        result = cursor.fetchone()
         
-        response = f"**Тест жиркейса для {ctx.author.name}**\n\n"
-        response += f"1️⃣ case_shop_case_count в БД: **{shop_cases[0] if shop_cases else 0}** шт\n"
-        
-        # 2. Проверяем, что возвращает get_user_data
-        data = get_user_data(guild_id, user_id, ctx.author.name)
-        cases_dict = data.get('cases_dict', {})
-        
-        response += f"2️⃣ cases_dict из get_user_data: `{cases_dict}`\n"
-        
-        # 3. Проверяем конкретно ключ 'shop_case'
-        shop_case_value = cases_dict.get('shop_case', 0)
-        response += f"3️⃣ cases_dict['shop_case'] = **{shop_case_value}**\n"
-        
-        # 4. Проверяем, есть ли ключ 'shop' (старый проблемный)
-        if 'shop' in cases_dict:
-            response += f"4️⃣ ⚠️ Найден СТАРЫЙ ключ 'shop' = {cases_dict['shop']} шт\n"
+        if result:
+            current = result[0] or 0
+            # Добавляем 3 кейса (принудительно)
+            new_value = current + 3
+            cursor.execute("UPDATE user_fat SET case_shop_case_count = ? WHERE user_id = ?", (new_value, user_id))
+            conn.commit()
+            
+            await ctx.send(f"✅ Исправлено! Было: {current}, стало: {new_value} кейсов\nТеперь команда !жиркейс должна работать!")
         else:
-            response += f"4️⃣ ✅ Старый ключ 'shop' не найден\n"
-        
-        # 5. Проверяем, какие вообще есть ключи
-        all_keys = list(cases_dict.keys())
-        response += f"5️⃣ Все ключи в cases_dict: {all_keys}\n"
-        
-        # 6. Проверяем, есть ли 'shop_case' в CASES словаре
-        if 'shop_case' in CASES:
-            response += f"6️⃣ ✅ 'shop_case' есть в CASES\n"
-        else:
-            response += f"6️⃣ ❌ 'shop_case' ОТСУТСТВУЕТ в CASES!\n"
+            # Если записи нет - создаём
+            cursor.execute("INSERT INTO user_fat (user_id, user_name, case_shop_case_count) VALUES (?, ?, ?)", 
+                         (user_id, ctx.author.name, 3))
+            conn.commit()
+            await ctx.send(f"✅ Создана запись с 3 кейсами!")
         
         conn.close()
         
-        # Отправляем результат
-        for i in range(0, len(response), 1900):
-            await ctx.send(response[i:i+1900])
-        
     except Exception as e:
-        await ctx.send(f"❌ Ошибка теста: {e}\n\nПодробнее: {str(e)}")
+        await ctx.send(f"❌ Ошибка: {e}")
     
 # ===== ЗАПУСК БОТА =====
 if __name__ == "__main__":
