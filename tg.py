@@ -1603,7 +1603,6 @@ async def duel_animation(message: types.Message, challenger_name, opponent_name)
     return result
 
 # ===== КОМАНДЫ =====
-@dp.message(Command('start', 'help'))
 async def cmd_start(message: types.Message):
     register_chat(message.chat.id)
     help_text = """
@@ -1641,7 +1640,6 @@ async def cmd_start(message: types.Message):
     """
     await message.reply(help_text)
 
-@dp.message(Command('жир'))
 async def cmd_fat(message: types.Message):
     register_chat(message.chat.id)
     chat_id = message.chat.id
@@ -1740,7 +1738,6 @@ async def cmd_fat(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('жиркейс'))
 async def cmd_fat_case(message: types.Message):
     register_chat(message.chat.id)
     chat_id = message.chat.id
@@ -1994,7 +1991,6 @@ async def process_case_open(callback: CallbackQuery):
     
     await anim_msg.reply(final_text)
 
-@dp.message(Command('жиркейс_шансы'))
 async def cmd_fat_case_chances(message: types.Message):
     register_chat(message.chat.id)
     """Шансы в кейсе"""
@@ -2026,7 +2022,6 @@ async def cmd_fat_case_chances(message: types.Message):
     
     await message.reply(embed_text)
 
-@dp.message(Command('жиротрясы'))
 async def cmd_fat_leaderboard(message: types.Message):
     register_chat(message.chat.id)
     """Таблица лидеров"""
@@ -2108,7 +2103,6 @@ async def cmd_fat_leaderboard(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('жирстат'))
 async def cmd_fat_stats(message: types.Message):
     register_chat(message.chat.id)
     """Статистика автобургеров"""
@@ -2156,7 +2150,6 @@ async def cmd_fat_stats(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('жиринфо'))
 async def cmd_fat_info(message: types.Message):
     register_chat(message.chat.id)
     """Информация о пользователе"""
@@ -2265,7 +2258,6 @@ async def cmd_fat_info(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('жирзвания'))
 async def cmd_show_ranks(message: types.Message):
     register_chat(message.chat.id)
     """Список званий"""
@@ -2280,7 +2272,6 @@ async def cmd_show_ranks(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('жиркулдаун'))
 async def cmd_cooldown_info(message: types.Message):
     register_chat(message.chat.id)
     """Информация о кулдаунах"""
@@ -2337,7 +2328,6 @@ async def cmd_cooldown_info(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('инвентарь'))
 async def cmd_show_inventory(message: types.Message):
     register_chat(message.chat.id)
     """Показывает инвентарь"""
@@ -2411,7 +2401,6 @@ async def cmd_show_inventory(message: types.Message):
     
     await message.reply(response[:4000])
 
-@dp.message(Command('магазин'))
 async def cmd_shop(message: types.Message):
     register_chat(message.chat.id)
     """Магазин предметов"""
@@ -2478,7 +2467,6 @@ async def cmd_shop(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('купить'))
 async def cmd_buy(message: types.Message):
     register_chat(message.chat.id)
     """Покупка предметов"""
@@ -2597,7 +2585,6 @@ async def cmd_buy(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('датьжир'))
 async def cmd_give_fat(message: types.Message):
     register_chat(message.chat.id)
     """Передача кг другому пользователю"""
@@ -2670,7 +2657,6 @@ async def cmd_give_fat(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('возвышение'))
 async def cmd_ascension(message: types.Message):
     register_chat(message.chat.id)
     """Возвышение - получение легендарного бургера"""
@@ -2744,7 +2730,6 @@ async def cmd_ascension(message: types.Message):
         
         await message.reply(response)
 
-@dp.message(Command('апгрейд'))
 async def cmd_upgrade(message: types.Message):
     register_chat(message.chat.id)
     """Улучшение предметов"""
@@ -2835,7 +2820,6 @@ async def cmd_upgrade(message: types.Message):
     response += upgrades_text
     await message.reply(response)
 
-@dp.message(Command('апгрейдкг'))
 async def cmd_upgrade_kg(message: types.Message):
     register_chat(message.chat.id)
     """Улучшение кг в предметы"""
@@ -2936,7 +2920,6 @@ async def cmd_upgrade_kg(message: types.Message):
     response += upgrades_text
     await message.reply(response)
 
-@dp.message(Command('выбрать'))
 async def cmd_choose(message: types.Message):
     register_chat(message.chat.id)
     """Выбор цели для апгрейда"""
@@ -3072,7 +3055,6 @@ async def cmd_choose(message: types.Message):
         update_user_data(chat_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
 
 # ===== ТЕСТОВЫЕ КОМАНДЫ =====
-@dp.message(Command('автобургер'))
 async def cmd_give_autoburger(message: types.Message):
     register_chat(message.chat.id)
     """Выдача автобургеров (только для тестеров)"""
@@ -3126,7 +3108,6 @@ async def cmd_give_autoburger(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('автобургер_сброс'))
 async def cmd_reset_autoburger(message: types.Message):
     register_chat(message.chat.id)
     """Сброс автобургеров (только для тестеров)"""
@@ -3169,7 +3150,6 @@ async def cmd_reset_autoburger(message: types.Message):
     
     await message.reply(f"🔄 Сброс автобургеров у {target_name}")
 
-@dp.message(Command('автобургер_инфо'))
 async def cmd_autoburger_info(message: types.Message):
     register_chat(message.chat.id)
     """Информация об автобургерах (только для тестеров)"""
@@ -3240,7 +3220,6 @@ async def cmd_autoburger_info(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('выдатьпредмет'))
 async def cmd_give_shop_item(message: types.Message):
     register_chat(message.chat.id)
     """Выдача предмета (только для тестеров)"""
@@ -3317,7 +3296,6 @@ async def cmd_give_shop_item(message: types.Message):
     
     await message.reply(response)
 
-@dp.message(Command('сброскд'))
 async def cmd_reset_cooldowns(message: types.Message):
     register_chat(message.chat.id)
     """Сброс кулдаунов (только для тестеров)"""
@@ -3340,7 +3318,6 @@ async def cmd_reset_cooldowns(message: types.Message):
     else:
         await message.reply("❌ База данных не найдена!")
 
-@dp.message(Command('сбросвсех'))
 async def cmd_reset_all_users(message: types.Message):
     register_chat(message.chat.id)
     """Глобальный сброс веса (только для тестеров)"""
@@ -3397,7 +3374,6 @@ async def process_reset_confirmation(callback: CallbackQuery):
     else:
         await callback.message.edit_text("❌ База данных не найдена!")
 
-@dp.message(Command('жир_сброс'))
 async def cmd_fat_reset(message: types.Message):
     register_chat(message.chat.id)
     """Сброс веса конкретного пользователя (только для тестеров)"""
@@ -3448,7 +3424,6 @@ async def cmd_fat_reset(message: types.Message):
 class DuelState(StatesGroup):
     waiting_for_accept = State()
 
-@dp.message(Command('дуэль'))
 async def cmd_duel(message: types.Message):
     register_chat(message.chat.id)
     """Вызов на дуэль"""
@@ -3657,7 +3632,6 @@ async def process_duel(callback: CallbackQuery):
             reply_markup=None
         )
 
-@dp.message(Command('отмена'))
 async def cmd_cancel_duel(message: types.Message):
     register_chat(message.chat.id)
     """Отмена дуэли (только для тестеров)"""
@@ -3693,6 +3667,178 @@ async def cmd_cancel_duel(message: types.Message):
         pass
     
     await message.reply(f"✅ Дуэль отменена!")
+
+async def cmd_give_item(message: types.Message):
+    """Передаёт предметы другому пользователю"""
+    register_chat(message.chat.id)
+    
+    if not is_tester(message.from_user.id):
+        await message.reply("❌ У вас нет прав для этой команды!")
+        return
+    
+    chat_id = message.chat.id
+    giver_id = message.from_user.id
+    giver_name = message.from_user.full_name
+    
+    args = message.get_args().split(maxsplit=2)
+    if len(args) < 3:
+        await message.reply(
+            "❌ Использование: `/датьпредмет @username количество \"название предмета\"`\n"
+            "Пример: `/датьпредмет @user 5 Горелый бекон`"
+        )
+        return
+    
+    target_username = args[0].replace('@', '')
+    try:
+        amount = int(args[1])
+    except ValueError:
+        await message.reply("❌ Количество должно быть числом!")
+        return
+    
+    item_name = args[2].strip()
+    
+    if amount <= 0:
+        await message.reply("❌ Количество должно быть больше 0!")
+        return
+    
+    # Ищем цель
+    target_user = None
+    try:
+        chat = await bot.get_chat(chat_id)
+        async for member in chat.get_members():
+            if member.user.username and member.user.username.lower() == target_username.lower():
+                target_user = member.user
+                break
+    except:
+        pass
+    
+    if not target_user:
+        await message.reply(f"❌ Пользователь @{target_username} не найден в этом чате!")
+        return
+    
+    target_id = target_user.id
+    target_name = target_user.full_name
+    
+    if giver_id == target_id:
+        await message.reply("❌ Нельзя передавать предметы самому себе!")
+        return
+    
+    giver_data = get_user_data(chat_id, giver_id, giver_name)
+    target_data = get_user_data(chat_id, target_id, target_name)
+    
+    item_lower = item_name.lower()
+    
+    # Проверяем кейсы
+    for case_id, case in CASES.items():
+        if case_id != "daily" and case["name"].lower() in item_lower:
+            if not case["tradable"]:
+                await message.reply(f"❌ Кейс '{case['name']}' нельзя передавать!")
+                return
+            
+            giver_cases = giver_data.get('cases_dict', {}).copy()
+            target_cases = target_data.get('cases_dict', {}).copy()
+            
+            if giver_cases.get(case_id, 0) < amount:
+                await message.reply(f"❌ У вас недостаточно кейсов '{case['name']}'! Есть: {giver_cases.get(case_id, 0)}")
+                return
+            
+            giver_cases[case_id] = giver_cases.get(case_id, 0) - amount
+            target_cases[case_id] = target_cases.get(case_id, 0) + amount
+            
+            update_user_data(chat_id, giver_id, cases_dict=giver_cases)
+            update_user_data(chat_id, target_id, cases_dict=target_cases)
+            
+            response = f"🎁 **Передача кейса**\n\n"
+            response += f"**{giver_name}** передал кейс **{target_name}**!\n\n"
+            response += f"📦 Кейс: **{case['name']}** x{amount}\n"
+            response += f"📤 У вас осталось: {giver_cases.get(case_id, 0)} шт\n"
+            response += f"📥 У получателя: {target_cases.get(case_id, 0)} шт"
+            
+            await message.reply(response)
+            return
+    
+    # Проверяем автобургер
+    is_autoburger = any(word in item_lower for word in ["автобургер", "бургер", "autoburger"])
+    
+    if is_autoburger:
+        if giver_data['autoburger_count'] < amount:
+            await message.reply(f"❌ У вас недостаточно автобургеров! Есть: {giver_data['autoburger_count']}")
+            return
+        
+        new_giver_burgers = giver_data['autoburger_count'] - amount
+        new_target_burgers = target_data['autoburger_count'] + amount
+        
+        new_target_next_burger = None
+        if new_target_burgers > 0:
+            interval = get_autoburger_interval(new_target_burgers)
+            if interval:
+                new_target_next_burger = datetime.now() + timedelta(hours=interval)
+        
+        update_user_data(chat_id, giver_id, autoburger_count=new_giver_burgers)
+        update_user_data(chat_id, target_id, autoburger_count=new_target_burgers, next_autoburger_time=new_target_next_burger)
+        
+        response = f"🍔 **Передача автобургера**\n\n"
+        response += f"**{giver_name}** передал автобургер **{target_name}**!\n\n"
+        response += f"📦 Количество: {amount} шт\n"
+        response += f"📤 У вас осталось: {new_giver_burgers} 🍔\n"
+        response += f"📥 У получателя: {new_target_burgers} 🍔"
+        
+        await message.reply(response)
+        return
+    
+    # Обычные предметы
+    giver_items = get_user_items(giver_data['item_counts'])
+    target_items = get_user_items(target_data['item_counts'])
+    
+    found_item = None
+    for key in giver_items.keys():
+        if key.lower() == item_name.lower():
+            found_item = key
+            break
+    
+    if not found_item:
+        available_items = list(giver_items.keys())
+        if available_items:
+            items_list = "\n".join([f"• {item}: {count} шт" for item, count in giver_items.items()])
+            await message.reply(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
+        else:
+            await message.reply("❌ У вас нет предметов в инвентаре!")
+        return
+    
+    if giver_items[found_item] < amount:
+        await message.reply(f"❌ У вас недостаточно '{found_item}'! Есть: {giver_items[found_item]}")
+        return
+    
+    legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
+    if found_item in legendary_burger_names:
+        await message.reply(f"❌ Легендарные бургеры нельзя передавать!")
+        return
+    
+    giver_items[found_item] -= amount
+    if giver_items[found_item] <= 0:
+        del giver_items[found_item]
+    
+    target_items[found_item] = target_items.get(found_item, 0) + amount
+    
+    update_user_data(chat_id, giver_id, item_counts=save_user_items(giver_items))
+    update_user_data(chat_id, target_id, item_counts=save_user_items(target_items))
+    
+    response = f"🎁 **Передача предмета**\n\n"
+    response += f"**{giver_name}** передал предмет **{target_name}**!\n\n"
+    response += f"📦 Предмет: **{found_item}** x{amount}\n\n"
+    
+    giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
+    if len(giver_items) > 5:
+        giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
+    
+    target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
+    if len(target_items) > 5:
+        target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
+    
+    response += f"📤 Ваш инвентарь:\n{giver_inv}\n\n"
+    response += f"📥 Инвентарь получателя:\n{target_inv}"
+    
+    await message.reply(response)
 
 # ===== ОБНОВЛЁННАЯ ФУНКЦИЯ АВТОБУРГЕРА =====
 async def apply_autoburger(chat_id, user_id, user_name):
@@ -4031,6 +4177,90 @@ async def hourly_effects_loop():
             print(f"❌ Ошибка в цикле почасовых эффектов: {e}")
             
         await asyncio.sleep(3600)
+
+# ===== УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК КОМАНД =====
+COMMAND_MAP = {
+    # русские команды
+    'start': 'cmd_start',
+    'help': 'cmd_start',
+    'жир': 'cmd_fat',
+    'жиркейс': 'cmd_fat_case',
+    'жиркейс_шансы': 'cmd_fat_case_chances',
+    'жиротрясы': 'cmd_fat_leaderboard',
+    'жирстат': 'cmd_fat_stats',
+    'жиринфо': 'cmd_fat_info',
+    'жирзвания': 'cmd_show_ranks',
+    'жиркулдаун': 'cmd_cooldown_info',
+    'инвентарь': 'cmd_show_inventory',
+    'магазин': 'cmd_shop',
+    'купить': 'cmd_buy',
+    'датьжир': 'cmd_give_fat',
+    'возвышение': 'cmd_ascension',
+    'апгрейд': 'cmd_upgrade',
+    'апгрейдкг': 'cmd_upgrade_kg',
+    'выбрать': 'cmd_choose',
+    'автобургер': 'cmd_give_autoburger',
+    'автобургер_сброс': 'cmd_reset_autoburger',
+    'автобургер_инфо': 'cmd_autoburger_info',
+    'выдатьпредмет': 'cmd_give_shop_item',
+    'сброскд': 'cmd_reset_cooldowns',
+    'сбросвсех': 'cmd_reset_all_users',
+    'жир_сброс': 'cmd_fat_reset',
+    'дуэль': 'cmd_duel',
+    'отмена': 'cmd_cancel_duel',
+    'датьпредмет': 'cmd_give_item',
+    
+    # латинские команды (для меню BotFather)
+    'fat': 'cmd_fat',
+    'fatcase': 'cmd_fat_case',
+    'fatcase_chances': 'cmd_fat_case_chances',
+    'fattys': 'cmd_fat_leaderboard',
+    'fatstat': 'cmd_fat_stats',
+    'fatinfo': 'cmd_fat_info',
+    'ranks': 'cmd_show_ranks',
+    'cooldowns': 'cmd_cooldown_info',
+    'inventory': 'cmd_show_inventory',
+    'shop': 'cmd_shop',
+    'buy': 'cmd_buy',
+    'givefat': 'cmd_give_fat',
+    'ascend': 'cmd_ascension',
+    'upgrade': 'cmd_upgrade',
+    'upgradekg': 'cmd_upgrade_kg',
+    'choose': 'cmd_choose',
+    'autoburger': 'cmd_give_autoburger',
+    'autoburger_reset': 'cmd_reset_autoburger',
+    'autoburger_info': 'cmd_autoburger_info',
+    'spawnitem': 'cmd_give_shop_item',
+    'resetcd': 'cmd_reset_cooldowns',
+    'resetall': 'cmd_reset_all_users',
+    'fatreset': 'cmd_fat_reset',
+    'duel': 'cmd_duel',
+    'cancel': 'cmd_cancel_duel',
+    'giveitems': 'cmd_give_item',
+}
+
+@dp.message()
+async def universal_handler(message: types.Message):
+    # Проверяем, что это команда
+    if not message.text or not message.text.startswith('/'):
+        return
+    
+    # Извлекаем команду (без слеша и аргументов)
+    full_text = message.text[1:].strip()
+    command = full_text.split()[0].lower()
+    
+    # Ищем в словаре
+    if command in COMMAND_MAP:
+        func_name = COMMAND_MAP[command]
+        func = globals().get(func_name)
+        if func:
+            register_chat(message.chat.id)
+            await func(message)
+        else:
+            await message.reply(f"❌ Ошибка: функция {func_name} не найдена")
+    else:
+        # Неизвестная команда
+        await message.reply(f"❌ Неизвестная команда. Напиши /help")
 
 # ===== ЗАПУСК БОТА =====
 async def on_startup(dp):
