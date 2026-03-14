@@ -11,9 +11,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
-from aiogram.types import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.utils import executor
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -4047,5 +4046,9 @@ async def on_startup(dp):
     asyncio.create_task(snatcher_loop())
     asyncio.create_task(hourly_effects_loop())
 
+async def main():
+    await on_startup(dp)
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+    asyncio.run(main())
