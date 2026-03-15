@@ -16,9 +16,9 @@ from aiogram.types import (
     CallbackQuery, 
     InlineKeyboardMarkup, 
     InlineKeyboardButton,
-    BotCommand,  # ← вот этот отсутствовал
-    BotCommandScopeDefault,
-    BotCommandScopeChat
+    BotCommand,
+    BotCommandScopeDefault,  # ← добавить
+    BotCommandScopeChat       # ← добавить
 )
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -4425,72 +4425,48 @@ async def universal_handler(message: types.Message):
         print(f"✅ Бот username: @{universal_handler.bot_username}")
     
     # Полный текст команды
-    full_text = message.text[1:].strip()  # убираем слеш в начале
+    full_text = message.text[1:].strip()
     parts = full_text.split()
     
     # Первая часть - это команда (может быть с @)
     raw_command = parts[0].lower()
     
-    # --- ВАЖНО: Обрабатываем все возможные форматы команд ---
-    
-    # Формат 1: /жир@botusername
+    # Обрабатываем все возможные форматы команд
     if '@' in raw_command:
         cmd_parts = raw_command.split('@')
         command = cmd_parts[0]
         mentioned_bot = cmd_parts[1].lower()
         
-        # Если команда для другого бота - игнорируем
         if mentioned_bot != universal_handler.bot_username:
             print(f"Игнорирую команду для @{mentioned_bot}")
             return
         
         print(f"Команда с @: {raw_command} -> {command}")
-    
-    # Формат 2: /жир (без @)
     else:
         command = raw_command
     
     # Аргументы команды (если есть)
     args = parts[1:] if len(parts) > 1 else []
     
-    # Логируем для отладки
     print(f"🔍 Получено: '{message.text}'")
     print(f"   → Команда: '{command}', Аргументы: {args}")
     
-    # Проверяем русские и латинские варианты команд
-    # (на случай если в менюшке одно, а пользователь ввел другое)
-    
-    # Маппинг латинских команд из менюшки на русские (если нужно)
+    # Маппинг латинских команд на русские
     latin_to_russian = {
-        'fat': 'жир',
-        'fatcase': 'жиркейс',
-        'fatcase_chances': 'жиркейс_шансы',
-        'fattys': 'жиротрясы',
-        'fatstat': 'жирстат',
-        'fatinfo': 'жиринфо',
-        'ranks': 'жирзвания',
-        'cooldowns': 'жиркулдаун',
-        'inventory': 'инвентарь',
-        'shop': 'магазин',
-        'buy': 'купить',
-        'givefat': 'датьжир',
-        'ascend': 'возвышение',
-        'upgrade': 'апгрейд',
-        'upgradekg': 'апгрейдкг',
-        'choose': 'выбрать',
-        'duel': 'дуэль',
-        'giveitems': 'датьпредмет',
-        'start': 'start',
-        'help': 'help'
+        'fat': 'жир', 'fatcase': 'жиркейс', 'fatcase_chances': 'жиркейс_шансы',
+        'fattys': 'жиротрясы', 'fatstat': 'жирстат', 'fatinfo': 'жиринфо',
+        'ranks': 'жирзвания', 'cooldowns': 'жиркулдаун', 'inventory': 'инвентарь',
+        'shop': 'магазин', 'buy': 'купить', 'givefat': 'датьжир',
+        'ascend': 'возвышение', 'upgrade': 'апгрейд', 'upgradekg': 'апгрейдкг',
+        'choose': 'выбрать', 'duel': 'дуэль', 'giveitems': 'датьпредмет',
+        'start': 'start', 'help': 'help'
     }
     
-    # Конвертируем латинскую команду в русскую, если нужно
     if command in latin_to_russian:
         original_command = command
         command = latin_to_russian[command]
         print(f"   🔄 Конвертация: {original_command} -> {command}")
     
-    # Ищем в словаре команд
     if command in COMMAND_MAP:
         func_name = COMMAND_MAP[command]
         func = globals().get(func_name)
@@ -4498,19 +4474,20 @@ async def universal_handler(message: types.Message):
         if func:
             register_chat(message.chat.id)
             
-            # Подготавливаем "чистый" текст команды для функций,
-            # которые парсят аргументы
+            # Подготавливаем "чистый" текст команды
             if args:
                 clean_text = f"/{command} " + " ".join(args)
             else:
                 clean_text = f"/{command}"
             
-            # Сохраняем оригинал
+            # Сохраняем оригинальное значение
             original_text = message.text
-            # Подменяем на очищенный
-            message.text = clean_text
             
             try:
+                # Меняем текст через object.__setattr__ (обходим защиту Pydantic)
+                object.__setattr__(message, '_text', clean_text)
+                object.__setattr__(message, 'text', clean_text)
+                
                 print(f"   ✅ Выполняю: {func_name} с текстом '{clean_text}'")
                 await func(message)
             except Exception as e:
@@ -4518,14 +4495,13 @@ async def universal_handler(message: types.Message):
                 await message.reply(f"❌ Ошибка при выполнении команды: {e}")
             finally:
                 # Восстанавливаем оригинал
-                message.text = original_text
+                object.__setattr__(message, '_text', original_text)
+                object.__setattr__(message, 'text', original_text)
         else:
             await message.reply(f"❌ Ошибка: функция {func_name} не найдена")
     else:
-        # Неизвестная команда - выводим отладку
+        # Неизвестная команда - игнорируем
         print(f"❓ Неизвестная команда: '{command}'")
-        # Можно раскомментировать, если хочешь видеть все неизвестные команды
-        # await message.reply(f"❌ Неизвестная команда. Напиши /help")
 
 # ===== ЗАПУСК БОТА =====
 async def on_startup(dp):
