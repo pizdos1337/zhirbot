@@ -17,8 +17,8 @@ from aiogram.types import (
     InlineKeyboardMarkup, 
     InlineKeyboardButton,
     BotCommand,
-    BotCommandScopeDefault,  # ← добавить
-    BotCommandScopeChat       # ← добавить
+    BotCommandScopeDefault,
+    BotCommandScopeChat
 )
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -466,6 +466,11 @@ def add_missing_columns(db_path, existing_columns):
         'duel_amount': "INTEGER DEFAULT 0",
         'duel_message_id': "TEXT",
         'duel_initiator': "INTEGER DEFAULT 0",
+        'last_case_type': "TEXT",
+        'last_case_prize': "TEXT",
+        'upgrade_active': "INTEGER DEFAULT 0",
+        'upgrade_data': "TEXT",
+        'duel_start_time': "TIMESTAMP",
     }
     
     for col_name, col_type in required_columns.items():
@@ -559,7 +564,12 @@ def create_new_database(db_path, chat_id, chat_name):
         duel_opponent TEXT,
         duel_amount INTEGER DEFAULT 0,
         duel_message_id TEXT,
-        duel_initiator INTEGER DEFAULT 0
+        duel_initiator INTEGER DEFAULT 0,
+        last_case_type TEXT,
+        last_case_prize TEXT,
+        upgrade_active INTEGER DEFAULT 0,
+        upgrade_data TEXT,
+        duel_start_time TIMESTAMP
     '''
     
     case_columns = []
@@ -601,7 +611,8 @@ def get_user_data(chat_id, user_id, user_name=None):
         'legendary_burger', 'item_counts', 'last_command', 'last_command_target',
         'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
         'daily_case_last_time', 'snatcher_last_time', 'duel_active', 'duel_opponent',
-        'duel_amount', 'duel_message_id', 'duel_initiator'
+        'duel_amount', 'duel_message_id', 'duel_initiator',
+        'last_case_type', 'last_case_prize', 'upgrade_active', 'upgrade_data', 'duel_start_time'
     ]
     
     select_cols = [col for col in base_cols if col in all_columns]
@@ -676,6 +687,11 @@ def get_user_data(chat_id, user_id, user_name=None):
             'duel_amount': 0,
             'duel_message_id': None,
             'duel_initiator': 0,
+            'last_case_type': None,
+            'last_case_prize': None,
+            'upgrade_active': 0,
+            'upgrade_data': None,
+            'duel_start_time': None,
             'cases_dict': {}
         }
         
@@ -699,7 +715,8 @@ def create_new_user(cursor, user_data, all_columns):
                    'legendary_burger', 'item_counts', 'last_command', 'last_command_target',
                    'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
                    'daily_case_last_time', 'snatcher_last_time', 'duel_active', 'duel_opponent',
-                   'duel_amount', 'duel_message_id', 'duel_initiator']
+                   'duel_amount', 'duel_message_id', 'duel_initiator',
+                   'last_case_type', 'last_case_prize', 'upgrade_active', 'upgrade_data', 'duel_start_time']
     
     for field in base_fields:
         if field in all_columns:
@@ -1240,7 +1257,8 @@ def get_duel_info(user_data):
         'opponent': user_data.get('duel_opponent'),
         'amount': user_data.get('duel_amount', 0),
         'message_id': user_data.get('duel_message_id'),
-        'initiator': user_data.get('duel_initiator', 0)
+        'initiator': user_data.get('duel_initiator', 0),
+        'start_time': user_data.get('duel_start_time')
     }
 
 def get_item_price(item_name):
@@ -1618,7 +1636,7 @@ async def cmd_start(message: types.Message):
 
 **Основные команды:**
 /жир - изменить свой вес
-/жиркейс - открыть кейс (ежедневный или из инвентаря)
+/жиркейс - открыть кейс (ежедневный или из инвентаря) с кнопками открытия и пропуска
 /жиркейс_шансы - шансы в ежедневном кейсе
 /жиротрясы - таблица рекордов в чате
 /жиринфо - информация о вашем весе
@@ -1628,11 +1646,11 @@ async def cmd_start(message: types.Message):
 /инвентарь - посмотреть инвентарь
 
 **Дуэли:**
-/дуэль @username [кг/"все"] - вызвать на дуэль
+/дуэль @username [кг/"все"] - вызвать на дуэль (с защитой от дюпа)
 
 **Апгрейды:**
-/апгрейд - улучшить предмет
-/апгрейдкг [количество] - улучшить кг в предмет
+/апгрейд - улучшить предмет (с защитой от дюпа)
+/апгрейдкг [количество] - улучшить кг в предмет (с защитой от дюпа)
 /выбрать [номер] - выбрать цель апгрейда
 
 **Экономика:**
@@ -1754,6 +1772,7 @@ async def cmd_fat_case(message: types.Message):
     
     data = get_user_data(chat_id, user_id, user_name)
     
+    # Удаляем старый активный кейс если есть
     if data.get('active_case_message_id'):
         try:
             await bot.delete_message(chat_id, int(data['active_case_message_id']))
@@ -1762,6 +1781,7 @@ async def cmd_fat_case(message: types.Message):
     
     items_dict = get_user_items(data['item_counts'])
     
+    # Расчёт кулдауна с учётом апельсинов
     actual_case_cooldown = CASE_COOLDOWN_HOURS
     if data['legendary_burger'] >= 0 and data['legendary_burger'] < len(BURGER_RANKS):
         actual_case_cooldown = BURGER_RANKS[data['legendary_burger']]["case_cooldown"]
@@ -1799,10 +1819,13 @@ async def cmd_fat_case(message: types.Message):
         )
         return
     
-    # ИСПРАВЛЕНО: используем правильный синтаксис для aiogram 3.x
+    # Создаём клавиатуру с кнопками открытия и пропуска
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🖱️ ОТКРЫТЬ КЕЙС", callback_data=f"open_case_{case_to_open}")]
+            [
+                InlineKeyboardButton(text="🖱️ ОТКРЫТЬ", callback_data=f"open_case_{case_to_open}"),
+                InlineKeyboardButton(text="⏩ ПРОПУСТИТЬ", callback_data=f"skip_case_{case_to_open}")
+            ]
         ]
     )
     
@@ -1817,10 +1840,59 @@ async def cmd_fat_case(message: types.Message):
     
     case_msg = await message.reply(case_text, reply_markup=keyboard)
     
+    # Сохраняем информацию о сообщении и типе кейса
     update_user_data(
         chat_id, user_id,
-        active_case_message_id=str(case_msg.message_id)
+        active_case_message_id=str(case_msg.message_id),
+        last_case_type=case_to_open
     )
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('skip_case_'))
+async def process_case_skip(callback: CallbackQuery):
+    register_chat(callback.message.chat.id)
+    await callback.answer("Анимация пропущена!")
+    
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    user_name = callback.from_user.full_name
+    
+    case_to_open = callback.data.replace('skip_case_', '')
+    
+    data = get_user_data(chat_id, user_id, user_name)
+    
+    # ===== ИСПРАВЛЕНО: проверяем наличие кейса =====
+    if case_to_open != "daily":
+        cases_dict = data.get('cases_dict', {}).copy()
+        if cases_dict.get(case_to_open, 0) <= 0:
+            await callback.answer("❌ У вас больше нет этого кейса!", show_alert=True)
+            await callback.message.delete()
+            return
+        
+        # СПИСЫВАЕМ КЕЙС СРАЗУ
+        cases_dict[case_to_open] -= 1
+        update_user_data(chat_id, user_id, cases_dict=cases_dict)
+    else:
+        # Проверка ежедневного кейса
+        actual_case_cooldown = CASE_COOLDOWN_HOURS
+        if data['legendary_burger'] >= 0:
+            actual_case_cooldown = BURGER_RANKS[data['legendary_burger']]["case_cooldown"]
+        
+        can_get_daily, daily_remaining = can_get_daily_case(chat_id, user_id, actual_case_cooldown)
+        if not can_get_daily:
+            await callback.answer(f"⏳ Ежедневный кейс ещё не доступен!", show_alert=True)
+            await callback.message.delete()
+            return
+        
+        update_daily_case_time(chat_id, user_id)
+    
+    prize = open_case(case_to_open, data['legendary_burger'])
+    
+    try:
+        await callback.message.delete_reply_markup()
+    except:
+        pass
+    
+    await show_case_result(callback.message, chat_id, user_id, user_name, prize, CASES[case_to_open])
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('open_case_'))
 async def process_case_open(callback: CallbackQuery):
@@ -1882,26 +1954,14 @@ async def process_case_open(callback: CallbackQuery):
         if emoji not in prize_emojis:
             prize_emojis.append(emoji)
     
-    # ИСПРАВЛЕНО: Добавил переменную для хранения последнего текста
-    last_text = None
-    
     # ИСПРАВЛЕНО: Создаём сообщение для анимации
     anim_text = f"🎰 **{case['name']}** 🎰"
     anim_msg = await callback.message.reply(anim_text)
     
-    animation_frames = [
-        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
-        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
-        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
-        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
-    ]
+    # Генерируем линию
+    line = [random.choice(prize_emojis) for _ in range(100)]
     
-    # ИСПРАВЛЕНО: Генерируем линию для анимации
-    line = []
-    for i in range(100):
-        line.append(random.choice(prize_emojis))
-    
-    # ИСПРАВЛЕНО: Определяем эмодзи приза
+    # Определяем эмодзи приза
     if "emoji" in prize:
         prize_emoji = prize["emoji"]
     elif prize["value"] == "autoburger":
@@ -1929,6 +1989,15 @@ async def process_case_open(callback: CallbackQuery):
         prize_emoji = "🎁"
     
     # ИСПРАВЛЕНО: Анимация с проверкой на изменение текста
+    animation_frames = [
+        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+    ]
+    
+    last_text = None
+    
     for frame_num, center_pos in animation_frames:
         visible = line[center_pos-4:center_pos+5]
         display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
@@ -1944,20 +2013,23 @@ async def process_case_open(callback: CallbackQuery):
         
         await asyncio.sleep(0.5)
     
-    # ИСПРАВЛЕНО: Показываем результат
+    # ИСПРАВЛЕНО: Показываем результат (ставим приз в центр)
     line[57] = prize_emoji
-    visible = line[52:61]  # Показываем центр
+    visible = line[52:61]
     display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-    result_embed = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
     
-    try:
-        await anim_msg.edit_text(result_embed)
-    except Exception as e:
-        print(f"Ошибка при показе результата: {e}")
+    # ИСПРАВЛЕНО: Убеждаемся, что текст отличается от предыдущего
+    result_text = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+    
+    if result_text != last_text:
+        try:
+            await anim_msg.edit_text(result_text)
+        except Exception as e:
+            print(f"Ошибка при показе результата: {e}")
     
     await asyncio.sleep(1.5)
     
-    # ИСПРАВЛЕНО: Обработка приза
+    # Обработка приза (как в твоём коде)
     items_dict = get_user_items(data['item_counts'])
     new_number = data['current_number']
     new_autoburger_count = data['autoburger_count']
@@ -1991,7 +2063,6 @@ async def process_case_open(callback: CallbackQuery):
         new_number = data['current_number'] + prize_value
         result_display = f"🎉 **{prize_value:+d} кг** {prize_emoji}"
     
-    # ИСПРАВЛЕНО: Обновляем данные
     update_data = {
         'number': new_number,
         'user_name': user_name,
@@ -2008,7 +2079,7 @@ async def process_case_open(callback: CallbackQuery):
     
     rank_name, rank_emoji = get_rank(new_number)
     
-    # ИСПРАВЛЕНО: Формируем финальное сообщение
+    # Финальное сообщение
     final_text = f"{case['emoji']} Открытие {case['name']}\n\n"
     
     if prize_value == "autoburger":
@@ -2027,13 +2098,225 @@ async def process_case_open(callback: CallbackQuery):
         final_text += f"🍖 Новый вес: {new_number}kg\n"
         final_text += f"🎖️ Звание: {rank_emoji} {rank_name}"
     
-    # ИСПРАВЛЕНО: Отправляем финальное сообщение
     try:
         await anim_msg.reply(final_text)
     except Exception as e:
         print(f"Ошибка при отправке финального сообщения: {e}")
-        # Если не удалось отправить как reply, отправляем новое сообщение
         await callback.message.reply(final_text)
+
+async def case_animation(message, chat_id, user_id, user_name, case_id, prize, skip=False):
+    """Анимация открытия кейса с возможностью пропуска"""
+    
+    case = CASES[case_id]
+    data = get_user_data(chat_id, user_id, user_name)
+    
+    # Определяем эмодзи для анимации
+    prize_emojis = []
+    for p in case["prizes"]:
+        if "emoji" in p:
+            emoji = p["emoji"]
+        else:
+            if p["value"] == "autoburger":
+                emoji = "🍔"
+            elif p["value"] == "rotten_leg":
+                emoji = "💀"
+            elif p["value"] == "water":
+                emoji = "💧"
+            elif isinstance(p["value"], int):
+                if p["value"] < 0:
+                    emoji = "📉"
+                elif p["value"] == 0:
+                    emoji = "🔄"
+                elif p["value"] < 50:
+                    emoji = "📈"
+                elif p["value"] < 100:
+                    emoji = "⬆️"
+                elif p["value"] < 500:
+                    emoji = "🚀"
+                elif p["value"] < 1000:
+                    emoji = "⭐"
+                else:
+                    emoji = "💥"
+            else:
+                emoji = "🎁"
+        
+        if emoji not in prize_emojis:
+            prize_emojis.append(emoji)
+    
+    # Определяем эмодзи приза
+    if "emoji" in prize:
+        prize_emoji = prize["emoji"]
+    elif prize["value"] == "autoburger":
+        prize_emoji = "🍔"
+    elif prize["value"] == "rotten_leg":
+        prize_emoji = "💀"
+    elif prize["value"] == "water":
+        prize_emoji = "💧"
+    elif isinstance(prize["value"], int):
+        if prize["value"] < 0:
+            prize_emoji = "📉"
+        elif prize["value"] == 0:
+            prize_emoji = "🔄"
+        elif prize["value"] < 50:
+            prize_emoji = "📈"
+        elif prize["value"] < 100:
+            prize_emoji = "⬆️"
+        elif prize["value"] < 500:
+            prize_emoji = "🚀"
+        elif prize["value"] < 1000:
+            prize_emoji = "⭐"
+        else:
+            prize_emoji = "💥"
+    else:
+        prize_emoji = "🎁"
+    
+    # Генерируем линию
+    line = [random.choice(prize_emojis) for _ in range(100)]
+    line[57] = prize_emoji
+    
+    if skip:
+        # Пропускаем анимацию - сразу показываем результат
+        visible = line[52:61]
+        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        
+        result_embed = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+        
+        try:
+            await message.edit_text(result_embed)
+        except:
+            pass
+        
+        await asyncio.sleep(1)
+        
+        # Показываем финальный результат
+        await show_case_result(message, chat_id, user_id, user_name, prize, case)
+        return
+    
+    # Полная анимация
+    anim_text = f"🎰 **{case['name']}** 🎰"
+    try:
+        await message.edit_text(anim_text)
+    except:
+        anim_msg = await message.reply(anim_text)
+        message = anim_msg
+    
+    animation_frames = [
+        (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+        (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+        (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+        (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+    ]
+    
+    last_text = None
+    
+    for frame_num, center_pos in animation_frames:
+        visible = line[center_pos-4:center_pos+5]
+        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        current_text = f"**{display_line}**"
+        
+        if current_text != last_text:
+            try:
+                await message.edit_text(current_text)
+                last_text = current_text
+            except:
+                pass
+        
+        await asyncio.sleep(0.3)
+    
+    # Показываем результат анимации
+    visible = line[52:61]
+    display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+    result_embed = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+    
+    try:
+        await message.edit_text(result_embed)
+    except:
+        pass
+    
+    await asyncio.sleep(1)
+    
+    # Показываем финальный результат
+    await show_case_result(message, chat_id, user_id, user_name, prize, case)
+
+async def show_case_result(message, chat_id, user_id, user_name, prize, case):
+    """Показывает финальный результат открытия кейса"""
+    
+    # Получаем актуальные данные пользователя
+    data = get_user_data(chat_id, user_id, user_name)
+    
+    items_dict = get_user_items(data['item_counts'])
+    new_number = data['current_number']
+    new_autoburger_count = data['autoburger_count']
+    new_next_autoburger_time = data['next_autoburger_time']
+    prize_value = prize["value"]
+    
+    has_water = items_dict.get("Стакан воды", 0) > 0
+    
+    # Обрабатываем приз
+    if prize_value == "autoburger":
+        new_autoburger_count += 1
+        interval = get_autoburger_interval(new_autoburger_count)
+        if interval:
+            new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
+        result_display = f"🎉 **АВТОБУРГЕР!** 🍔✨"
+        
+    elif prize_value == "rotten_leg":
+        items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
+        result_display = f"💀 **Гнилая ножка KFC!** 💀"
+        
+    elif prize_value == "water":
+        items_dict["Стакан воды"] = items_dict.get("Стакан воды", 0) + 1
+        result_display = f"💧 **Стакан воды!** 💧"
+        
+    elif isinstance(prize_value, str):
+        items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
+        result_display = f"🎁 **{prize_value}**"
+        
+    else:
+        if has_water and case["name"] != "Жиркейс":
+            prize_value = prize_value // 3
+        new_number = data['current_number'] + prize_value
+        result_display = f"🎉 **{prize_value:+d} кг**"
+    
+    # Обновляем данные
+    update_data = {
+        'number': new_number,
+        'autoburger_count': new_autoburger_count,
+        'next_autoburger_time': new_next_autoburger_time,
+        'item_counts': save_user_items(items_dict),
+        'active_case_message_id': None,
+        'last_case_type': None,
+        'last_case_prize': None
+    }
+    
+    update_user_data(chat_id, user_id, **update_data)
+    
+    rank_name, rank_emoji = get_rank(new_number)
+    
+    # Формируем финальное сообщение
+    final_text = f"{case['emoji']} Открытие {case['name']}\n\n"
+    
+    if prize_value == "autoburger":
+        final_text += f"🍔✨ **АВТОБУРГЕР** ✨🍔\n\n"
+        final_text += f"Всего автобургеров: {new_autoburger_count}\n"
+        final_text += f"Интервал: каждые {get_autoburger_interval(new_autoburger_count)} ч\n"
+        final_text += f"Бонус: +{AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100:.1f}%"
+    elif prize_value in ["rotten_leg", "water"]:
+        final_text += f"🎁 Приз: {result_display}\n\n"
+        final_text += f"📦 Теперь у вас: {items_dict.get(prize_value, 0)} шт"
+    elif isinstance(prize_value, str):
+        final_text += f"🎁 Приз: {result_display}\n\n"
+        final_text += f"📦 Теперь у вас: {items_dict.get(prize_value, 0)} шт"
+    else:
+        final_text += f"🎁 Приз: {result_display}\n\n"
+        final_text += f"🍖 Новый вес: {new_number}kg\n"
+        final_text += f"🎖️ Звание: {rank_emoji} {rank_name}"
+    
+    # Отправляем финальное сообщение
+    try:
+        await message.reply(final_text)
+    except:
+        await message.reply("✅ Кейс открыт! (ошибка отображения)")
 
 async def cmd_fat_case_chances(message: types.Message):
     register_chat(message.chat.id)
@@ -2720,12 +3003,6 @@ async def cmd_ascension(message: types.Message):
     
     data = get_user_data(chat_id, user_id, user_name)
     
-    # ИСПРАВЛЕНО: ascension не требует аргументов, просто проверяем
-    # Если нужно обрабатывать аргументы, используйте:
-    # parts = message.text.split() if message.text else []
-    # if len(parts) > 1:
-    #     arg = parts[1]
-    
     available, burger_idx, burger_name, req_weight, chance = check_ascension_available(data['current_number'], data['legendary_burger'])
     
     if not available:
@@ -2792,12 +3069,18 @@ async def cmd_ascension(message: types.Message):
 
 async def cmd_upgrade(message: types.Message):
     register_chat(message.chat.id)
-    """Улучшение предметов"""
+    """Улучшение предметов с защитой от дюпа"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     user_name = message.from_user.full_name
     
     data = get_user_data(chat_id, user_id, user_name)
+    
+    # ===== ИСПРАВЛЕНО: Проверка активного апгрейда =====
+    if data.get('upgrade_active', 0) == 1:
+        await message.reply("⚠️ У вас уже есть активный апгрейд! Дождитесь его завершения.")
+        return
+    
     items_dict = get_user_items(data['item_counts'])
     
     available_items = []
@@ -2855,11 +3138,17 @@ async def cmd_upgrade(message: types.Message):
         await message.reply(f"❌ Для **{selected_item['emoji']} {selected_item['name']}** нет доступных улучшений!")
         return
     
+    # ===== ИСПРАВЛЕНО: Помечаем апгрейд как активный =====
     update_user_data(
         chat_id, user_id,
         last_command="upgrade_select",
         last_command_target=selected_item["name"],
-        last_command_use_time=datetime.now()
+        last_command_use_time=datetime.now(),
+        upgrade_active=1,
+        upgrade_data=json.dumps({
+            'source_item': selected_item["name"],
+            'source_count': selected_item["count"]
+        })
     )
     
     response = f"🔧 **ВЫБОР ЦЕЛИ АПГРЕЙДА** 🔧\n\n"
@@ -2883,10 +3172,17 @@ async def cmd_upgrade(message: types.Message):
 
 async def cmd_upgrade_kg(message: types.Message):
     register_chat(message.chat.id)
-    """Улучшение кг в предметы"""
+    """Улучшение кг в предметы с защитой от дюпа"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     user_name = message.from_user.full_name
+    
+    data = get_user_data(chat_id, user_id, user_name)
+    
+    # ===== ИСПРАВЛЕНО: Проверка активного апгрейда =====
+    if data.get('upgrade_active', 0) == 1:
+        await message.reply("⚠️ У вас уже есть активный апгрейд! Дождитесь его завершения.")
+        return
     
     # ИСПРАВЛЕНО: парсим аргументы
     parts = message.text.split() if message.text else []
@@ -2904,8 +3200,6 @@ async def cmd_upgrade_kg(message: types.Message):
     if amount <= 0:
         await message.reply("❌ Количество кг должно быть больше 0!")
         return
-    
-    data = get_user_data(chat_id, user_id, user_name)
     
     if data['current_number'] < amount:
         await message.reply(f"❌ У вас недостаточно кг! Есть: {data['current_number']} кг, нужно: {amount} кг")
@@ -2958,11 +3252,14 @@ async def cmd_upgrade_kg(message: types.Message):
     
     possible_upgrades.sort(key=lambda x: x["price"])
     
+    # ===== ИСПРАВЛЕНО: Помечаем апгрейд как активный =====
     update_user_data(
         chat_id, user_id,
         last_command="upgrade_kg_select",
         last_command_target=str(amount),
-        last_command_use_time=datetime.now()
+        last_command_use_time=datetime.now(),
+        upgrade_active=1,
+        upgrade_data=json.dumps({'amount': amount})
     )
     
     response = f"💱 **АПГРЕЙД КГ В ПРЕДМЕТЫ** 💱\n\n"
@@ -2985,7 +3282,7 @@ async def cmd_upgrade_kg(message: types.Message):
 
 async def cmd_choose(message: types.Message):
     register_chat(message.chat.id)
-    """Выбор цели для апгрейда"""
+    """Выбор цели для апгрейда с защитой от дюпа"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     user_name = message.from_user.full_name
@@ -3006,11 +3303,18 @@ async def cmd_choose(message: types.Message):
     
     data = get_user_data(chat_id, user_id, user_name)
     
+    # ===== ИСПРАВЛЕНО: Проверяем активность апгрейда =====
+    if data.get('upgrade_active', 0) != 1:
+        await message.reply("❌ У вас нет активного апгрейда! Сначала используйте `/апгрейд` или `/апгрейдкг`.")
+        return
+    
     last_command = data.get('last_command')
     last_use = data.get('last_command_use_time')
     
     if not last_command or not last_use:
-        await message.reply("❌ Сначала используйте `/апгрейд` или `/апгрейдкг` для выбора!")
+        await message.reply("❌ Ошибка состояния апгрейда!")
+        update_user_data(chat_id, user_id, last_command=None, last_command_target=None, 
+                        last_command_use_time=None, upgrade_active=0, upgrade_data=None)
         return
     
     if isinstance(last_use, str):
@@ -3018,7 +3322,8 @@ async def cmd_choose(message: types.Message):
     
     if datetime.now() - last_use > timedelta(minutes=5):
         await message.reply("❌ Время ожидания истекло. Используйте команду заново!")
-        update_user_data(chat_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        update_user_data(chat_id, user_id, last_command=None, last_command_target=None, 
+                        last_command_use_time=None, upgrade_active=0, upgrade_data=None)
         return
     
     if last_command == "upgrade_kg_select":
@@ -3026,6 +3331,7 @@ async def cmd_choose(message: types.Message):
             amount = int(data['last_command_target'])
         except:
             await message.reply("❌ Ошибка в данных апгрейда!")
+            update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         possible_upgrades = []
@@ -3075,49 +3381,65 @@ async def cmd_choose(message: types.Message):
             item_index = int(choice) - 1
             if item_index < 0 or item_index >= len(possible_upgrades):
                 await message.reply(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+                update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
                 return
         except ValueError:
             await message.reply("❌ Введите корректный номер!")
+            update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         target_item = possible_upgrades[item_index]
+        
+        # ===== Сбрасываем флаг активности перед анимацией =====
+        update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
+        
         await upgrade_kg_animation(message, user_id, user_name, amount, target_item)
     
     elif last_command == "upgrade_select":
         source_item_name = data.get('last_command_target')
         if not source_item_name:
             await message.reply("❌ Ошибка: не выбран исходный предмет!")
+            update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         items_dict = get_user_items(data['item_counts'])
         
         if items_dict.get(source_item_name, 0) <= 0:
             await message.reply(f"❌ У вас больше нет **{source_item_name}** для улучшения!")
-            update_user_data(chat_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+            update_user_data(chat_id, user_id, last_command=None, last_command_target=None, 
+                            last_command_use_time=None, upgrade_active=0, upgrade_data=None)
             return
         
         possible_upgrades = get_possible_upgrades(source_item_name, items_dict[source_item_name])
         
         if not possible_upgrades:
             await message.reply("❌ Для этого предмета больше нет доступных улучшений!")
-            update_user_data(chat_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+            update_user_data(chat_id, user_id, last_command=None, last_command_target=None, 
+                            last_command_use_time=None, upgrade_active=0, upgrade_data=None)
             return
         
         try:
             upgrade_index = int(choice) - 1
             if upgrade_index < 0 or upgrade_index >= len(possible_upgrades):
                 await message.reply(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+                update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
                 return
         except ValueError:
             await message.reply("❌ Введите корректный номер!")
+            update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         target_item = possible_upgrades[upgrade_index]
+        
+        # ===== Сбрасываем флаг активности перед анимацией =====
+        update_user_data(chat_id, user_id, upgrade_active=0, upgrade_data=None)
+        
         await upgrade_animation(message, user_id, user_name, source_item_name, target_item, items_dict[source_item_name])
     
     else:
         await message.reply("❌ Неизвестный тип апгрейда!")
-        update_user_data(chat_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        update_user_data(chat_id, user_id, last_command=None, last_command_target=None, 
+                        last_command_use_time=None, upgrade_active=0, upgrade_data=None)
 
 # ===== ТЕСТОВЫЕ КОМАНДЫ =====
 async def cmd_give_autoburger(message: types.Message):
@@ -3127,10 +3449,11 @@ async def cmd_give_autoburger(message: types.Message):
         await message.reply("❌ У вас нет прав для этой команды!")
         return
     
-    args = message.get_args()
+    # ИСПРАВЛЕНО: ручной парсинг
+    parts = message.text.split() if message.text else []
     try:
-        количество = int(args) if args else 1
-    except ValueError:
+        количество = int(parts[1]) if len(parts) > 1 else 1
+    except (ValueError, IndexError):
         await message.reply("❌ Укажите корректное количество!")
         return
     
@@ -3180,15 +3503,13 @@ async def cmd_reset_autoburger(message: types.Message):
         await message.reply("❌ У вас нет прав для этой команды!")
         return
     
+    # ИСПРАВЛЕНО: ручной парсинг
     chat_id = message.chat.id
-    user_id = message.from_user.id
-    user_name = message.from_user.full_name
-    
-    args = message.get_args()
+    parts = message.text.split() if message.text else []
     target_user = message.from_user
     
-    if args and args.startswith('@'):
-        target_username = args.replace('@', '')
+    if len(parts) > 1 and parts[1].startswith('@'):
+        target_username = parts[1].replace('@', '')
         try:
             chat = await bot.get_chat(chat_id)
             async for member in chat.get_members():
@@ -3222,15 +3543,13 @@ async def cmd_autoburger_info(message: types.Message):
         await message.reply("❌ У вас нет прав для этой команды!")
         return
     
+    # ИСПРАВЛЕНО: ручной парсинг
     chat_id = message.chat.id
-    user_id = message.from_user.id
-    user_name = message.from_user.full_name
-    
-    args = message.get_args()
+    parts = message.text.split() if message.text else []
     target_user = message.from_user
     
-    if args and args.startswith('@'):
-        target_username = args.replace('@', '')
+    if len(parts) > 1 and parts[1].startswith('@'):
+        target_username = parts[1].replace('@', '')
         try:
             chat = await bot.get_chat(chat_id)
             async for member in chat.get_members():
@@ -3292,14 +3611,26 @@ async def cmd_give_shop_item(message: types.Message):
         await message.reply("❌ У вас нет прав для этой команды!")
         return
     
-    args = message.get_args().split(maxsplit=1)
-    if len(args) < 2:
+    # ИСПРАВЛЕНО: более сложный парсинг для названия с пробелами
+    text = message.text
+    if not text or ' ' not in text:
+        await message.reply("❌ Использование: `/выдатьпредмет количество \"название предмета\"`\nПример: `/выдатьпредмет 5 Горелый бекон`")
+        return
+    
+    # Убираем команду из текста
+    without_command = text.split(' ', 1)[1] if ' ' in text else ''
+    
+    # Пытаемся найти первую часть (количество) и остальное (название)
+    import re
+    match = re.match(r'(\d+)\s+(.+)$', without_command)
+    
+    if not match:
         await message.reply("❌ Использование: `/выдатьпредмет количество \"название предмета\"`\nПример: `/выдатьпредмет 5 Горелый бекон`")
         return
     
     try:
-        amount = int(args[0])
-        item_name = args[1].strip()
+        amount = int(match.group(1))
+        item_name = match.group(2).strip()
     except ValueError:
         await message.reply("❌ Количество должно быть числом!")
         return
@@ -3447,13 +3778,13 @@ async def cmd_fat_reset(message: types.Message):
         await message.reply("❌ У вас нет прав для этой команды!")
         return
     
+    # ИСПРАВЛЕНО: ручной парсинг
     chat_id = message.chat.id
-    
-    args = message.get_args()
+    parts = message.text.split() if message.text else []
     target_user = message.from_user
     
-    if args and args.startswith('@'):
-        target_username = args.replace('@', '')
+    if len(parts) > 1 and parts[1].startswith('@'):
+        target_username = parts[1].replace('@', '')
         try:
             chat = await bot.get_chat(chat_id)
             async for member in chat.get_members():
@@ -3562,7 +3893,9 @@ async def cmd_duel(message: types.Message):
         await message.reply(f"❌ У {target_user.full_name} недостаточно кг! У него: {opponent_data['current_number']}кг")
         return
     
-    # ИСПРАВЛЕНО
+    # ===== ИСПРАВЛЕНО: Защита от дюпа и отслеживание времени =====
+    current_time = datetime.now()
+    
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -3586,7 +3919,8 @@ async def cmd_duel(message: types.Message):
         duel_opponent=str(target_user.id),
         duel_amount=duel_amount,
         duel_message_id=str(duel_msg.message_id),
-        duel_initiator=1
+        duel_initiator=1,
+        duel_start_time=current_time
     )
     
     update_user_data(
@@ -3595,15 +3929,18 @@ async def cmd_duel(message: types.Message):
         duel_opponent=str(challenger.id),
         duel_amount=duel_amount,
         duel_message_id=str(duel_msg.message_id),
-        duel_initiator=0
+        duel_initiator=0,
+        duel_start_time=current_time
     )
     
     await asyncio.sleep(30)
     
     challenger_data = get_user_data(chat_id, challenger.id, challenger.full_name)
     if challenger_data.get('duel_active') == 1:
-        update_user_data(chat_id, challenger.id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_initiator=0)
-        update_user_data(chat_id, target_user.id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_initiator=0)
+        update_user_data(chat_id, challenger.id, duel_active=0, duel_opponent=None, duel_amount=0, 
+                         duel_message_id=None, duel_initiator=0, duel_start_time=None)
+        update_user_data(chat_id, target_user.id, duel_active=0, duel_opponent=None, duel_amount=0, 
+                         duel_message_id=None, duel_initiator=0, duel_start_time=None)
         
         try:
             await duel_msg.edit_text(
@@ -3679,8 +4016,10 @@ async def process_duel(callback: CallbackQuery):
             result_text += f"{challenger.user.full_name}: {challenger_data['current_number']}кг (без изменений)\n"
             result_text += f"{opponent.user.full_name}: {opponent_data['current_number']}кг (без изменений)"
         
-        update_user_data(chat_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_initiator=0)
-        update_user_data(chat_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_initiator=0)
+        update_user_data(chat_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0, 
+                         duel_message_id=None, duel_initiator=0, duel_start_time=None)
+        update_user_data(chat_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0, 
+                         duel_message_id=None, duel_initiator=0, duel_start_time=None)
         
         await callback.message.reply(f"⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️\n\n{result_text}")
         
@@ -3694,8 +4033,10 @@ async def process_duel(callback: CallbackQuery):
         
         chat_id = callback.message.chat.id
         
-        update_user_data(chat_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_initiator=0)
-        update_user_data(chat_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_initiator=0)
+        update_user_data(chat_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0, 
+                         duel_message_id=None, duel_initiator=0, duel_start_time=None)
+        update_user_data(chat_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0, 
+                         duel_message_id=None, duel_initiator=0, duel_start_time=None)
         
         decliner = callback.from_user.full_name
         await callback.message.edit_text(
@@ -3726,11 +4067,11 @@ async def cmd_cancel_duel(message: types.Message):
     
     update_user_data(chat_id, user_id,
                    duel_active=0, duel_opponent=None, duel_amount=0,
-                   duel_message_id=None, duel_initiator=0)
+                   duel_message_id=None, duel_initiator=0, duel_start_time=None)
     
     update_user_data(chat_id, duel_info['opponent'],
                    duel_active=0, duel_opponent=None, duel_amount=0,
-                   duel_message_id=None, duel_initiator=0)
+                   duel_message_id=None, duel_initiator=0, duel_start_time=None)
     
     try:
         if duel_info['message_id']:
@@ -3762,9 +4103,7 @@ async def cmd_give_item(message: types.Message):
     without_command = text.split(' ', 1)[1] if ' ' in text else ''
     
     # Парсим @username, количество и название предмета
-    # Формат: @username количество название предмета
     import re
-    # Регулярка для @username, числа и всего остального как название
     match = re.match(r'@(\S+)\s+(\d+)\s+(.+)$', without_command)
     
     if not match:
@@ -3805,12 +4144,10 @@ async def cmd_give_item(message: types.Message):
     target_id = target_user.id
     target_name = target_user.full_name
     
-    # Нельзя передавать предметы самому себе
     if giver_id == target_id:
         await message.reply("❌ Нельзя передавать предметы самому себе!")
         return
     
-    # Получаем данные отправителя и получателя
     giver_data = get_user_data(chat_id, giver_id, giver_name)
     target_data = get_user_data(chat_id, target_id, target_name)
     
@@ -3830,7 +4167,6 @@ async def cmd_give_item(message: types.Message):
                 await message.reply(f"❌ У вас недостаточно кейсов '{case['name']}'! Есть: {giver_cases.get(case_id, 0)}")
                 return
             
-            # Передаём кейсы
             giver_cases[case_id] = giver_cases.get(case_id, 0) - amount
             target_cases[case_id] = target_cases.get(case_id, 0) + amount
             
@@ -3858,7 +4194,6 @@ async def cmd_give_item(message: types.Message):
         new_giver_burgers = giver_data['autoburger_count'] - amount
         new_target_burgers = target_data['autoburger_count'] + amount
         
-        # Обновляем время следующего автобургера для получателя
         new_target_next_burger = None
         if new_target_burgers > 0:
             interval = get_autoburger_interval(new_target_burgers)
@@ -3887,17 +4222,12 @@ async def cmd_give_item(message: types.Message):
     giver_items = get_user_items(giver_data['item_counts'])
     target_items = get_user_items(target_data['item_counts'])
     
-    # Ищем предмет в инвентаре отправителя (без учёта регистра)
     found_item = None
-    exact_match = None
-    
-    # Сначала ищем точное совпадение
     for key in giver_items.keys():
         if key.lower() == item_lower:
             found_item = key
             break
     
-    # Если не нашли, ищем частичное совпадение
     if not found_item:
         for key in giver_items.keys():
             if item_lower in key.lower():
@@ -3905,52 +4235,35 @@ async def cmd_give_item(message: types.Message):
                 break
     
     if not found_item:
-        # Показываем, что есть у пользователя
         if giver_items:
             items_list = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:10]])
-            if len(giver_items) > 10:
-                items_list += f"\n... и ещё {len(giver_items) - 10} предметов"
             await message.reply(f"❌ У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}")
         else:
             await message.reply("❌ У вас нет предметов в инвентаре!")
         return
     
-    # Проверяем количество
     if giver_items[found_item] < amount:
         await message.reply(f"❌ У вас недостаточно '{found_item}'! Есть: {giver_items[found_item]}")
         return
     
-    # Проверяем, не легендарный ли это бургер (их нельзя передавать)
     legendary_burger_names = ["Железный бургер", "Золотой бургер", "Платиновый бургер", "Алмазный бургер"]
     if found_item in legendary_burger_names:
         await message.reply(f"❌ Легендарные бургеры нельзя передавать!")
         return
     
-    # Проверяем, можно ли передавать этот предмет (если есть флаг tradable)
-    # Для обычных предметов из магазина проверяем по названию
-    for shop_item in SHOP_ITEMS:
-        if shop_item["name"] == found_item:
-            # Если у предмета есть специальный флаг tradable, проверяем его
-            # По умолчанию все предметы из магазина передавать можно
-            break
-    
-    # Передаём предмет
     giver_items[found_item] -= amount
     if giver_items[found_item] <= 0:
         del giver_items[found_item]
     
     target_items[found_item] = target_items.get(found_item, 0) + amount
     
-    # Сохраняем изменения
     update_user_data(chat_id, giver_id, item_counts=save_user_items(giver_items))
     update_user_data(chat_id, target_id, item_counts=save_user_items(target_items))
     
-    # Формируем ответ
     response = f"🎁 **Передача предмета**\n\n"
     response += f"**{giver_name}** передал предмет **{target_name}**!\n\n"
     response += f"📦 Предмет: **{found_item}** x{amount}\n\n"
     
-    # Инвентарь отправителя (первые 5 предметов)
     if giver_items:
         giver_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(giver_items.items())[:5]])
         if len(giver_items) > 5:
@@ -3958,7 +4271,6 @@ async def cmd_give_item(message: types.Message):
     else:
         giver_inv = "Пусто"
     
-    # Инвентарь получателя (первые 5 предметов)
     if target_items:
         target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
         if len(target_items) > 5:
