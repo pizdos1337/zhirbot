@@ -2766,21 +2766,25 @@ async def fat_case_command(ctx):
                 (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
             ]
             
+            last_display = ""
+            
             for frame_num, center_pos in animation_frames:
                 visible = line[center_pos-4:center_pos+5]
                 display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
                 anim_embed.description = f"**{display_line}**"
-                
                 await case_msg.edit(embed=anim_embed)
+                
+                last_display = display_line  # ← СОХРАНЯЕМ последний кадр
                 await asyncio.sleep(0.5)
             
             # Показываем результат
-            visible = line[52:61]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
-            
-            await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(1)
+           result_embed = discord.Embed(
+               title=f"🎰 **{case['name']}** 🎰",
+               description=f"**{last_display}**\n\n**РЕЗУЛЬТАТ!**",  # ← Тот же display_line
+               color=0xffaa00
+           )
+           await case_msg.edit(embed=result_embed)
+           await asyncio.sleep(1)
         
         # ===== ОБРАБОТКА ПРИЗА =====
         items_dict = get_user_items(data['item_counts'])
