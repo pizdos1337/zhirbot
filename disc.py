@@ -2752,7 +2752,7 @@ async def fat_case_command(ctx):
         else:
             prize_emoji = "🎁"
         
-        line[57] = prize_emoji
+        line[56] = prize_emoji
         
         if skip_animation:
             # Пропускаем анимацию
