@@ -562,6 +562,11 @@ def add_missing_columns(db_path, existing_columns):
         'duel_message_id': "TEXT",
         'duel_channel_id': "TEXT",
         'duel_initiator': "INTEGER DEFAULT 0",
+        'last_case_type': "TEXT",  # Для хранения типа кейса при открытии
+        'last_case_prize': "TEXT",  # Для хранения приза
+        'upgrade_active': "INTEGER DEFAULT 0",  # Для защиты апгрейдов
+        'upgrade_data': "TEXT",  # Данные апгрейда
+        'duel_start_time': "TIMESTAMP",  # Время начала дуэли
     }
     
     for col_name, col_type in required_columns.items():
@@ -666,7 +671,12 @@ def create_new_database(db_path, guild_id, guild_name):
         duel_amount INTEGER DEFAULT 0,
         duel_message_id TEXT,
         duel_channel_id TEXT,
-        duel_initiator INTEGER DEFAULT 0
+        duel_initiator INTEGER DEFAULT 0,
+        last_case_type TEXT,
+        last_case_prize TEXT,
+        upgrade_active INTEGER DEFAULT 0,
+        upgrade_data TEXT,
+        duel_start_time TIMESTAMP
     '''
     
     case_columns = []
@@ -713,7 +723,8 @@ def get_user_data(guild_id, user_id, user_name=None):
         'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
         'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
         'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
-        'duel_channel_id', 'duel_initiator'
+        'duel_channel_id', 'duel_initiator', 'last_case_type', 'last_case_prize',
+        'upgrade_active', 'upgrade_data', 'duel_start_time'
     ]
     
     # Добавляем только существующие колонки
@@ -798,6 +809,11 @@ def get_user_data(guild_id, user_id, user_name=None):
             'duel_message_id': None,
             'duel_channel_id': None,
             'duel_initiator': 0,
+            'last_case_type': None,
+            'last_case_prize': None,
+            'upgrade_active': 0,
+            'upgrade_data': None,
+            'duel_start_time': None,
             'cases_dict': {}
         }
         
@@ -827,7 +843,8 @@ def create_new_user(cursor, user_data, all_columns):
                    'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
                    'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
                    'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
-                   'duel_channel_id', 'duel_initiator']
+                   'duel_channel_id', 'duel_initiator', 'last_case_type', 'last_case_prize',
+                   'upgrade_active', 'upgrade_data', 'duel_start_time']
     
     for field in base_fields:
         if field in all_columns:
@@ -1851,7 +1868,8 @@ def get_duel_info(user_data):
         'amount': user_data.get('duel_amount', 0),
         'message_id': user_data.get('duel_message_id'),
         'channel_id': user_data.get('duel_channel_id'),
-        'initiator': user_data.get('duel_initiator', 0)
+        'initiator': user_data.get('duel_initiator', 0),
+        'start_time': user_data.get('duel_start_time')
     }
 
 async def migrate_old_case_keys():
@@ -2375,6 +2393,7 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
     result_embed.set_footer(text=f"Шанс был: {target_item['chance']*100:.1f}%")
     
     await upgrade_msg.edit(embed=result_embed)
+
 # ===== ОСНОВНЫЕ КОМАНДЫ =====
 
 @bot.command(name='жир')
@@ -2539,7 +2558,7 @@ async def fat_case_command(ctx):
                 try:
                     old_msg = await channel.fetch_message(int(data['active_case_message_id']))
                     if old_msg:
-                        time_since = datetime.now() - old_msg.created_at
+                        time_since = datetime.now() - old_msg.created_at.replace(tzinfo=None)
                         if time_since.total_seconds() < 120:
                             embed = discord.Embed(
                                 title="⚠️ Кейс уже открыт!",
@@ -2572,7 +2591,7 @@ async def fat_case_command(ctx):
     
     can_get_daily, daily_remaining = can_get_daily_case(guild_id, user_id, actual_case_cooldown)
     
-    cases_dict = data.get('cases_dict', {})
+    cases_dict = data.get('cases_dict', {}).copy()
     case_to_open = None
     case = None
     
@@ -2637,7 +2656,8 @@ async def fat_case_command(ctx):
         title=f"{case_emoji} **{case['name']}** {case_emoji}",
         description=(
             f"{member.mention}, у вас есть кейс!\n\n"
-            f"**Нажмите на 🖱️ чтобы открыть**\n\n"
+            f"**Нажмите на 🖱️ чтобы открыть**\n"
+            f"**Нажмите на ⏩ чтобы пропустить анимацию**\n\n"
             f"┌───────────────┐\n"
             f"│----{case_emoji}---{case_emoji}---{case_emoji}----│\n"
             f"│----К-Е-Й-С-------│\n"
@@ -2651,31 +2671,57 @@ async def fat_case_command(ctx):
     
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
+    await case_msg.add_reaction("⏩")
     
+    # ===== ИСПРАВЛЕНО: ЗАПИСЫВАЕМ ТИП КЕЙСА В БД =====
     update_user_data(
         guild_id, user_id,
         active_case_message_id=str(case_msg.id),
-        active_case_channel_id=str(ctx.channel.id)
+        active_case_channel_id=str(ctx.channel.id),
+        last_case_type=case_to_open
     )
     
     def check(reaction, user):
-        return user == ctx.author and str(reaction.emoji) == "🖱️" and reaction.message.id == case_msg.id
+        return user == ctx.author and str(reaction.emoji) in ["🖱️", "⏩"] and reaction.message.id == case_msg.id
     
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
         
+        skip_animation = str(reaction.emoji) == "⏩"
+        
+        # ===== ИСПРАВЛЕНО: СПИСЫВАЕМ КЕЙС СРАЗУ =====
         if case_to_open == "daily":
-            prize = open_case("daily", data['legendary_burger'])
+            # Проверяем кулдаун ещё раз
+            can_get_daily, _ = can_get_daily_case(guild_id, user_id, actual_case_cooldown)
+            if not can_get_daily:
+                await ctx.send(f"{member.mention}, ежедневный кейс уже использован!")
+                await case_msg.delete()
+                return
+            
+            # Помечаем, что ежедневный кейс использован
             update_daily_case_time(guild_id, user_id)
         else:
-            prize = open_case(case_to_open, data['legendary_burger'])
-            cases_dict[case_to_open] -= 1
+            # Проверяем наличие кейса
+            current_cases = data.get('cases_dict', {}).copy()
+            if current_cases.get(case_to_open, 0) <= 0:
+                await ctx.send(f"{member.mention}, у вас больше нет этого кейса!")
+                await case_msg.delete()
+                return
+            
+            # СПИСЫВАЕМ КЕЙС СРАЗУ!
+            current_cases[case_to_open] -= 1
+            update_user_data(guild_id, user_id, cases_dict=current_cases)
         
+        # Получаем приз
+        prize = open_case(case_to_open, data['legendary_burger'])
+        
+        # Очищаем реакции
         try:
             await case_msg.clear_reactions()
         except:
             pass
         
+        # ===== АНИМАЦИЯ =====
         line = []
         for i in range(100):
             line.append(random.choice(prize_emojis))
@@ -2708,25 +2754,48 @@ async def fat_case_command(ctx):
         
         line[57] = prize_emoji
         
-        anim_embed = discord.Embed(
-            title=f"🎰 **{case['name']}** 🎰",
-            description="",
-            color=0xffaa00
-        )
-        
-        animation_frames = [
-            (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
-            (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
-            (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
-            (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
-        ]
-        
-        for frame_num, center_pos in animation_frames:
-            visible = line[center_pos-4:center_pos+5]
+        if skip_animation:
+            # Пропускаем анимацию
+            visible = line[52:61]
             display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{display_line}**"
+            
+            anim_embed = discord.Embed(
+                title=f"🎰 **{case['name']}** 🎰",
+                description=f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**",
+                color=0xffaa00
+            )
             await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
+        else:
+            # Полная анимация
+            anim_embed = discord.Embed(
+                title=f"🎰 **{case['name']}** 🎰",
+                description="",
+                color=0xffaa00
+            )
+            
+            animation_frames = [
+                (1, 5), (2, 10), (3, 15), (4, 20), (5, 25),
+                (6, 30), (7, 35), (8, 39), (9, 43), (10, 47),
+                (11, 50), (12, 52), (13, 54), (14, 55), (15, 56),
+                (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)
+            ]
+            
+            for frame_num, center_pos in animation_frames:
+                visible = line[center_pos-4:center_pos+5]
+                display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+                anim_embed.description = f"**{display_line}**"
+                
+                await case_msg.edit(embed=anim_embed)
+                await asyncio.sleep(0.5)
+            
+            # Показываем результат
+            visible = line[52:61]
+            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+            anim_embed.description = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+            
+            await case_msg.edit(embed=anim_embed)
+            await asyncio.sleep(1)
         
         # ===== ОБРАБОТКА ПРИЗА =====
         items_dict = get_user_items(data['item_counts'])
@@ -2737,7 +2806,7 @@ async def fat_case_command(ctx):
         
         has_water = items_dict.get("Стакан воды", 0) > 0
         
-        # Определяем тип приза и обрабатываем
+        # Определяем тип приза
         if prize_value == "autoburger":
             new_autoburger_count += 1
             interval = get_autoburger_interval(new_autoburger_count)
@@ -2757,30 +2826,34 @@ async def fat_case_command(ctx):
             result_color = 0x66ccff
             
         elif isinstance(prize_value, str):
-            # Это предмет из магазина (для Магазинного кейса)
             items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
             result_display = f"🎁 **{prize_value}** {prize_emoji}"
             result_color = 0x9b59b6
-            # Вес не меняется
             
         else:
-            # Это кг (число)
             if has_water and case_to_open != "daily":
                 prize_value = prize_value // 3
             new_number = data['current_number'] + prize_value
             result_display = f"🎉 **{prize_value:+d} кг** {prize_emoji}"
             result_color = 0xffaa00
         
-        result_embed = discord.Embed(
-            title="🎯 **РЕЗУЛЬТАТ** 🎯",
-            description=f"**{display_line}**\n\n**{result_display}**",
-            color=result_color
-        )
-        await case_msg.edit(embed=result_embed)
-        await asyncio.sleep(1.5)
+        # Обновляем данные
+        update_data = {
+            'number': new_number,
+            'user_name': user_name,
+            'autoburger_count': new_autoburger_count,
+            'next_autoburger_time': new_next_autoburger_time,
+            'item_counts': save_user_items(items_dict),
+            'active_case_message_id': None,
+            'active_case_channel_id': None,
+            'last_case_type': None,
+            'last_case_prize': None
+        }
+        
+        update_user_data(guild_id, user_id, **update_data)
         
         # Обновляем ник если изменился вес
-        if isinstance(prize_value, int) and prize_value not in [0] and prize_value not in ["autoburger", "rotten_leg", "water"] and prize_value != 0:
+        if isinstance(prize_value, int) and prize_value != 0:
             try:
                 display_name = member.display_name
                 clean_name = display_name
@@ -2804,25 +2877,6 @@ async def fat_case_command(ctx):
             except:
                 pass
         
-        # Обновляем данные в БД
-        update_data = {
-            'number': new_number,
-            'user_name': user_name,
-            'autoburger_count': new_autoburger_count,
-            'next_autoburger_time': new_next_autoburger_time,
-            'item_counts': save_user_items(items_dict),
-            'active_case_message_id': None,
-            'active_case_channel_id': None
-        }
-        
-        if case_to_open == "daily":
-            update_data['daily_case_last_time'] = datetime.now()
-        
-        if case_to_open != "daily":
-            update_data['cases_dict'] = cases_dict
-        
-        update_user_data(guild_id, user_id, **update_data)
-        
         # ===== ФИНАЛЬНОЕ СООБЩЕНИЕ =====
         rank_name, rank_emoji = get_rank(new_number)
         
@@ -2830,66 +2884,80 @@ async def fat_case_command(ctx):
             final_embed = discord.Embed(
                 title="🍔✨ **А В Т О Б У Р Г Е Р** ✨🍔",
                 description=f"**{member.mention}** выиграл главный приз из **{case['name']}**!",
-                color=0xffaa00
+                color=result_color
             )
-            final_embed.add_field(name="📊 Статистика", 
-                               value=f"Всего автобургеров: **{new_autoburger_count}**\n"
-                                     f"Интервал: **каждые {get_autoburger_interval(new_autoburger_count)} ч**\n"
-                                     f"Бонус: **+{AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100:.1f}%**",
-                               inline=False)
-                               
+            final_embed.add_field(
+                name="📊 Статистика",
+                value=f"Всего автобургеров: **{new_autoburger_count}**\n"
+                      f"Интервал: **каждые {get_autoburger_interval(new_autoburger_count)} ч**\n"
+                      f"Бонус: **+{AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100:.1f}%**",
+                inline=False
+            )
+            
         elif prize_value in ["rotten_leg", "water"]:
             final_embed = discord.Embed(
-                title=f"{case_emoji} Открытие {case['name']}",
+                title=f"{case['emoji']} Открытие {case['name']}",
                 description=f"**{member.mention}** открыл кейс и получил:",
                 color=result_color
             )
             final_embed.add_field(name="🎁 Приз", value=result_display, inline=False)
-            final_embed.add_field(name="📦 Предмет добавлен в инвентарь", 
-                               value=f"Теперь у вас: {items_dict.get(prize_value, 0)} шт", 
-                               inline=False)
-                               
+            final_embed.add_field(
+                name="📦 Предмет добавлен в инвентарь",
+                value=f"Теперь у вас: {items_dict.get(prize_value, 0)} шт",
+                inline=False
+            )
+            
         elif isinstance(prize_value, str):
-            # Предмет из магазина
             final_embed = discord.Embed(
-                title=f"{case_emoji} Открытие {case['name']}",
+                title=f"{case['emoji']} Открытие {case['name']}",
                 description=f"**{member.mention}** открыл кейс и получил предмет!",
                 color=result_color
             )
             final_embed.add_field(name="🎁 Приз", value=result_display, inline=False)
-            final_embed.add_field(name="📦 Предмет добавлен в инвентарь", 
-                               value=f"Теперь у вас: {items_dict.get(prize_value, 0)} шт", 
-                               inline=False)
+            final_embed.add_field(
+                name="📦 Предмет добавлен в инвентарь",
+                value=f"Теперь у вас: {items_dict.get(prize_value, 0)} шт",
+                inline=False
+            )
             
         else:
-            # Обычные кг
             final_embed = discord.Embed(
-                title=f"{case_emoji} Открытие {case['name']}",
+                title=f"{case['emoji']} Открытие {case['name']}",
                 description=f"**{member.mention}** открыл кейс и получил:",
                 color=result_color
             )
-            final_embed.add_field(name="🎁 Приз", value=result_display, inline=False)
+            final_embed.add_field(name="🎁 Приз", value=result_display, inline=True)
             final_embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
             final_embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
         
-        if case_to_open == "daily":
-            final_embed.add_field(name="⏰ Следующий ежедневный кейс", 
-                               value=f"через {actual_case_cooldown} часов", 
-                               inline=False)
+        # Показываем оставшиеся кейсы
+        if case_to_open != "daily":
+            current_data = get_user_data(guild_id, user_id)
+            remaining = current_data.get('cases_dict', {}).get(case_to_open, 0)
+            if remaining > 0:
+                final_embed.add_field(
+                    name="📦 Осталось кейсов",
+                    value=f"{case['emoji']} {case['name']}: {remaining} шт",
+                    inline=False
+                )
         else:
-            remaining_text = "\n".join([f"{CASES[cid]['emoji']} {CASES[cid]['name']}: {count}" 
-                                       for cid, count in cases_dict.items() if count > 0])
-            if remaining_text:
-                final_embed.add_field(name="📦 Осталось кейсов", value=remaining_text, inline=False)
+            final_embed.add_field(
+                name="⏰ Следующий ежедневный кейс",
+                value=f"через {actual_case_cooldown} часов",
+                inline=False
+            )
         
-        final_embed.set_footer(text=f"{case_emoji} Удачи в следующий раз!")
+        final_embed.set_footer(text=f"{case['emoji']} Удачи в следующий раз!")
+        
         await ctx.send(embed=final_embed)
         
     except asyncio.TimeoutError:
+        # Таймаут - удаляем сообщение и очищаем статус
         update_user_data(
             guild_id, user_id,
             active_case_message_id=None,
-            active_case_channel_id=None
+            active_case_channel_id=None,
+            last_case_type=None
         )
         
         try:
@@ -3980,7 +4048,7 @@ async def fat_help(ctx):
         name="🎮 **ОСНОВНЫЕ КОМАНДЫ**",
         value="""
         `!жир` - изменить свой вес
-        `!жиркейс` - открыть кейс (ежедневный или из инвентаря)
+        `!жиркейс` - открыть кейс (ежедневный или из инвентаря) с кнопками открытия и пропуска
         `!жиркейс_шансы` - шансы в ежедневном кейсе
         `!жиротрясы` - таблица рекордов на сервере
         `!жирглобал` - топ серверов по общей массе
@@ -4001,7 +4069,7 @@ async def fat_help(ctx):
         • Победитель забирает ставку
         • Оба должны нажать ✅
         • 30 сек на принятие
-        • Анимированная битва!
+        • Анимированная битва с возможностью пропуска!
         
         **Примеры:**
         `!дуэль @User 100` - дуэль на 100кг
@@ -4014,13 +4082,14 @@ async def fat_help(ctx):
         name="🔧 **АПГРЕЙДЫ**",
         value="""
         `!апгрейд` - улучшить предмет
-        `!выбрать [номер]` - выбрать цель апгрейда
+        `!выбрать [номер]` - выбрать цель апгрейда (с защитой от дюпа)
     
         • Шанс = стоимость текущего предмета / стоимость целевого
         • При успехе предмет заменяется
         • При неудаче предмет исчезает
         • Минимальный шанс: 1%
         • Легендарные предметы доступны от 1000кг
+        • Защита от повторных попыток во время анимации
         """,
         inline=False
     ) 
@@ -4108,11 +4177,12 @@ async def fat_help(ctx):
         • Достигайте 3600кг для первого возвышения
         • Фрукты уменьшают кулдауны - копите их!
         • Снатчер работает раз в 6 часов - проверяйте инвентарь
+        • Для пропуска анимации нажмите ⏩
         """,
         inline=True
     )
     
-    embed.set_footer(text="🔥❄️💰🍔⚡👾 - следите за показателями! | Версия 7.1")
+    embed.set_footer(text="🔥❄️💰🍔⚡👾 - следите за показателями! | Версия 8.0 (с защитой от дюпа)")
     
     try:
         await ctx.send(embed=embed)
@@ -4529,6 +4599,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     await duel_msg.add_reaction("✅")
     await duel_msg.add_reaction("❌")
     
+    # ===== ИСПРАВЛЕНО: Защита от дюпа и отслеживание времени =====
+    current_time = datetime.now()
+    
     update_user_data(
         guild_id, challenger_id,
         duel_active=1,
@@ -4536,7 +4609,8 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         duel_amount=duel_amount,
         duel_message_id=str(duel_msg.id),
         duel_channel_id=str(ctx.channel.id),
-        duel_initiator=1
+        duel_initiator=1,
+        duel_start_time=current_time
     )
     
     update_user_data(
@@ -4546,7 +4620,8 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         duel_amount=duel_amount,
         duel_message_id=str(duel_msg.id),
         duel_channel_id=str(ctx.channel.id),
-        duel_initiator=0
+        duel_initiator=0,
+        duel_start_time=current_time
     )
     
     accepted_users = set()
@@ -4576,9 +4651,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
                 await duel_msg.clear_reactions()
                 
                 update_user_data(guild_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0,
-                               duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                               duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
                 update_user_data(guild_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0,
-                               duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                               duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
                 
                 decline_embed = discord.Embed(
                     title="❌ Дуэль отклонена",
@@ -4645,9 +4720,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         
         # Разблокируем пользователей
         update_user_data(guild_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0,
-                       duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                       duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
         update_user_data(guild_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0,
-                       duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                       duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
         
         # Обновляем ники
         try:
@@ -4690,9 +4765,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         await duel_msg.clear_reactions()
         
         update_user_data(guild_id, challenger_id, duel_active=0, duel_opponent=None, duel_amount=0,
-                       duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                       duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
         update_user_data(guild_id, opponent_id, duel_active=0, duel_opponent=None, duel_amount=0,
-                       duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                       duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
         
         timeout_embed = discord.Embed(
             title="⏰ Время вышло",
@@ -4722,11 +4797,11 @@ async def cancel_duel(ctx):
     
     update_user_data(guild_id, user_id,
                    duel_active=0, duel_opponent=None, duel_amount=0,
-                   duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                   duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
     
     update_user_data(guild_id, duel_info['opponent'],
                    duel_active=0, duel_opponent=None, duel_amount=0,
-                   duel_message_id=None, duel_channel_id=None, duel_initiator=0)
+                   duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
     
     try:
         if duel_info['message_id'] and duel_info['channel_id']:
@@ -5100,7 +5175,7 @@ async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str)
 @bot.command(name='апгрейд')
 async def upgrade_command(ctx, choice: str = None):
     """
-    Улучшает предметы
+    Улучшает предметы с защитой от дюпа
     Использование: !апгрейд [номер предмета]
     """
     guild_id = ctx.guild.id
@@ -5109,6 +5184,18 @@ async def upgrade_command(ctx, choice: str = None):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
+    
+    # ===== ИСПРАВЛЕНО: Проверка активного апгрейда =====
+    if data.get('upgrade_active', 0) == 1:
+        embed = discord.Embed(
+            title="⚠️ Апгрейд уже выполняется",
+            description=f"{member.mention}, у вас уже есть активный апгрейд!\n"
+                       f"Дождитесь его завершения.",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+        return
+    
     items_dict = get_user_items(data['item_counts'])
     
     # Фильтруем предметы, которые есть у пользователя (количество > 0)
@@ -5202,12 +5289,17 @@ async def upgrade_command(ctx, choice: str = None):
         await ctx.send(embed=embed)
         return
     
-    # Сохраняем в данные пользователя выбранный предмет для апгрейда
+    # ===== ИСПРАВЛЕНО: Помечаем апгрейд как активный =====
     update_user_data(
         guild_id, user_id,
         last_command="upgrade_select",
         last_command_target=selected_item["name"],
-        last_command_use_time=datetime.now()
+        last_command_use_time=datetime.now(),
+        upgrade_active=1,
+        upgrade_data=json.dumps({
+            'source_item': selected_item["name"],
+            'source_count': selected_item["count"]
+        })
     )
     
     embed = discord.Embed(
@@ -5251,10 +5343,8 @@ async def upgrade_command(ctx, choice: str = None):
 @bot.command(name='выбрать')
 async def choose_upgrade(ctx, choice: str = None, count: int = 1):
     """
-    Подтверждает выбор для апгрейда
+    Подтверждает выбор для апгрейда с защитой от дюпа
     Использование: !выбрать [номер]
-    Для !апгрейд: выбрать предмет для улучшения
-    Для !апгрейдкг: выбрать цель для улучшения кг
     """
     if not choice:
         await ctx.send("❌ Укажите номер!")
@@ -5267,12 +5357,18 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
     
     data = get_user_data(guild_id, user_id, user_name)
     
-    # Проверяем, что команда была вызвана после !апгрейд или !апгрейдкг
+    # ===== ИСПРАВЛЕНО: Проверяем активность апгрейда =====
+    if data.get('upgrade_active', 0) != 1:
+        await ctx.send("❌ У вас нет активного апгрейда! Сначала используйте `!апгрейд`.")
+        return
+    
     last_command = data.get('last_command')
     last_use = data.get('last_command_use_time')
     
     if not last_command or not last_use:
-        await ctx.send("❌ Сначала используйте `!апгрейд` или `!апгрейдкг` для выбора!")
+        await ctx.send("❌ Ошибка состояния апгрейда!")
+        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, 
+                        last_command_use_time=None, upgrade_active=0, upgrade_data=None)
         return
     
     if isinstance(last_use, str):
@@ -5280,7 +5376,8 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
     
     if datetime.now() - last_use > timedelta(minutes=5):
         await ctx.send("❌ Время ожидания истекло. Используйте команду заново!")
-        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, 
+                        last_command_use_time=None, upgrade_active=0, upgrade_data=None)
         return
     
     # ===== ОБРАБОТКА АПГРЕЙДА КГ =====
@@ -5289,6 +5386,7 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             amount = int(data['last_command_target'])
         except:
             await ctx.send("❌ Ошибка в данных апгрейда!")
+            update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         # Генерируем список ТОЧНО ТАК ЖЕ, как в upgrade_kg_command
@@ -5342,12 +5440,17 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             item_index = int(choice) - 1
             if item_index < 0 or item_index >= len(possible_upgrades):
                 await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+                update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
                 return
         except ValueError:
             await ctx.send("❌ Введите корректный номер!")
+            update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         target_item = possible_upgrades[item_index]
+        
+        # ===== Сбрасываем флаг активности перед анимацией =====
+        update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
         
         # Запускаем анимацию
         await upgrade_kg_animation(ctx, member, amount, target_item)
@@ -5357,42 +5460,52 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
         source_item_name = data.get('last_command_target')
         if not source_item_name:
             await ctx.send("❌ Ошибка: не выбран исходный предмет!")
+            update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         items_dict = get_user_items(data['item_counts'])
         
         if items_dict.get(source_item_name, 0) <= 0:
             await ctx.send(f"❌ У вас больше нет **{source_item_name}** для улучшения!")
-            update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+            update_user_data(guild_id, user_id, last_command=None, last_command_target=None, 
+                            last_command_use_time=None, upgrade_active=0, upgrade_data=None)
             return
         
         possible_upgrades = get_possible_upgrades(source_item_name, items_dict[source_item_name])
         
         if not possible_upgrades:
             await ctx.send("❌ Для этого предмета больше нет доступных улучшений!")
-            update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+            update_user_data(guild_id, user_id, last_command=None, last_command_target=None, 
+                            last_command_use_time=None, upgrade_active=0, upgrade_data=None)
             return
         
         try:
             upgrade_index = int(choice) - 1
             if upgrade_index < 0 or upgrade_index >= len(possible_upgrades):
                 await ctx.send(f"❌ Неверный номер! Введите число от 1 до {len(possible_upgrades)}")
+                update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
                 return
         except (ValueError, TypeError):
             await ctx.send("❌ Введите корректный номер!")
+            update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
             return
         
         target_item = possible_upgrades[upgrade_index]
+        
+        # ===== Сбрасываем флаг активности перед анимацией =====
+        update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None)
+        
         await upgrade_animation(ctx, member, source_item_name, target_item, items_dict[source_item_name])
     
     else:
         await ctx.send("❌ Неизвестный тип апгрейда!")
-        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, last_command_use_time=None)
+        update_user_data(guild_id, user_id, last_command=None, last_command_target=None, 
+                        last_command_use_time=None, upgrade_active=0, upgrade_data=None)
 
 @bot.command(name='апгрейдкг')
 async def upgrade_kg_command(ctx, amount: int):
     """
-    Улучшает кг в предметы (работает как !апгрейд)
+    Улучшает кг в предметы с защитой от дюпа
     Использование: !апгрейдкг [количество кг]
     """
     if amount <= 0:
@@ -5405,6 +5518,17 @@ async def upgrade_kg_command(ctx, amount: int):
     user_name = member.name
     
     data = get_user_data(guild_id, user_id, user_name)
+    
+    # ===== ИСПРАВЛЕНО: Проверка активного апгрейда =====
+    if data.get('upgrade_active', 0) == 1:
+        embed = discord.Embed(
+            title="⚠️ Апгрейд уже выполняется",
+            description=f"{member.mention}, у вас уже есть активный апгрейд!\n"
+                       f"Дождитесь его завершения.",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+        return
     
     if data['current_number'] < amount:
         await ctx.send(f"❌ У вас недостаточно кг! Есть: {data['current_number']} кг, нужно: {amount} кг")
@@ -5477,12 +5601,14 @@ async def upgrade_kg_command(ctx, amount: int):
     # Сортируем по цене
     possible_upgrades.sort(key=lambda x: x["price"])
     
-    # Сохраняем в данные
+    # ===== ИСПРАВЛЕНО: Помечаем апгрейд как активный =====
     update_user_data(
         guild_id, user_id,
         last_command="upgrade_kg_select",
         last_command_target=str(amount),
-        last_command_use_time=datetime.now()
+        last_command_use_time=datetime.now(),
+        upgrade_active=1,
+        upgrade_data=json.dumps({'amount': amount})
     )
     
     # Показываем список
