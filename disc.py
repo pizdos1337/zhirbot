@@ -567,6 +567,7 @@ def add_missing_columns(db_path, existing_columns):
         'upgrade_active': "INTEGER DEFAULT 0",  # Для защиты апгрейдов
         'upgrade_data': "TEXT",  # Данные апгрейда
         'duel_start_time': "TIMESTAMP",  # Время начала дуэли
+        'shadow_upgrade_chance': "INTEGER DEFAULT 0",
     }
     
     for col_name, col_type in required_columns.items():
@@ -2145,6 +2146,14 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
     data = get_user_data(guild_id, user_id, user_name)
     items_dict = get_user_items(data['item_counts'])
     
+    # ===== ТЕНЕВОЙ ШАНС =====
+    shadow_chance = data.get('shadow_upgrade_chance', 0)
+    base_chance = target_item['chance']
+    real_chance = min(base_chance + shadow_chance / 100, 1.0)
+    display_chance = base_chance  # ← Везде показываем ТОЛЬКО базовый!
+    
+    print(f"🎯 Апгрейд (Discord): {member.name} | базовый={base_chance*100:.1f}%, теневой={shadow_chance}%, реальный={real_chance*100:.1f}%")
+    
     # Эмодзи для анимации
     upgrade_emojis = ["🟥", "🟩"]
     
@@ -2153,28 +2162,29 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
     for i in range(100):
         line.append(random.choice(upgrade_emojis))
     
-    # Определяем результат (успех/неудача)
+    # Определяем результат
     roll = random.random()
-    success = roll < target_item['chance']
+    success = roll < real_chance  # ← Используем реальный шанс
     
-    # Ставим результат на 58 место (индекс 57)
     if success:
+        new_shadow = max(0, shadow_chance - 8)  # -8% при успехе
         result_emoji = "🟩"
         result_text = f"✅ **УСПЕХ!** ✅"
         result_color = 0x00ff00
     else:
+        new_shadow = min(32, shadow_chance + 4)  # +4% при неудаче (макс 32)
         result_emoji = "🟥"
         result_text = f"❌ **НЕУДАЧА!** ❌"
         result_color = 0xff0000
     
     line[57] = result_emoji
     
-    # Embed для анимации
+    # Embed для анимации (показываем ТОЛЬКО базовый шанс!)
     anim_embed = discord.Embed(
         title="🔧 **АПГРЕЙД** 🔧",
         description=f"**{member.display_name}** улучшает:\n"
                    f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n"
-                   f"Шанс: **{target_item['chance']*100:.1f}%**",
+                   f"Шанс: **{display_chance*100:.1f}%**",  # ← Только базовый!
         color=0xff5500
     )
     
@@ -2196,14 +2206,13 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
         anim_embed.description = f"**{member.display_name}** улучшает:\n" \
                                  f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n" \
                                  f"**{display_line}**\n\n" \
-                                 f"Шанс: **{target_item['chance']*100:.1f}%**"
+                                 f"Шанс: **{display_chance*100:.1f}%**"  # ← Везде базовый!
         
         await upgrade_msg.edit(embed=anim_embed)
         await asyncio.sleep(0.5)
     
     # Обрабатываем результат
     if success:
-        # Успех - заменяем предмет
         items_dict[source_item] -= 1
         if items_dict[source_item] <= 0:
             del items_dict[source_item]
@@ -2213,9 +2222,7 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
         result_description = f"✅ **Поздравляем!**\n\n" \
                             f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n" \
                             f"Предмет успешно улучшен!"
-        
     else:
-        # Неудача - предмет исчезает
         items_dict[source_item] -= 1
         if items_dict[source_item] <= 0:
             del items_dict[source_item]
@@ -2223,19 +2230,20 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count):
         result_description = f"❌ **Неудача!**\n\n" \
                             f"{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** был утерян в процессе улучшения!"
     
-    # Обновляем данные в БД
+    # Обновляем данные в БД (включая теневой шанс)
     update_user_data(
         guild_id, user_id,
-        item_counts=save_user_items(items_dict)
+        item_counts=save_user_items(items_dict),
+        shadow_upgrade_chance=new_shadow  # ← Сохраняем новый теневой шанс
     )
     
-    # Показываем результат
+    # Показываем результат (всё ещё с базовым шансом!)
     result_embed = discord.Embed(
         title="🔧 **РЕЗУЛЬТАТ АПГРЕЙДА** 🔧",
         description=f"**{display_line}**\n\n{result_text}\n\n{result_description}",
         color=result_color
     )
-    result_embed.set_footer(text=f"Шанс был: {target_item['chance']*100:.1f}%")
+    result_embed.set_footer(text=f"Шанс был: {display_chance*100:.1f}%")  # ← Только базовый!
     
     await upgrade_msg.edit(embed=result_embed)
 
@@ -2259,6 +2267,14 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
     
     data = get_user_data(guild_id, user_id, user_name)
     
+    # ===== ТЕНЕВОЙ ШАНС =====
+    shadow_chance = data.get('shadow_upgrade_chance', 0)
+    base_chance = target_item['chance']
+    real_chance = min(base_chance + shadow_chance / 100, 1.0)
+    display_chance = base_chance  # ← Только базовый для отображения!
+    
+    print(f"🎯 Апгрейд кг (Discord): {member.name} | базовый={base_chance*100:.1f}%, теневой={shadow_chance}%, реальный={real_chance*100:.1f}%")
+    
     # Эмодзи для анимации
     upgrade_emojis = ["🟥", "🟩"]
     
@@ -2267,28 +2283,29 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
     for i in range(100):
         line.append(random.choice(upgrade_emojis))
     
-    # Определяем результат (успех/неудача)
+    # Определяем результат
     roll = random.random()
-    success = roll < target_item['chance']
+    success = roll < real_chance  # ← Реальный шанс с учётом теневого
     
-    # Ставим результат на 58 место
     if success:
+        new_shadow = max(0, shadow_chance - 8)  # -8% при успехе
         result_emoji = "🟩"
         result_text = f"✅ **УСПЕХ!** ✅"
         result_color = 0x00ff00
     else:
+        new_shadow = min(32, shadow_chance + 4)  # +4% при неудаче
         result_emoji = "🟥"
         result_text = f"❌ **НЕУДАЧА!** ❌"
         result_color = 0xff0000
     
     line[57] = result_emoji
     
-    # Embed для анимации
+    # Embed для анимации (только базовый шанс!)
     anim_embed = discord.Embed(
         title="💱 **АПГРЕЙД КГ** 💱",
         description=f"**{member.display_name}** улучшает {amount} кг в:\n"
                    f"{target_item['emoji']} **{target_item['name']}**\n\n"
-                   f"Шанс: **{target_item['chance']*100:.1f}%**",
+                   f"Шанс: **{display_chance*100:.1f}%**",  # ← Только базовый!
         color=0xff5500
     )
     
@@ -2310,7 +2327,7 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
         anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n" \
                                  f"{target_item['emoji']} **{target_item['name']}**\n\n" \
                                  f"**{display_line}**\n\n" \
-                                 f"Шанс: **{target_item['chance']*100:.1f}%**"
+                                 f"Шанс: **{display_chance*100:.1f}%**"  # ← Везде базовый!
         
         await upgrade_msg.edit(embed=anim_embed)
         await asyncio.sleep(0.5)
@@ -2319,7 +2336,6 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
     new_number = data['current_number']
     
     if success:
-        # УСПЕХ: списываем ВСЕ amount, добавляем предмет
         new_number = data['current_number'] - amount
         
         if target_item.get("is_case", False):
@@ -2330,7 +2346,8 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
                 number=new_number,
                 cases_dict=cases_dict,
                 last_command=None,
-                last_command_use_time=None
+                last_command_use_time=None,
+                shadow_upgrade_chance=new_shadow
             )
             result_description = f"✅ **Поздравляем!**\n\n" \
                                 f"{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\n" \
@@ -2343,19 +2360,20 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
                 number=new_number,
                 item_counts=save_user_items(items_dict),
                 last_command=None,
-                last_command_use_time=None
+                last_command_use_time=None,
+                shadow_upgrade_chance=new_shadow
             )
             result_description = f"✅ **Поздравляем!**\n\n" \
                                 f"{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\n" \
                                 f"Предмет успешно получен! Потрачено: {amount} кг"
     else:
-        # НЕУДАЧА: списываем ВСЕ amount, предмет не получаем
         new_number = data['current_number'] - amount
         update_user_data(
             guild_id, user_id,
             number=new_number,
             last_command=None,
-            last_command_use_time=None
+            last_command_use_time=None,
+            shadow_upgrade_chance=new_shadow
         )
         result_description = f"❌ **Неудача!**\n\n" \
                             f"{amount} кг сгорели в процессе улучшения!"
@@ -2384,16 +2402,15 @@ async def upgrade_kg_animation(ctx, member, amount, target_item):
     except:
         pass
     
-    # Показываем результат
+    # Показываем результат (с базовым шансом!)
     result_embed = discord.Embed(
         title="💱 **РЕЗУЛЬТАТ АПГРЕЙДА** 💱",
         description=f"**{display_line}**\n\n{result_text}\n\n{result_description}",
         color=result_color
     )
-    result_embed.set_footer(text=f"Шанс был: {target_item['chance']*100:.1f}%")
+    result_embed.set_footer(text=f"Шанс был: {display_chance*100:.1f}%")  # ← Только базовый!
     
     await upgrade_msg.edit(embed=result_embed)
-
 # ===== ОСНОВНЫЕ КОМАНДЫ =====
 
 @bot.command(name='жир')
