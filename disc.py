@@ -4528,7 +4528,215 @@ async def global_leaderboard(ctx):
     embed.set_footer(text="🏆 Топ-10 серверов")
     
     await ctx.send(embed=embed)
-
+    
+@bot.command(name='продать')
+async def sell_command(ctx, *, args: str = None):
+    """Продажа предметов из инвентаря за 70% стоимости"""
+    
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    if not args:
+        embed = discord.Embed(
+            title="❌ Использование",
+            description="`!продать [название предмета] [количество]`\n"
+                       "`!продать всё` - продать всё сразу\n\n"
+                       "💰 **Цена продажи: 70% от стоимости предмета**",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    items_dict = get_user_items(data['item_counts'])
+    
+    # Продажа всего
+    if args.lower() == "всё" or args.lower() == "все":
+        if not items_dict:
+            embed = discord.Embed(
+                title="📭 Пусто",
+                description="У вас нет предметов для продажи!",
+                color=0xffaa00
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        total_gain = 0
+        sold_items = []
+        
+        for item_name, count in list(items_dict.items()):
+            price = get_item_price(item_name)
+            if price > 0:
+                sell_price = int(price * 0.7)
+                item_gain = sell_price * count
+                total_gain += item_gain
+                sold_items.append(f"{item_name} x{count} — {item_gain} кг")
+                del items_dict[item_name]
+        
+        if total_gain == 0:
+            embed = discord.Embed(
+                title="❌ Нельзя продать",
+                description="Ни один из ваших предметов нельзя продать!",
+                color=0xff0000
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        new_number = data['current_number'] + total_gain
+        update_user_data(guild_id, user_id, number=new_number, item_counts=save_user_items(items_dict))
+        
+        # Обновляем ник
+        try:
+            display_name = member.display_name
+            clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
+            new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
+            if len(new_nick) > 32:
+                new_nick = new_nick[:32]
+            await member.edit(nick=new_nick)
+        except:
+            pass
+        
+        embed = discord.Embed(
+            title="💰 Продажа всех предметов",
+            description=f"**{member.mention}** продал всё!",
+            color=0x00ff00
+        )
+        
+        sold_text = "\n".join(sold_items[:10])
+        if len(sold_items) > 10:
+            sold_text += f"\n... и ещё {len(sold_items) - 10} предметов"
+        
+        embed.add_field(name="📦 Продано", value=sold_text, inline=False)
+        embed.add_field(name="💸 Получено", value=f"{total_gain} кг", inline=True)
+        embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
+        
+        await ctx.send(embed=embed)
+        return
+    
+    # Парсим аргументы для конкретного предмета
+    parts = args.split()
+    
+    if len(parts) == 1:
+        # Только название, без количества
+        item_name = parts[0]
+        amount = 1
+    else:
+        # Пытаемся определить количество
+        try:
+            amount = int(parts[-1])
+            item_name = ' '.join(parts[:-1])
+        except ValueError:
+            # Если последнее не число - значит всё название
+            item_name = args
+            amount = 1
+    
+    if amount <= 0:
+        embed = discord.Embed(
+            title="❌ Ошибка",
+            description="Количество должно быть больше 0!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Ищем предмет в инвентаре
+    found_item = None
+    for key in items_dict.keys():
+        if key.lower() == item_name.lower():
+            found_item = key
+            break
+    
+    if not found_item:
+        # Ищем частичное совпадение
+        for key in items_dict.keys():
+            if item_name.lower() in key.lower():
+                found_item = key
+                break
+    
+    if not found_item:
+        if items_dict:
+            items_list = "\n".join([f"• {item}: {count} шт" for item, count in list(items_dict.items())[:10]])
+            if len(items_dict) > 10:
+                items_list += f"\n... и ещё {len(items_dict) - 10} предметов"
+            
+            embed = discord.Embed(
+                title="❌ Предмет не найден",
+                description=f"У вас нет предмета '{item_name}'!\n\n📦 **Ваши предметы:**\n{items_list}",
+                color=0xff0000
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Пусто",
+                description="У вас нет предметов в инвентаре!",
+                color=0xff0000
+            )
+        await ctx.send(embed=embed)
+        return
+    
+    if items_dict[found_item] < amount:
+        embed = discord.Embed(
+            title="❌ Недостаточно",
+            description=f"У вас недостаточно '{found_item}'! Есть: {items_dict[found_item]}, нужно: {amount}",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Получаем цену
+    price = get_item_price(found_item)
+    if price == 0:
+        embed = discord.Embed(
+            title="❌ Нельзя продать",
+            description=f"Предмет '{found_item}' нельзя продать (нет цены)!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Рассчитываем цену продажи
+    sell_price = int(price * 0.7)
+    total_gain = sell_price * amount
+    
+    # Обновляем инвентарь
+    items_dict[found_item] -= amount
+    if items_dict[found_item] <= 0:
+        del items_dict[found_item]
+    
+    # Обновляем вес
+    new_number = data['current_number'] + total_gain
+    
+    update_user_data(guild_id, user_id, number=new_number, item_counts=save_user_items(items_dict))
+    
+    # Обновляем ник
+    try:
+        display_name = member.display_name
+        clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
+        new_nick = format_nick_with_icon(new_number, clean_name, data['legendary_burger'])
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        await member.edit(nick=new_nick)
+    except:
+        pass
+    
+    embed = discord.Embed(
+        title="💰 Продажа предмета",
+        description=f"**{member.mention}** продал предмет!",
+        color=0x00ff00
+    )
+    
+    embed.add_field(name="📦 Предмет", value=f"{found_item} x{amount}", inline=True)
+    embed.add_field(name="💎 Цена за шт", value=f"{price} кг", inline=True)
+    embed.add_field(name="🏷️ Цена продажи", value=f"{sell_price} кг/шт (70%)", inline=True)
+    embed.add_field(name="💸 Всего получено", value=f"{total_gain} кг", inline=True)
+    embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
+    
+    if found_item in items_dict:
+        embed.add_field(name="📦 Осталось", value=f"{items_dict[found_item]} шт", inline=True)
+    
+    await ctx.send(embed=embed)
+    
 @bot.command(name='дуэль')
 async def duel_command(ctx, opponent: discord.Member, amount: str = None):
     """
