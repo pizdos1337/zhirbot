@@ -4451,10 +4451,10 @@ async def fat_info(ctx, member: discord.Member = None):
     case_cd_upgrade = data.get('case_cd_upgrade', 0)
     
     # Базовый кулдаун в минутах
-    base_fat_cd_minutes = COOLDOWN_HOURS * 60  # 60 минут
-    base_case_cd_minutes = CASE_COOLDOWN_HOURS * 60  # 1440 минут (24 часа)
+    base_fat_cd_minutes = COOLDOWN_HOURS * 60
+    base_case_cd_minutes = CASE_COOLDOWN_HOURS * 60
     
-    # Вычитаем улучшения (1 минута за уровень для !жир, 20 минут за уровень для кейса)
+    # Вычитаем улучшения
     fat_cd_minutes = max(1, base_fat_cd_minutes - get_fat_cd_reduction(fat_cd_upgrade))
     case_cd_minutes = max(1, base_case_cd_minutes - get_case_cd_reduction(case_cd_upgrade))
     
@@ -4462,33 +4462,54 @@ async def fat_info(ctx, member: discord.Member = None):
     items_dict = get_user_items(data['item_counts'])
     for item_name, count in items_dict.items():
         if item_name == "Яблоко":
-            fat_cd_minutes *= (1 - count * 0.05)
+            fat_cd_minutes = max(1, int(fat_cd_minutes * (1 - count * 0.05)))
         elif item_name == "Золотое Яблоко":
-            fat_cd_minutes *= (1 - count * 0.10)
+            fat_cd_minutes = max(1, int(fat_cd_minutes * (1 - count * 0.10)))
         elif item_name == "Апельсин":
-            case_cd_minutes *= (1 - count * 0.05)
+            case_cd_minutes = max(1, int(case_cd_minutes * (1 - count * 0.05)))
         elif item_name == "Золотой Апельсин":
-            case_cd_minutes *= (1 - count * 0.10)
+            case_cd_minutes = max(1, int(case_cd_minutes * (1 - count * 0.10)))
     
-    fat_cd_minutes = max(1, int(fat_cd_minutes))
-    case_cd_minutes = max(1, int(case_cd_minutes))
+    # Проверяем доступность команд (сравниваем с last_command_time)
+    fat_can_use = True
+    fat_remaining = 0
+    if data.get('fat_cooldown_time'):
+        last_time = data['fat_cooldown_time']
+        if isinstance(last_time, str):
+            last_time = datetime.fromisoformat(last_time)
+        time_diff = datetime.now() - last_time
+        cooldown_seconds = fat_cd_minutes * 60
+        if time_diff.total_seconds() < cooldown_seconds:
+            fat_can_use = False
+            fat_remaining = cooldown_seconds - time_diff.total_seconds()
     
-    # Проверяем доступность команд
-    fat_can_use, fat_remaining = check_cooldown(data['fat_cooldown_time'], fat_cd_minutes / 60)
-    case_can_use, case_remaining = check_cooldown(data['last_case_time'], case_cd_minutes / 60)
+    case_can_use = True
+    case_remaining = 0
+    if data.get('last_case_time'):
+        last_time = data['last_case_time']
+        if isinstance(last_time, str):
+            last_time = datetime.fromisoformat(last_time)
+        time_diff = datetime.now() - last_time
+        cooldown_seconds = case_cd_minutes * 60
+        if time_diff.total_seconds() < cooldown_seconds:
+            case_can_use = False
+            case_remaining = cooldown_seconds - time_diff.total_seconds()
+    
+    # Также проверяем ежедневный кейс через отдельную функцию
+    if case_can_use:
+        can_get, _ = can_get_daily_case(guild_id, user_id, case_cd_minutes / 60)
+        if not can_get:
+            case_can_use = False
+            _, case_remaining = can_get_daily_case(guild_id, user_id, case_cd_minutes / 60)
     
     # Пассивный доход
     total_passive_income = 0
-    income_details = []
-    
     for item_name, count in items_dict.items():
         for shop_item in SHOP_ITEMS:
             if shop_item["name"] == item_name:
                 gain = shop_item.get("gain_per_24h", 0)
                 if gain > 0:
-                    item_total = gain * count
-                    total_passive_income += item_total
-                    income_details.append(f"{item_name} x{count}: +{item_total} кг/24ч")
+                    total_passive_income += gain * count
                 break
     
     income_bonus = get_income_bonus(data.get('income_upgrade', 0))
@@ -4535,16 +4556,6 @@ async def fat_info(ctx, member: discord.Member = None):
         case_status = f"⏳ Через {format_time(case_remaining)} (КД {case_cd_minutes // 60} ч {case_cd_minutes % 60} мин)"
     
     embed.add_field(name="⏰ Кулдауны", value=f"**!жир:** {fat_status}\n**!жиркейс:** {case_status}", inline=False)
-    
-    # Инвентарь (кратко)
-    cases_dict = data.get('cases_dict', {})
-    cases_text = ""
-    for case_id, count in cases_dict.items():
-        if count > 0:
-            cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
-    
-    if cases_text:
-        embed.add_field(name="📦 Кейсы", value=cases_text[:900], inline=False)
     
     # Улучшения
     upgrades_text = ""
