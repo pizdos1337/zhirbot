@@ -4446,27 +4446,38 @@ async def fat_info(ctx, member: discord.Member = None):
     
     rank_name, rank_emoji = get_rank(data['current_number'])
     
+    # Получаем улучшения
     fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
     case_cd_upgrade = data.get('case_cd_upgrade', 0)
     
-    actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
-    actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(case_cd_upgrade)) / 60
+    # Базовый кулдаун в минутах
+    base_fat_cd_minutes = COOLDOWN_HOURS * 60  # 60 минут
+    base_case_cd_minutes = CASE_COOLDOWN_HOURS * 60  # 1440 минут (24 часа)
     
+    # Вычитаем улучшения (1 минута за уровень для !жир, 20 минут за уровень для кейса)
+    fat_cd_minutes = max(1, base_fat_cd_minutes - get_fat_cd_reduction(fat_cd_upgrade))
+    case_cd_minutes = max(1, base_case_cd_minutes - get_case_cd_reduction(case_cd_upgrade))
+    
+    # Применяем эффекты предметов
     items_dict = get_user_items(data['item_counts'])
-    
     for item_name, count in items_dict.items():
         if item_name == "Яблоко":
-            actual_fat_cooldown *= (1 - count * 0.05)
+            fat_cd_minutes *= (1 - count * 0.05)
         elif item_name == "Золотое Яблоко":
-            actual_fat_cooldown *= (1 - count * 0.10)
+            fat_cd_minutes *= (1 - count * 0.10)
         elif item_name == "Апельсин":
-            actual_case_cooldown *= (1 - count * 0.05)
+            case_cd_minutes *= (1 - count * 0.05)
         elif item_name == "Золотой Апельсин":
-            actual_case_cooldown *= (1 - count * 0.10)
+            case_cd_minutes *= (1 - count * 0.10)
     
-    actual_fat_cooldown = max(0.1, actual_fat_cooldown)
-    actual_case_cooldown = max(1, int(actual_case_cooldown))
+    fat_cd_minutes = max(1, int(fat_cd_minutes))
+    case_cd_minutes = max(1, int(case_cd_minutes))
     
+    # Проверяем доступность команд
+    fat_can_use, fat_remaining = check_cooldown(data['fat_cooldown_time'], fat_cd_minutes / 60)
+    case_can_use, case_remaining = check_cooldown(data['last_case_time'], case_cd_minutes / 60)
+    
+    # Пассивный доход
     total_passive_income = 0
     income_details = []
     
@@ -4484,16 +4495,17 @@ async def fat_info(ctx, member: discord.Member = None):
     prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
     total_passive_income = int(total_passive_income * income_bonus * prestige_bonus)
     
+    # Опыт и уровень
     total_xp = data.get('user_xp', 0)
     level, current_xp = get_level_and_xp(total_xp)
     next_level_xp = get_xp_for_next_level(level)
     
     embed = discord.Embed(
-        title=f"🍔 Информация о {target.display_name} на сервере {ctx.guild.name}",
+        title=f"🍔 Информация о {target.display_name}",
         color=0x00ff00
     )
     
-    embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
+    embed.add_field(name="🍖 Текущий вес", value=f"{data['current_number']}kg", inline=True)
     embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
     embed.add_field(name="⭐ Уровень", value=f"{level} (опыт: {current_xp}/{next_level_xp})", inline=True)
     embed.add_field(name="🌟 Престиж", value=str(data.get('prestige', 0)), inline=True)
@@ -4511,6 +4523,20 @@ async def fat_info(ctx, member: discord.Member = None):
         interval = get_autoburger_interval(data['autoburger_count'])
         embed.add_field(name="🍔 Автобургеры", value=f"{data['autoburger_count']} шт (каждые {interval} ч)", inline=True)
     
+    # Кулдауны
+    if fat_can_use:
+        fat_status = f"✅ Доступна (КД {fat_cd_minutes} мин)"
+    else:
+        fat_status = f"⏳ Через {format_time(fat_remaining)} (КД {fat_cd_minutes} мин)"
+    
+    if case_can_use:
+        case_status = f"✅ Доступен (КД {case_cd_minutes // 60} ч {case_cd_minutes % 60} мин)"
+    else:
+        case_status = f"⏳ Через {format_time(case_remaining)} (КД {case_cd_minutes // 60} ч {case_cd_minutes % 60} мин)"
+    
+    embed.add_field(name="⏰ Кулдауны", value=f"**!жир:** {fat_status}\n**!жиркейс:** {case_status}", inline=False)
+    
+    # Инвентарь (кратко)
     cases_dict = data.get('cases_dict', {})
     cases_text = ""
     for case_id, count in cases_dict.items():
@@ -4518,24 +4544,26 @@ async def fat_info(ctx, member: discord.Member = None):
             cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
     
     if cases_text:
-        embed.add_field(name="📦 Кейсы", value=cases_text, inline=True)
+        embed.add_field(name="📦 Кейсы", value=cases_text[:900], inline=False)
     
-    can_use, remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
-    if can_use:
-        cooldown_status = f"✅ !жир доступен (КД {actual_fat_cooldown*60:.0f} мин)"
-    else:
-        cooldown_status = f"⏳ !жир через {format_time(remaining)}"
+    # Улучшения
+    upgrades_text = ""
+    if fat_cd_upgrade > 0:
+        upgrades_text += f"⏰ КД !жир: -{get_fat_cd_reduction(fat_cd_upgrade)} мин (ур.{fat_cd_upgrade})\n"
+    if case_cd_upgrade > 0:
+        upgrades_text += f"📦 КД кейса: -{get_case_cd_reduction(case_cd_upgrade)} мин (ур.{case_cd_upgrade})\n"
+    if data.get('luck_upgrade', 0) > 0:
+        upgrades_text += f"🍀 Удача: +{get_luck_bonus(data.get('luck_upgrade', 0)):.2f}% (ур.{data.get('luck_upgrade', 0)})\n"
+    if data.get('income_upgrade', 0) > 0:
+        upgrades_text += f"📈 Прибавка: +{(income_bonus-1)*100:.0f}% (ур.{data.get('income_upgrade', 0)})\n"
     
-    can_use_case, case_remaining = check_cooldown(data['last_case_time'], actual_case_cooldown)
-    if can_use_case:
-        case_status = f"✅ !жиркейс доступен (КД {actual_case_cooldown:.0f} ч)"
-    else:
-        case_status = f"⏳ !жиркейс через {format_time(case_remaining)}"
+    if upgrades_text:
+        embed.add_field(name="⚡ Активные улучшения", value=upgrades_text, inline=False)
     
-    embed.add_field(name="Команды", value=f"{cooldown_status}\n{case_status}", inline=False)
+    embed.set_footer(text="💪 Продолжайте набирать массу!")
     
     await ctx.send(embed=embed)
-
+    
 @bot.command(name='жир_звания')
 async def show_ranks(ctx):
     embed = discord.Embed(
