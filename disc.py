@@ -2547,20 +2547,26 @@ async def fat_command(ctx):
         data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
         data['autoburger_count'], data.get('luck_upgrade', 0), total_bonus, items_dict, data['current_number'])
     
-    new_number = data['current_number'] + change
+    # ВРЕМЕННО сохраняем вес без награды за уровень
+    temp_number = data['current_number'] + change
     
-    update_data = {
-        'number': new_number,
-        'user_name': user_name,
-        'consecutive_plus': new_consecutive_plus,
-        'consecutive_minus': new_consecutive_minus,
-        'jackpot_pity': new_jackpot_pity,
-        'fat_cooldown_time': datetime.now()
-    }
+    # Сначала обновляем вес от команды !жир
+    update_user_data(guild_id, user_id, number=temp_number)
     
-    update_user_data(guild_id, user_id, **update_data)
-    
+    # Теперь начисляем опыт (он добавит награду за уровень поверх текущего веса)
     levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, 30)
+    
+    # Получаем финальный вес
+    final_data = get_user_data(guild_id, user_id, user_name)
+    final_number = final_data['current_number']
+    
+    # Обновляем остальные поля (не number!)
+    update_user_data(guild_id, user_id,
+                    user_name=user_name,
+                    consecutive_plus=new_consecutive_plus,
+                    consecutive_minus=new_consecutive_minus,
+                    jackpot_pity=new_jackpot_pity,
+                    fat_cooldown_time=datetime.now())
     
     try:
         display_name = member.display_name
@@ -2577,7 +2583,7 @@ async def fat_command(ctx):
         if not clean_name or len(clean_name) > 30:
             clean_name = user_name
         
-        new_nick = format_nick_with_prestige(data.get('prestige', 0), new_number, clean_name)
+        new_nick = format_nick_with_prestige(data.get('prestige', 0), final_number, clean_name)
         if len(new_nick) > 32:
             new_nick = new_nick[:32]
         
@@ -2585,17 +2591,17 @@ async def fat_command(ctx):
     except:
         pass
     
-    rank_name, rank_emoji = get_rank(new_number)
+    rank_name, rank_emoji = get_rank(final_number)
     
     if was_jackpot:
         embed_color = 0xffd700
         embed_title = "💰 ДЖЕКПОТ! 💰"
     else:
-        embed_color = 0xff9933 if new_number >= 0 else 0x66ccff
+        embed_color = 0xff9933 if final_number >= 0 else 0x66ccff
         embed_title = "🍔 Набор массы"
     
     embed = discord.Embed(title=embed_title, 
-                         description=f"**{member.mention}** теперь весит **{abs(new_number)}kg** на сервере **{ctx.guild.name}**!", 
+                         description=f"**{member.mention}** теперь весит **{abs(final_number)}kg** на сервере **{ctx.guild.name}**!", 
                          color=embed_color)
     
     if was_jackpot:
@@ -2607,12 +2613,12 @@ async def fat_command(ctx):
     else:
         embed.add_field(name="⚖️ Изменение", value="0 кг", inline=True)
     
-    embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
+    embed.add_field(name="🍖 Текущий вес", value=f"{final_number}kg", inline=True)
     embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
     
     if levels_gained > 0:
         embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", 
-                       value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь вы {new_level} уровень!", 
+                       value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", 
                        inline=False)
     
     if data['autoburger_count'] > 0:
