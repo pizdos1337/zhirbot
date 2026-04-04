@@ -538,9 +538,20 @@ def add_missing_columns(db_path, existing_columns):
     for col_name, col_type in required_columns.items():
         if col_name not in existing_columns:
             try:
+                print(f"📦 Добавляю колонку {col_name}")
                 cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} {col_type}")
-            except:
-                pass
+            except Exception as e:
+                print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
+    
+    # Проверяем и добавляем колонки для кейсов
+    for case_id in CASES.keys():
+        if case_id != "daily":
+            col_name = f"case_{case_id}_count"
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} INTEGER DEFAULT 0")
+                except:
+                    pass
     
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shop'")
     if not cursor.fetchone():
