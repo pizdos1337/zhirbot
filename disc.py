@@ -1385,11 +1385,13 @@ async def upgrade_user_command(ctx):
         income_bonus = get_income_bonus(income_level)
         auto_fat_interval = get_auto_fat_interval(auto_fat_level)
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
+        
         embed = discord.Embed(title=f"⭐ **ПРОКАЧКА ПЕРСОНАЖА** ⭐", description=f"**{member.display_name}**\n\nВыберите характеристику для улучшения, нажав на реакцию ниже:\n🟢 - доступно | 🔴 - недостаточно кг", color=0xffaa00)
         xp_bar_length = 20
         xp_progress = int((current_xp / next_level_xp) * xp_bar_length) if next_level_xp > 0 else 0
         xp_bar = "█" * xp_progress + "░" * (xp_bar_length - xp_progress)
         embed.add_field(name="📊 **УРОВЕНЬ И ОПЫТ**", value=f"Уровень: **{level}**\nОпыт: {current_xp} / {next_level_xp}\n`{xp_bar}`\nВсего опыта: {total_xp}", inline=False)
+        
         stats_text = ""
         fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
         stats_text += f"{fat_cd_color} **⏰ КД !жир** — ур.{fat_cd_level} (-{fat_cd_bonus} мин)\n   Стоимость: `{fat_cd_cost} кг`\n\n"
@@ -1403,8 +1405,9 @@ async def upgrade_user_command(ctx):
         stats_text += f"{prestige_color} **🌟 Престиж** — ур.{prestige_level} (+{(prestige_bonus-1)*100:.0f}% ко всему, +{prestige_level}% к шансам)\n   Стоимость: `{prestige_cost} кг`\n\n"
         auto_fat_color = "🟢" if data['current_number'] >= auto_fat_cost else "🔴"
         stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
+        
         embed.add_field(name="⚡ **ХАРАКТЕРИСТИКИ**", value=stats_text, inline=False)
-        embed.add_field(name="💡 **ЧТО ДАЁТ**", value="• **КД !жир** — уменьшает время ожидания команды\n• **КД кейса** — уменьшает время ожидания бесплатного кейса\n• **Удача** — повышает шанс редких предметов в кейсах (+0.25%/ур) и шанс апгрейдов (+0.5%/ур)\n• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов (+5%/ур)\n• **Престиж** — сбрасывает всё, но даёт +10% ко всем кг и +1% к шансам за уровень\n• **Авто-жир** — автоматически использует !жир каждые 6/3/1 час(ов)", inline=False)
+        embed.add_field(name="💡 **ЧТО ДАЁТ**", value="• **КД !жир** — уменьшает время ожидания команды\n• **КД кейса** — уменьшает время ожидания бесплатного кейса\n• **Удача** — повышает шанс редких предметов в кейсах (+0.25%/ур) и шанс апгрейдов (+0.5%/ур)\n• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов (+5%/ур)\n• **Престиж** — сбрасывает вес и улучшения, но даёт +10% ко всем кг и +1% к шансам за уровень (опыт и уровень сохраняются)\n• **Авто-жир** — автоматически использует !жир каждые 6/3/1 час(ов)", inline=False)
         embed.set_footer(text="💰 Для улучшения нажмите на соответствующую реакцию")
         return embed
     
@@ -1427,6 +1430,7 @@ async def upgrade_user_command(ctx):
                 continue
             upgrade_type = upgrade_map[selected]
             current_data = get_user_data(guild_id, user_id, user_name)
+            
             if upgrade_type == "fat_cd":
                 current_level = current_data.get('fat_cd_upgrade', 0)
                 cost = get_upgrade_cost("fat_cd", current_level)
@@ -1451,24 +1455,65 @@ async def upgrade_user_command(ctx):
                     await temp_msg.delete()
                     continue
                 cost = get_upgrade_cost("auto_fat", current_level)
+            
             if current_data['current_number'] < cost:
                 error_embed = discord.Embed(title="❌ Недостаточно кг!", description=f"Для улучшения нужно **{cost} кг**, у вас: **{current_data['current_number']} кг**", color=0xff0000)
                 temp_msg = await ctx.send(embed=error_embed)
                 await asyncio.sleep(2)
                 await temp_msg.delete()
                 continue
+            
+            # ===== ПРЕСТИЖ =====
             if upgrade_type == "prestige":
-                confirm_embed = discord.Embed(title="⚠️ **ПРЕСТИЖ** ⚠️", description=f"{member.mention}, вы уверены, что хотите получить престиж?\n\n**Это действие НЕОБРАТИМО!**\n• Вес сбросится до 0\n• Все предметы и кейсы исчезнут\n• Все улучшения обнулятся\n• Останется только +1 уровень престижа\n\nНапишите `да` в течение 15 секунд для подтверждения.", color=0xff5500)
+                confirm_embed = discord.Embed(
+                    title="⚠️ **ПРЕСТИЖ** ⚠️",
+                    description=f"{member.mention}, вы уверены, что хотите получить престиж?\n\n"
+                               f"**Это действие НЕОБРАТИМО!**\n"
+                               f"• Вес сбросится до 0\n"
+                               f"• Все предметы и кейсы исчезнут\n"
+                               f"• Все улучшения (КД, удача, прибавка, авто-жир) обнулятся\n"
+                               f"• Опыт и уровень сохранятся\n"
+                               f"• Останется только +1 уровень престижа\n\n"
+                               f"Напишите `да` в течение 15 секунд для подтверждения.",
+                    color=0xff5500
+                )
                 await ctx.send(embed=confirm_embed)
+                
                 def confirm_check(m):
                     return m.author == ctx.author and m.content.lower() == "да"
+                
                 try:
                     await bot.wait_for('message', timeout=15.0, check=confirm_check)
                 except asyncio.TimeoutError:
                     await ctx.send("❌ Престиж отменён.")
                     continue
+                
                 new_prestige = current_level + 1
-                update_user_data(guild_id, user_id, current_number=0, item_counts='{}', cases_dict={}, fat_cd_upgrade=0, case_cd_upgrade=0, luck_upgrade=0, income_upgrade=0, prestige=new_prestige, auto_fat_level=0, next_auto_fat_time=None, user_xp=0, user_level=0, consecutive_plus=0, consecutive_minus=0, jackpot_pity=0, shadow_upgrade_chance=0)
+                
+                # Сохраняем опыт и уровень (НЕ СБРАСЫВАЕМ)
+                current_xp = current_data.get('user_xp', 0)
+                current_user_level = current_data.get('user_level', 0)
+                
+                update_user_data(
+                    guild_id, user_id,
+                    current_number=0,
+                    item_counts='{}',
+                    cases_dict={},
+                    fat_cd_upgrade=0,
+                    case_cd_upgrade=0,
+                    luck_upgrade=0,
+                    income_upgrade=0,
+                    auto_fat_level=0,
+                    next_auto_fat_time=None,
+                    prestige=new_prestige,
+                    # Опыт и уровень НЕ трогаем!
+                    # user_xp и user_level остаются как есть
+                    consecutive_plus=0,
+                    consecutive_minus=0,
+                    jackpot_pity=0,
+                    shadow_upgrade_chance=0
+                )
+                
                 try:
                     new_nick = format_nick_with_prestige(new_prestige, 0, user_name)
                     if len(new_nick) > 32:
@@ -1476,16 +1521,29 @@ async def upgrade_user_command(ctx):
                     await member.edit(nick=new_nick)
                 except:
                     pass
+                
                 new_data = get_user_data(guild_id, user_id, user_name)
                 new_embed = create_upgrade_embed(new_data)
                 await msg.edit(embed=new_embed)
-                success_embed = discord.Embed(title="🌟 **ПРЕСТИЖ ПОЛУЧЕН!** 🌟", description=f"{member.mention} достиг **{new_prestige}** уровня престижа!\n\nВес сброшен до 0\nВсе предметы и улучшения обнулены\nТеперь вы получаете +{new_prestige * 10}% ко всему и +{new_prestige}% к шансам!", color=0xffd700)
+                
+                success_embed = discord.Embed(
+                    title="🌟 **ПРЕСТИЖ ПОЛУЧЕН!** 🌟",
+                    description=f"{member.mention} достиг **{new_prestige}** уровня престижа!\n\n"
+                               f"Вес сброшен до 0\n"
+                               f"Все предметы и улучшения обнулены\n"
+                               f"Опыт и уровень сохранены!\n"
+                               f"Теперь вы получаете +{new_prestige * 10}% ко всему и +{new_prestige}% к шансам!",
+                    color=0xffd700
+                )
                 temp_msg = await ctx.send(embed=success_embed)
                 await asyncio.sleep(3)
                 await temp_msg.delete()
                 continue
+            
+            # ===== ОБЫЧНЫЕ УЛУЧШЕНИЯ =====
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
+            
             if upgrade_type == "auto_fat":
                 interval = get_auto_fat_interval(new_level)
                 next_time = datetime.now() + timedelta(hours=interval) if interval else None
@@ -1493,6 +1551,7 @@ async def upgrade_user_command(ctx):
             else:
                 update_field = {"fat_cd": "fat_cd_upgrade", "case_cd": "case_cd_upgrade", "luck": "luck_upgrade", "income": "income_upgrade"}[upgrade_type]
                 update_user_data(guild_id, user_id, number=new_number, **{update_field: new_level})
+            
             try:
                 new_nick = format_nick_with_prestige(current_data.get('prestige', 0), new_number, user_name)
                 if len(new_nick) > 32:
@@ -1500,9 +1559,11 @@ async def upgrade_user_command(ctx):
                 await member.edit(nick=new_nick)
             except:
                 pass
+            
             new_data = get_user_data(guild_id, user_id, user_name)
             new_embed = create_upgrade_embed(new_data)
             await msg.edit(embed=new_embed)
+            
             if upgrade_type == "fat_cd":
                 new_bonus = get_fat_cd_reduction(new_level)
                 bonus_text = f"КД !жир уменьшен на {new_bonus} мин"
@@ -1517,14 +1578,24 @@ async def upgrade_user_command(ctx):
             elif upgrade_type == "auto_fat":
                 interval = get_auto_fat_interval(new_level)
                 bonus_text = f"Авто-жир будет срабатывать каждые {interval} час(ов)"
-            success_embed = discord.Embed(title="✅ **УЛУЧШЕНИЕ ПОЛУЧЕНО!** ✅", description=f"{member.mention} улучшил характеристику!\n\n**Потрачено:** {cost} кг\n**Осталось:** {new_number} кг\n\n**{bonus_text}**", color=0x00ff00)
+            
+            success_embed = discord.Embed(
+                title="✅ **УЛУЧШЕНИЕ ПОЛУЧЕНО!** ✅",
+                description=f"{member.mention} улучшил характеристику!\n\n"
+                           f"**Потрачено:** {cost} кг\n"
+                           f"**Осталось:** {new_number} кг\n\n"
+                           f"**{bonus_text}**",
+                color=0x00ff00
+            )
             temp_msg = await ctx.send(embed=success_embed)
             await asyncio.sleep(2)
             await temp_msg.delete()
+            
             try:
                 await msg.remove_reaction(reaction, user)
             except:
                 pass
+            
         except asyncio.TimeoutError:
             timeout_embed = discord.Embed(title="⏰ Режим ожидания", description="Нажмите на любую реакцию снова, чтобы продолжить улучшения!", color=0xffaa00)
             await msg.edit(embed=timeout_embed)
@@ -1543,7 +1614,7 @@ async def upgrade_user_command(ctx):
                 final_embed.set_footer(text="💤 Режим ожидания активирован. Используйте !апгрейдюзер заново для продолжения.")
                 await msg.edit(embed=final_embed)
                 break
-
+                
 @bot.command(name='жир')
 async def fat_command(ctx):
     guild_id = ctx.guild.id
