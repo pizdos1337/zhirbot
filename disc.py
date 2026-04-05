@@ -38,7 +38,7 @@ CASE_COOLDOWN_HOURS = 24
 
 # Призы в ежедневном кейсе
 CASE_PRIZES = [
-    {"value": 0, "chance": 20.0, "emoji": "🔄", "name": "Ничего"},
+    {"value": 0, "chance": 21.0, "emoji": "🔄", "name": "Ничего"},
     {"value": 10, "chance": 20.0, "emoji": "📈", "name": "+10 кг"},
     {"value": 20, "chance": 20.0, "emoji": "⬆️", "name": "+20 кг"},
     {"value": 50, "chance": 20.0, "emoji": "🚀", "name": "+50 кг"},
@@ -51,17 +51,18 @@ CASE_PRIZES = [
     {"value": 1500, "chance": 2.0, "emoji": "⭐", "name": "+1500 кг"},
     {"value": 2500, "chance": 1.0, "emoji": "💥", "name": "+2500 кг"},
     {"value": 5000, "chance": 1.0, "emoji": "💥", "name": "+5000 кг"},
-    {"value": "autoburger", "chance": 1.0, "emoji": "🍔", "name": "АВТОБУРГЕР"},
 ]
 
 total_chance = sum(prize["chance"] for prize in CASE_PRIZES)
 for prize in CASE_PRIZES:
     prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
 
-# Настройки Автобургера
-AUTOBURGER_INTERVALS = [6, 4, 2, 1]
-AUTOBURGER_MAX_BONUS = 0.6
-AUTOBURGER_GROWTH_RATE = 0.03
+# Настройки авто-жира
+AUTO_FAT_INTERVALS = {
+    1: 6,   # 6 часов
+    2: 3,   # 3 часа
+    3: 1    # 1 час
+}
 
 # Настройки престижа
 PRESTIGE_BONUS_PER_LEVEL = 0.10      # +10% к кг за уровень
@@ -190,20 +191,6 @@ CASES = {
             {"value": 1000, "chance": 1, "emoji": "✨"},
             {"value": 1200, "chance": 1, "emoji": "✨"},
             {"value": 1500, "chance": 1, "emoji": "✨"}
-        ]
-    },
-    "autoburger_pack": {
-        "name": "Упаковка Автобургера",
-        "emoji": "🍔📦",
-        "tradable": True,
-        "daily": False,
-        "shop_chance": 0.05,
-        "min_shop": 1,
-        "max_shop": 5,
-        "price": 250,
-        "prizes": [
-            {"value": 0, "chance": 98, "emoji": "🔄"},
-            {"value": "autoburger", "chance": 2, "emoji": "🍔"}
         ]
     },
     "rotten_pack": {
@@ -440,17 +427,14 @@ def format_nick_with_prestige(prestige, weight, user_name):
         return f"{prestige}🌟 {weight}kg {user_name}"
     return f"{weight}kg {user_name}"
 
-# ===== НОВЫЕ ФУНКЦИИ ДЛЯ БОНУСОВ =====
+# ===== ФУНКЦИИ ДЛЯ БОНУСОВ =====
 def get_prestige_bonus(prestige):
-    """Бонус к кг от престижа (+10% за уровень)"""
     return 1 + (prestige * PRESTIGE_BONUS_PER_LEVEL)
 
 def get_prestige_luck(prestige):
-    """Бонус к шансам от престижа (+1% за уровень)"""
     return prestige * PRESTIGE_LUCK_PER_LEVEL
 
 def get_income_bonus(income_upgrade):
-    """Бонус к кг от предметов (+5% за уровень)"""
     return 1 + (income_upgrade * INCOME_BONUS_PER_LEVEL)
 
 def get_fat_cd_reduction(upgrade_count):
@@ -458,6 +442,14 @@ def get_fat_cd_reduction(upgrade_count):
 
 def get_case_cd_reduction(upgrade_count):
     return upgrade_count * 20
+
+def get_auto_fat_interval(auto_fat_level):
+    if auto_fat_level <= 0:
+        return None
+    return AUTO_FAT_INTERVALS.get(auto_fat_level, 1)
+
+def get_auto_fat_cost(current_level):
+    return 500 + (current_level * 500)
 
 def get_upgrade_cost(upgrade_type, current_level):
     if upgrade_type == "fat_cd":
@@ -470,6 +462,8 @@ def get_upgrade_cost(upgrade_type, current_level):
         return 250 + (current_level * 150)
     elif upgrade_type == "prestige":
         return 2000 + (current_level * 1000)
+    elif upgrade_type == "auto_fat":
+        return 500 + (current_level * 500)
     return 0
 
 # ===== ФУНКЦИИ БЕЗОПАСНОЙ РАБОТЫ С БД =====
@@ -532,7 +526,9 @@ def add_missing_columns(db_path, existing_columns):
         'case_cd_upgrade': "INTEGER DEFAULT 0",
         'luck_upgrade': "INTEGER DEFAULT 0",
         'income_upgrade': "INTEGER DEFAULT 0",
-        'prestige': "INTEGER DEFAULT 0"
+        'prestige': "INTEGER DEFAULT 0",
+        'auto_fat_level': "INTEGER DEFAULT 0",
+        'next_auto_fat_time': "TIMESTAMP"
     }
     
     for col_name, col_type in required_columns.items():
@@ -543,7 +539,6 @@ def add_missing_columns(db_path, existing_columns):
             except Exception as e:
                 print(f"⚠️ Ошибка при добавлении колонки {col_name}: {e}")
     
-    # Проверяем и добавляем колонки для кейсов
     for case_id in CASES.keys():
         if case_id != "daily":
             col_name = f"case_{case_id}_count"
@@ -601,13 +596,7 @@ def create_new_database(db_path, guild_id, guild_name):
         consecutive_plus INTEGER DEFAULT 0, 
         consecutive_minus INTEGER DEFAULT 0, 
         jackpot_pity INTEGER DEFAULT 0, 
-        autoburger_count INTEGER DEFAULT 0, 
         last_case_time TIMESTAMP, 
-        next_autoburger_time TIMESTAMP, 
-        total_autoburger_activations INTEGER DEFAULT 0, 
-        total_autoburger_gain INTEGER DEFAULT 0, 
-        last_autoburger_result TEXT, 
-        last_autoburger_time TIMESTAMP,
         item_counts TEXT DEFAULT '{}',
         last_command TEXT,
         last_command_target TEXT,
@@ -635,7 +624,9 @@ def create_new_database(db_path, guild_id, guild_name):
         case_cd_upgrade INTEGER DEFAULT 0,
         luck_upgrade INTEGER DEFAULT 0,
         income_upgrade INTEGER DEFAULT 0,
-        prestige INTEGER DEFAULT 0
+        prestige INTEGER DEFAULT 0,
+        auto_fat_level INTEGER DEFAULT 0,
+        next_auto_fat_time TIMESTAMP
     )''')
     
     for case_id in CASES.keys():
@@ -671,17 +662,15 @@ def get_user_data(guild_id, user_id, user_name=None):
     
     select_cols = [col for col in [
         'user_id', 'user_name', 'current_number', 'last_command_time',
-        'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
-        'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
-        'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
-        'item_counts', 'last_command', 'last_command_target',
+        'consecutive_plus', 'consecutive_minus', 'jackpot_pity',
+        'last_case_time', 'item_counts', 'last_command', 'last_command_target',
         'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
         'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
         'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
         'duel_channel_id', 'duel_initiator', 'last_case_type', 'last_case_prize',
         'upgrade_active', 'upgrade_data', 'duel_start_time', 'shadow_upgrade_chance',
         'user_xp', 'user_level', 'fat_cd_upgrade', 'case_cd_upgrade', 'luck_upgrade',
-        'income_upgrade', 'prestige'
+        'income_upgrade', 'prestige', 'auto_fat_level', 'next_auto_fat_time'
     ] if col in all_columns]
     
     case_cols = []
@@ -724,13 +713,7 @@ def get_user_data(guild_id, user_id, user_name=None):
             'consecutive_plus': 0,
             'consecutive_minus': 0,
             'jackpot_pity': 0,
-            'autoburger_count': 0,
             'last_case_time': None,
-            'next_autoburger_time': None,
-            'total_autoburger_activations': 0,
-            'total_autoburger_gain': 0,
-            'last_autoburger_result': None,
-            'last_autoburger_time': None,
             'item_counts': '{}',
             'last_command': None,
             'last_command_target': None,
@@ -759,6 +742,8 @@ def get_user_data(guild_id, user_id, user_name=None):
             'luck_upgrade': 0,
             'income_upgrade': 0,
             'prestige': 0,
+            'auto_fat_level': 0,
+            'next_auto_fat_time': None,
             'cases_dict': {}
         }
         
@@ -777,17 +762,15 @@ def create_new_user(cursor, user_data, all_columns):
     values = []
     
     base_fields = ['user_id', 'user_name', 'current_number', 'last_command_time',
-                   'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'autoburger_count',
-                   'last_case_time', 'next_autoburger_time', 'total_autoburger_activations',
-                   'total_autoburger_gain', 'last_autoburger_result', 'last_autoburger_time',
-                   'item_counts', 'last_command', 'last_command_target',
+                   'consecutive_plus', 'consecutive_minus', 'jackpot_pity',
+                   'last_case_time', 'item_counts', 'last_command', 'last_command_target',
                    'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id',
                    'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time',
                    'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 
                    'duel_channel_id', 'duel_initiator', 'last_case_type', 'last_case_prize',
                    'upgrade_active', 'upgrade_data', 'duel_start_time', 'shadow_upgrade_chance',
                    'user_xp', 'user_level', 'fat_cd_upgrade', 'case_cd_upgrade', 'luck_upgrade',
-                   'income_upgrade', 'prestige']
+                   'income_upgrade', 'prestige', 'auto_fat_level', 'next_auto_fat_time']
     
     for field in base_fields:
         if field in all_columns:
@@ -954,9 +937,7 @@ def get_all_users_sorted(guild_id):
     columns = [col[1] for col in cursor.fetchall()]
     
     select_cols = ['user_name', 'current_number', 'last_command_time', 
-                   'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 
-                   'autoburger_count', 'total_autoburger_activations', 
-                   'total_autoburger_gain']
+                   'consecutive_plus', 'consecutive_minus', 'jackpot_pity']
     
     if 'prestige' in columns:
         select_cols.append('prestige')
@@ -975,9 +956,6 @@ def get_guild_stats(guild_id):
     positive = sum(1 for u in users if u[1] > 0)
     negative = sum(1 for u in users if u[1] < 0)
     zero = sum(1 for u in users if u[1] == 0)
-    total_autoburgers = sum(u[6] for u in users if len(u) > 6)
-    total_activations = sum(u[7] for u in users if len(u) > 7)
-    total_gain = sum(u[8] for u in users if len(u) > 8)
     
     return {
         'total_users': total_users, 
@@ -985,10 +963,7 @@ def get_guild_stats(guild_id):
         'avg_weight': avg_weight, 
         'positive': positive, 
         'negative': negative, 
-        'zero': zero, 
-        'total_autoburgers': total_autoburgers, 
-        'total_activations': total_activations, 
-        'total_gain': total_gain
+        'zero': zero
     }
 
 def check_cooldown(last_command_time, cooldown_hours):
@@ -1038,9 +1013,8 @@ def has_high_tester_role(member):
 
 # ===== ФУНКЦИИ ДЛЯ БОЕВОЙ СИСТЕМЫ =====
 def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, 
-                                      autoburger_count=0, luck_upgrade=0, prestige_bonus=1.0,
+                                      luck_upgrade=0, prestige_bonus=1.0,
                                       items_dict=None, current_weight=None):
-    """Расчёт изменения веса без прибавки (только престиж)"""
     if items_dict is None:
         items_dict = {}
     
@@ -1048,14 +1022,9 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
     has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
     has_water = items_dict.get("Стакан воды", 0) > 0
     
-    if autoburger_count > 0:
-        autoburger_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * autoburger_count))
-    else:
-        autoburger_boost = 0
-    
     minus_boost = min(consecutive_minus * CONSECUTIVE_MINUS_BOOST, MAX_CONSECUTIVE_MINUS_BOOST)
     
-    minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - autoburger_boost - minus_boost
+    minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - minus_boost
     minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
     
     jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
@@ -1145,7 +1114,6 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
         return change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot
 
 def open_case(case_id, prestige_luck=0, luck_upgrade=0):
-    """Открытие кейса с учётом престижа (+1% за уровень) и удачи"""
     case = CASES[case_id]
     prizes = case["prizes"]
     
@@ -1153,15 +1121,13 @@ def open_case(case_id, prestige_luck=0, luck_upgrade=0):
     for prize in prizes:
         prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
     
-    # Престиж даёт +1% к шансам за уровень
     prestige_bonus = 1 + prestige_luck
-    # Удача даёт +0.25% к шансам за уровень
     luck_bonus = 1 + (luck_upgrade * 0.0025)
     
     modified_prizes = []
     for prize in prizes:
         p = prize.copy()
-        if (isinstance(p["value"], int) and p["value"] >= 100) or p["value"] in ["autoburger", "rotten_leg", "water"]:
+        if (isinstance(p["value"], int) and p["value"] >= 100) or p["value"] in ["rotten_leg", "water"]:
             p["normalized_chance"] = prize["normalized_chance"] * prestige_bonus * luck_bonus
         modified_prizes.append(p)
     
@@ -1179,19 +1145,8 @@ def open_case(case_id, prestige_luck=0, luck_upgrade=0):
     
     return prizes[-1]
 
-def get_autoburger_interval(autoburger_count):
-    if autoburger_count <= 0:
-        return None
-    elif autoburger_count == 1:
-        return AUTOBURGER_INTERVALS[0]
-    elif autoburger_count == 2:
-        return AUTOBURGER_INTERVALS[1]
-    elif autoburger_count == 3:
-        return AUTOBURGER_INTERVALS[2]
-    else:
-        return AUTOBURGER_INTERVALS[3]
-
-async def apply_autoburger(user_id, guild_id, user_name):
+# ===== АВТО-ЖИР =====
+async def apply_auto_fat(user_id, guild_id, user_name, channel_id=None):
     try:
         data = get_user_data(guild_id, user_id, user_name)
         
@@ -1200,7 +1155,7 @@ async def apply_autoburger(user_id, guild_id, user_name):
         
         change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
             data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
-            data['autoburger_count'], data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
+            data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
         
         new_number = data['current_number'] + change
         
@@ -1210,10 +1165,7 @@ async def apply_autoburger(user_id, guild_id, user_name):
             'consecutive_plus': new_consecutive_plus,
             'consecutive_minus': new_consecutive_minus,
             'jackpot_pity': new_jackpot_pity,
-            'total_autoburger_activations': data['total_autoburger_activations'] + 1,
-            'total_autoburger_gain': data['total_autoburger_gain'] + change,
-            'last_autoburger_result': f"{change:+d} кг",
-            'last_autoburger_time': datetime.now()
+            'fat_cooldown_time': datetime.now()
         }
         
         update_user_data(guild_id, user_id, **update_data)
@@ -1242,30 +1194,78 @@ async def apply_autoburger(user_id, guild_id, user_name):
                 except:
                     pass
         
-        print(f"🤖 Автобургер сработал для {user_name}: {change:+d} кг")
+        if channel_id:
+            channel = bot.get_channel(channel_id)
+            if channel:
+                rank_name, rank_emoji = get_rank(new_number)
+                
+                if was_jackpot:
+                    embed_color = 0xffd700
+                    embed_title = "💰 ДЖЕКПОТ! 💰 (Авто-жир)"
+                else:
+                    embed_color = 0xff9933 if new_number >= 0 else 0x66ccff
+                    embed_title = "🍔 Авто-жир"
+                
+                embed = discord.Embed(
+                    title=embed_title,
+                    description=f"**{member.mention if member else user_name}** теперь весит **{abs(new_number)}kg**!",
+                    color=embed_color
+                )
+                
+                if was_jackpot:
+                    embed.add_field(name="💰 ДЖЕКПОТ!", value=f"+{change} кг", inline=True)
+                elif change > 0:
+                    embed.add_field(name="📈 Изменение", value=f"+{change} кг", inline=True)
+                elif change < 0:
+                    embed.add_field(name="📉 Изменение", value=f"{change} кг", inline=True)
+                else:
+                    embed.add_field(name="⚖️ Изменение", value="0 кг", inline=True)
+                
+                embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
+                embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
+                embed.set_footer(text="⚡ Сработал авто-жир!")
+                
+                await channel.send(embed=embed)
+        
+        print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг")
     except Exception as e:
-        print(f"❌ Ошибка в автобургере: {e}")
+        print(f"❌ Ошибка в авто-жире: {e}")
 
-async def autoburger_loop():
+async def auto_fat_loop():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
             current_time = datetime.now()
+            
             for guild in bot.guilds:
                 guild_id = guild.id
                 db_path = get_db_path(guild_id)
                 if not os.path.exists(db_path):
                     continue
                 
+                default_channel = None
+                for channel in guild.text_channels:
+                    if channel.permissions_for(guild.me).send_messages:
+                        default_channel = channel
+                        break
+                
                 try:
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
-                    cursor.execute('''SELECT user_id, user_name, autoburger_count, next_autoburger_time 
-                                    FROM user_fat WHERE autoburger_count > 0 AND next_autoburger_time IS NOT NULL''')
+                    
+                    cursor.execute("PRAGMA table_info(user_fat)")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    
+                    if 'auto_fat_level' not in columns or 'next_auto_fat_time' not in columns:
+                        conn.close()
+                        continue
+                    
+                    cursor.execute('''SELECT user_id, user_name, auto_fat_level, next_auto_fat_time 
+                                    FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL''')
                     users = cursor.fetchall()
                     conn.close()
                     
-                    for user_id, user_name, autoburger_count, next_time_str in users:
+                    for user_id, user_name, auto_fat_level, next_time_str in users:
                         try:
                             if next_time_str:
                                 if isinstance(next_time_str, str):
@@ -1273,26 +1273,27 @@ async def autoburger_loop():
                                 else:
                                     next_time = next_time_str
                                 if current_time >= next_time:
-                                    await apply_autoburger(user_id, guild_id, user_name)
-                                    interval = get_autoburger_interval(autoburger_count)
+                                    await apply_auto_fat(user_id, guild_id, user_name, default_channel.id if default_channel else None)
+                                    
+                                    interval = get_auto_fat_interval(auto_fat_level)
                                     if interval:
                                         new_next_time = current_time + timedelta(hours=interval)
-                                        conn = sqlite3.connect(db_path)
-                                        cursor = conn.cursor()
-                                        cursor.execute('''UPDATE user_fat SET next_autoburger_time = ? 
-                                                        WHERE user_id = ?''', (new_next_time.isoformat(), user_id))
-                                        conn.commit()
-                                        conn.close()
+                                        conn2 = sqlite3.connect(db_path)
+                                        c2 = conn2.cursor()
+                                        c2.execute('''UPDATE user_fat SET next_auto_fat_time = ? 
+                                                    WHERE user_id = ?''', (new_next_time.isoformat(), user_id))
+                                        conn2.commit()
+                                        conn2.close()
                         except Exception as e:
-                            print(f"❌ Ошибка обработки автобургера для {user_id}: {e}")
+                            print(f"❌ Ошибка обработки авто-жира для {user_id}: {e}")
                 except Exception as e:
                     print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
         except Exception as e:
-            print(f"❌ Ошибка в цикле автобургеров: {e}")
+            print(f"❌ Ошибка в цикле авто-жира: {e}")
+        
         await asyncio.sleep(60)
 
 async def passive_income_loop():
-    """Пассивный доход от предметов (прибавка работает только здесь!)"""
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
@@ -1355,7 +1356,6 @@ async def passive_income_loop():
                                             break
                                 
                                 if total_gain > 0:
-                                    # Только здесь применяется income_bonus!
                                     income_bonus = get_income_bonus(income_upgrade or 0)
                                     prestige_bonus = get_prestige_bonus(prestige or 0)
                                     final_gain = int(total_gain * income_bonus * prestige_bonus)
@@ -1539,7 +1539,6 @@ async def snatcher_loop():
         await asyncio.sleep(1800)
 
 async def apply_hourly_effects():
-    """Почасовые эффекты (прибавка работает только здесь!)"""
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
@@ -1603,7 +1602,6 @@ async def apply_hourly_effects():
                                         gained_items.append(f"Холестеринимус x{count} (+{gain}кг)")
                                 
                                 if total_gain > 0:
-                                    # Только здесь применяется income_bonus!
                                     income_bonus = get_income_bonus(income_upgrade or 0)
                                     prestige_bonus = get_prestige_bonus(prestige or 0)
                                     final_gain = int(total_gain * income_bonus * prestige_bonus)
@@ -1706,6 +1704,46 @@ async def migrate_old_burgers_to_prestige():
             print(f"❌ Ошибка при конвертации на сервере {guild.name}: {e}")
     
     print(f"✅ Конвертация завершена! Обработано пользователей: {converted}")
+
+async def migrate_old_autoburgers_to_auto_fat():
+    print("\n🔄 КОНВЕРТАЦИЯ АВТОБУРГЕРОВ В АВТО-ЖИР...")
+    
+    converted = 0
+    for guild in bot.guilds:
+        guild_id = guild.id
+        db_path = get_db_path(guild_id)
+        
+        if not os.path.exists(db_path):
+            continue
+            
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("PRAGMA table_info(user_fat)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'autoburger_count' in columns and 'auto_fat_level' in columns:
+                cursor.execute("SELECT user_id, user_name, autoburger_count FROM user_fat WHERE autoburger_count > 0")
+                users = cursor.fetchall()
+                
+                for user_id, user_name, autoburger_count in users:
+                    if autoburger_count > 0:
+                        new_level = min(autoburger_count, 3)
+                        interval = get_auto_fat_interval(new_level)
+                        next_time = datetime.now() + timedelta(hours=interval) if interval else None
+                        cursor.execute("UPDATE user_fat SET auto_fat_level = ?, next_auto_fat_time = ?, autoburger_count = 0 WHERE user_id = ?", 
+                                      (new_level, next_time, user_id))
+                        converted += 1
+                        print(f"  ✅ {user_name}: {autoburger_count} автобургер(ов) -> {new_level} уровень авто-жира")
+                
+                conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ Ошибка при конвертации на сервере {guild.name}: {e}")
+    
+    print(f"✅ Конвертация автобургеров завершена! Обработано пользователей: {converted}")
 
 async def duel_animation(msg, challenger, opponent):
     c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
@@ -1857,9 +1895,7 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
     data = get_user_data(guild_id, user_id, user_name)
     
     shadow_chance = data.get('shadow_upgrade_chance', 0)
-    # Престиж даёт +1% к шансу апгрейда за уровень
     prestige_bonus = 1 + prestige_luck
-    # Удача даёт +0.5% к шансу апгрейда за уровень
     luck_bonus = 1 + (luck_upgrade * 0.005)
     base_chance = target_item['chance']
     real_chance = min(base_chance * prestige_bonus * luck_bonus + shadow_chance / 100, 1.0)
@@ -1958,9 +1994,7 @@ async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0
     data = get_user_data(guild_id, user_id, user_name)
     
     shadow_chance = data.get('shadow_upgrade_chance', 0)
-    # Престиж даёт +1% к шансу апгрейда за уровень
     prestige_bonus = 1 + prestige_luck
-    # Удача даёт +0.5% к шансу апгрейда за уровень
     luck_bonus = 1 + (luck_upgrade * 0.005)
     base_chance = target_item['chance']
     real_chance = min(base_chance * prestige_bonus * luck_bonus + shadow_chance / 100, 1.0)
@@ -2237,6 +2271,7 @@ async def upgrade_user_command(ctx):
         luck_level = data.get('luck_upgrade', 0)
         income_level = data.get('income_upgrade', 0)
         prestige_level = data.get('prestige', 0)
+        auto_fat_level = data.get('auto_fat_level', 0)
         
         total_xp = data.get('user_xp', 0)
         level, current_xp = get_level_and_xp(total_xp)
@@ -2247,11 +2282,15 @@ async def upgrade_user_command(ctx):
         luck_cost = get_upgrade_cost("luck", luck_level)
         income_cost = get_upgrade_cost("income", income_level)
         prestige_cost = get_upgrade_cost("prestige", prestige_level)
+        auto_fat_cost = get_upgrade_cost("auto_fat", auto_fat_level)
         
         fat_cd_bonus = get_fat_cd_reduction(fat_cd_level)
         case_cd_bonus = get_case_cd_reduction(case_cd_level)
         prestige_bonus = get_prestige_bonus(prestige_level)
         income_bonus = get_income_bonus(income_level)
+        
+        auto_fat_interval = get_auto_fat_interval(auto_fat_level)
+        auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
         
         embed = discord.Embed(
             title=f"⭐ **ПРОКАЧКА ПЕРСОНАЖА** ⭐",
@@ -2296,6 +2335,10 @@ async def upgrade_user_command(ctx):
         stats_text += f"{prestige_color} **🌟 Престиж** — ур.{prestige_level} (+{(prestige_bonus-1)*100:.0f}% ко всему, +{prestige_level}% к шансам)\n"
         stats_text += f"   Стоимость: `{prestige_cost} кг`\n\n"
         
+        auto_fat_color = "🟢" if data['current_number'] >= auto_fat_cost else "🔴"
+        stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level} (каждые {auto_fat_text})\n"
+        stats_text += f"   Стоимость: `{auto_fat_cost} кг`\n\n"
+        
         embed.add_field(name="⚡ **ХАРАКТЕРИСТИКИ**", value=stats_text, inline=False)
         
         embed.add_field(
@@ -2304,7 +2347,8 @@ async def upgrade_user_command(ctx):
                   "• **КД кейса** — уменьшает время ожидания бесплатного кейса\n"
                   "• **Удача** — повышает шанс редких предметов в кейсах (+0.25%/ур) и шанс апгрейдов (+0.5%/ур)\n"
                   "• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов (+5%/ур)\n"
-                  "• **Престиж** — сбрасывает всё, но даёт +10% ко всем кг и +1% к шансам за уровень",
+                  "• **Престиж** — сбрасывает всё, но даёт +10% ко всем кг и +1% к шансам за уровень\n"
+                  "• **Авто-жир** — автоматически использует !жир каждые 6/3/1 час(ов)",
             inline=False
         )
         
@@ -2315,7 +2359,7 @@ async def upgrade_user_command(ctx):
     embed = create_upgrade_embed(data)
     msg = await ctx.send(embed=embed)
     
-    reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+    reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
     for reaction in reactions:
         await msg.add_reaction(reaction)
     
@@ -2324,7 +2368,8 @@ async def upgrade_user_command(ctx):
         "2️⃣": "case_cd", 
         "3️⃣": "luck",
         "4️⃣": "income",
-        "5️⃣": "prestige"
+        "5️⃣": "prestige",
+        "6️⃣": "auto_fat"
     }
     
     def check(reaction, user):
@@ -2357,6 +2402,19 @@ async def upgrade_user_command(ctx):
             elif upgrade_type == "prestige":
                 current_level = current_data.get('prestige', 0)
                 cost = get_upgrade_cost("prestige", current_level)
+            elif upgrade_type == "auto_fat":
+                current_level = current_data.get('auto_fat_level', 0)
+                if current_level >= 3:
+                    error_embed = discord.Embed(
+                        title="❌ Максимальный уровень!",
+                        description=f"Авто-жир уже на максимальном (3) уровне!",
+                        color=0xff0000
+                    )
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                cost = get_upgrade_cost("auto_fat", current_level)
             
             if current_data['current_number'] < cost:
                 error_embed = discord.Embed(
@@ -2403,15 +2461,13 @@ async def upgrade_user_command(ctx):
                     luck_upgrade=0,
                     income_upgrade=0,
                     prestige=new_prestige,
+                    auto_fat_level=0,
+                    next_auto_fat_time=None,
                     user_xp=0,
                     user_level=0,
                     consecutive_plus=0,
                     consecutive_minus=0,
                     jackpot_pity=0,
-                    autoburger_count=0,
-                    next_autoburger_time=None,
-                    total_autoburger_activations=0,
-                    total_autoburger_gain=0,
                     shadow_upgrade_chance=0
                 )
                 
@@ -2443,16 +2499,24 @@ async def upgrade_user_command(ctx):
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
-            update_field = {
-                "fat_cd": "fat_cd_upgrade",
-                "case_cd": "case_cd_upgrade",
-                "luck": "luck_upgrade",
-                "income": "income_upgrade"
-            }[upgrade_type]
-            
-            update_user_data(guild_id, user_id, 
-                            number=new_number,
-                            **{update_field: new_level})
+            if upgrade_type == "auto_fat":
+                interval = get_auto_fat_interval(new_level)
+                next_time = datetime.now() + timedelta(hours=interval) if interval else None
+                update_user_data(guild_id, user_id, 
+                                number=new_number,
+                                auto_fat_level=new_level,
+                                next_auto_fat_time=next_time)
+            else:
+                update_field = {
+                    "fat_cd": "fat_cd_upgrade",
+                    "case_cd": "case_cd_upgrade",
+                    "luck": "luck_upgrade",
+                    "income": "income_upgrade"
+                }[upgrade_type]
+                
+                update_user_data(guild_id, user_id, 
+                                number=new_number,
+                                **{update_field: new_level})
             
             try:
                 new_nick = format_nick_with_prestige(current_data.get('prestige', 0), new_number, user_name)
@@ -2477,6 +2541,9 @@ async def upgrade_user_command(ctx):
             elif upgrade_type == "income":
                 new_bonus = get_income_bonus(new_level)
                 bonus_text = f"Прибавка увеличена до +{(new_bonus-1)*100:.0f}% к доходу от предметов"
+            elif upgrade_type == "auto_fat":
+                interval = get_auto_fat_interval(new_level)
+                bonus_text = f"Авто-жир будет срабатывать каждые {interval} час(ов)"
             
             success_embed = discord.Embed(
                 title="✅ **УЛУЧШЕНИЕ ПОЛУЧЕНО!** ✅",
@@ -2558,7 +2625,7 @@ async def fat_command(ctx):
     
     change, was_minus, new_consecutive_plus, new_consecutive_minus, new_jackpot_pity, was_jackpot = get_change_with_pity_and_jackpot(
         data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
-        data['autoburger_count'], data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
+        data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
     
     temp_number = data['current_number'] + change
     
@@ -2628,13 +2695,6 @@ async def fat_command(ctx):
         embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", 
                        value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", 
                        inline=False)
-    
-    if data['autoburger_count'] > 0:
-        interval = get_autoburger_interval(data['autoburger_count'])
-        current_boost = AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * data['autoburger_count'])) * 100
-        embed.add_field(name="🍔 Автобургеры", 
-                       value=f"{data['autoburger_count']} шт (каждые {interval} ч)\n⚡ Бонус к плюсу: +{current_boost:.1f}%", 
-                       inline=True)
     
     embed.add_field(name="⏰ Следующая команда", value=f"через {actual_cooldown*60:.0f} мин", inline=True)
     
@@ -2724,8 +2784,6 @@ async def fat_case_command(ctx):
     for prize in case["prizes"]:
         if "emoji" in prize:
             emoji = prize["emoji"]
-        elif prize["value"] == "autoburger":
-            emoji = "🍔"
         elif prize["value"] == "rotten_leg":
             emoji = "💀"
         elif prize["value"] == "water":
@@ -2853,8 +2911,6 @@ async def fat_case_command(ctx):
         
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
-        elif prize["value"] == "autoburger":
-            prize_emoji = "🍔"
         elif prize["value"] == "rotten_leg":
             prize_emoji = "💀"
         elif prize["value"] == "water":
@@ -2909,22 +2965,12 @@ async def fat_case_command(ctx):
         
         items_dict = get_user_items(data['item_counts'])
         new_number = data['current_number']
-        new_autoburger_count = data['autoburger_count']
-        new_next_autoburger_time = data['next_autoburger_time']
         prize_value = prize["value"]
         
         prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
         has_water = items_dict.get("Стакан воды", 0) > 0
         
-        if prize_value == "autoburger":
-            new_autoburger_count += 1
-            interval = get_autoburger_interval(new_autoburger_count)
-            if interval:
-                new_next_autoburger_time = datetime.now() + timedelta(hours=interval)
-            result_display = f"🎉 **АВТОБУРГЕР!** 🍔✨"
-            result_color = 0xffd700
-            
-        elif prize_value == "rotten_leg":
+        if prize_value == "rotten_leg":
             items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
             result_display = f"💀 **Гнилая ножка KFC!** 💀"
             result_color = 0x993366
@@ -2950,8 +2996,6 @@ async def fat_case_command(ctx):
         update_data = {
             'number': new_number,
             'user_name': user_name,
-            'autoburger_count': new_autoburger_count,
-            'next_autoburger_time': new_next_autoburger_time,
             'item_counts': save_user_items(items_dict)
         }
         
@@ -2983,21 +3027,15 @@ async def fat_case_command(ctx):
         
         rank_name, rank_emoji = get_rank(new_number)
         
-        if prize_value == "autoburger":
+        if prize_value == "rotten_leg":
             final_embed = discord.Embed(
-                title="🍔✨ **А В Т О Б У Р Г Е Р** ✨🍔",
-                description=f"**{member.mention}** выиграл главный приз из **{case['name']}**!",
+                title=f"{case['emoji']} Открытие {case['name']}",
+                description=f"**{member.mention}** открыл кейс и получил:",
                 color=result_color
             )
-            final_embed.add_field(
-                name="📊 Статистика",
-                value=f"Всего автобургеров: **{new_autoburger_count}**\n"
-                      f"Интервал: **каждые {get_autoburger_interval(new_autoburger_count)} ч**\n"
-                      f"Бонус: **+{AUTOBURGER_MAX_BONUS * (1 - math.exp(-AUTOBURGER_GROWTH_RATE * new_autoburger_count)) * 100:.1f}%**",
-                inline=False
-            )
+            final_embed.add_field(name="🎁 Приз", value=result_display, inline=False)
             
-        elif prize_value in ["rotten_leg", "water"]:
+        elif prize_value == "water":
             final_embed = discord.Embed(
                 title=f"{case['emoji']} Открытие {case['name']}",
                 description=f"**{member.mention}** открыл кейс и получил:",
@@ -3073,7 +3111,8 @@ async def fat_case_command(ctx):
 async def on_ready():
     print(f"\n✅ Бот успешно запущен как {bot.user}")
     await migrate_old_burgers_to_prestige()
-    bot.loop.create_task(autoburger_loop())
+    await migrate_old_autoburgers_to_auto_fat()
+    bot.loop.create_task(auto_fat_loop())
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
     bot.loop.create_task(apply_hourly_effects())
