@@ -633,17 +633,16 @@ def open_case(case_id, prestige_luck=0, luck_upgrade=0):
     for prize in prizes:
         prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
     
-    # Престиж: +1% к шансу (абсолютный процент)
-    prestige_bonus = prestige_luck  # например, 5 престижа = +5%
-    # Удача: +0.25% к шансу за уровень (абсолютный процент)
-    luck_bonus = luck_upgrade * 0.25  # например, 10 удачи = +2.5%
+    # Престиж: +1% к шансу за уровень (абсолютно)
+    # Удача: +0.25% к шансу за уровень (абсолютно)
+    bonus = prestige_luck * 100 + luck_upgrade * 0.25  # престиж 5 = +5%, удача 10 = +2.5%
     
     modified_prizes = []
     for prize in prizes:
         p = prize.copy()
+        # Только для редких предметов (>=100 кг или особые)
         if (isinstance(p["value"], int) and p["value"] >= 100) or p["value"] in ["rotten_leg", "water"]:
-            # Добавляем бонусы к шансу (абсолютные проценты)
-            p["normalized_chance"] = prize["normalized_chance"] + prestige_bonus + luck_bonus
+            p["normalized_chance"] = prize["normalized_chance"] + bonus
         modified_prizes.append(p)
     
     # Нормализуем обратно, чтобы сумма была 100%
