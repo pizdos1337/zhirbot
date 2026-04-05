@@ -3106,6 +3106,483 @@ async def fat_case_command(ctx):
         )
         await case_msg.edit(embed=timeout_embed)
 
+      if len(giver_items) > 5:
+        giver_inv += f"\n... и ещё {len(giver_items) - 5} предметов"
+    embed.add_field(name="📤 Ваш инвентарь", value=giver_inv or "Пусто", inline=True)
+    
+    target_inv = "\n".join([f"• {item}: {count} шт" for item, count in list(target_items.items())[:5]])
+    if len(target_items) > 5:
+        target_inv += f"\n... и ещё {len(target_items) - 5} предметов"
+    embed.add_field(name="📥 Инвентарь получателя", value=target_inv or "Пусто", inline=True)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='магазин')
+async def shop_command(ctx):
+    guild_id = ctx.guild.id
+    member = ctx.author
+    
+    data = get_user_data(guild_id, str(member.id), member.name)
+    
+    update_user_data(
+        guild_id, str(member.id),
+        last_command="shop",
+        last_command_use_time=datetime.now()
+    )
+    
+    slots, last_update, next_update = await ensure_shop_updated(guild_id)
+    
+    if not isinstance(slots, list):
+        slots = []
+    
+    embed = discord.Embed(
+        title="🏪 **МАГАЗИН** 🏪",
+        description="Доступные предметы (используйте `!купить [слот] [количество]`):\n📦 **Слоты 1-4:** Кейсы | 🛒 **Слоты 5-10:** Предметы",
+        color=0xffaa00
+    )
+    
+    items_text = ""
+    for i in range(1, SHOP_SLOTS + 1):
+        slot = slots[i-1] if i-1 < len(slots) else None
+        
+        if slot is not None and isinstance(slot, dict):
+            if slot["type"] == "case":
+                prefix = "📦" if i <= 4 else "🎲"
+                items_text += f"**{i}.** {prefix} {slot.get('emoji', '📦')} {slot.get('name', 'Неизвестный кейс')} — {slot.get('amount', 0)} шт — **{slot.get('price', 0)} кг/шт**\n"
+                items_text += f"   └ {slot.get('description', 'Нет описания')}\n"
+            else:
+                prefix = "🛒" if i > 4 else "🎁"
+                items_text += f"**{i}.** {prefix} {slot.get('name', 'Неизвестный предмет')} — {slot.get('amount', 0)} шт — **{slot.get('price', 0)} кг/шт**\n"
+                items_text += f"   └ {slot.get('description', 'Нет описания')}\n"
+        else:
+            if i <= 4:
+                items_text += f"**{i}.** 📦🕳️ Пустой слот для кейса\n"
+            else:
+                items_text += f"**{i}.** 🛒🕳️ Пустой слот для предмета\n"
+    
+    embed.add_field(name="📦 Товары", value=items_text, inline=False)
+    
+    last_update_str = last_update.strftime("%d.%m.%Y %H:%M") if last_update else "Никогда"
+    next_update_str = next_update.strftime("%d.%m.%Y %H:%M") if next_update else "Скоро"
+    
+    case_count = sum(1 for s in slots[:4] if s is not None and isinstance(s, dict))
+    item_count = sum(1 for s in slots[4:] if s is not None and isinstance(s, dict))
+    
+    embed.add_field(name="📊 Статистика магазина", 
+                   value=f"📦 Кейсов в наличии: {case_count}/4\n🛒 Предметов в наличии: {item_count}/6\n⏰ Обновление каждые {SHOP_UPDATE_HOURS} часов", 
+                   inline=False)
+    
+    embed.add_field(name="⏰ Время обновления", 
+                   value=f"Последнее: {last_update_str}\nСледующее: {next_update_str}", 
+                   inline=False)
+    
+    embed.set_footer(text="💸 Тратьте кг с умом! | 📦 - Кейсы | 🛒 - Предметы")
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='купить')
+async def buy_command(ctx, slot: int, amount: int = 1):
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    
+    if slot < 1 or slot > SHOP_SLOTS:
+        await ctx.send(f"❌ Слот должен быть от 1 до {SHOP_SLOTS}!")
+        return
+    
+    if amount <= 0:
+        await ctx.send("❌ Количество должно быть больше 0!")
+        return
+    
+    data = get_user_data(guild_id, user_id, member.name)
+    
+    last_command_use_time = data.get('last_command_use_time')
+    if last_command_use_time and isinstance(last_command_use_time, str):
+        try:
+            last_command_use_time = datetime.fromisoformat(last_command_use_time)
+        except:
+            last_command_use_time = None
+    
+    if data.get('last_command') != "shop" or not last_command_use_time:
+        await ctx.send("❌ Сначала используйте `!магазин` для просмотра доступных товаров!")
+        return
+    
+    time_since_shop = datetime.now() - last_command_use_time
+    if time_since_shop.total_seconds() > 300:
+        await ctx.send("❌ Время ожидания истекло. Используйте `!магазин` заново!")
+        update_user_data(guild_id, user_id, last_command=None, last_command_use_time=None)
+        return
+    
+    slots, last_update, next_update = await ensure_shop_updated(guild_id)
+    
+    if slot - 1 >= len(slots) or slots[slot - 1] is None:
+        await ctx.send(f"❌ В слоте {slot} ничего нет!")
+        return
+    
+    item = slots[slot - 1]
+    
+    if not isinstance(item, dict):
+        await ctx.send(f"❌ Ошибка в данных слота {slot}!")
+        return
+    
+    if "amount" not in item or "price" not in item:
+        await ctx.send(f"❌ Ошибка в данных слота {slot}!")
+        return
+    
+    if amount > item["amount"]:
+        await ctx.send(f"❌ В наличии только {item['amount']} шт!")
+        return
+    
+    total_price = item["price"] * amount
+    if data['current_number'] < total_price:
+        await ctx.send(f"❌ Недостаточно кг! Нужно: {total_price} кг, у вас: {data['current_number']} кг")
+        return
+    
+    new_number = data['current_number'] - total_price
+    item["amount"] -= amount
+    
+    cases_dict = data.get('cases_dict', {}).copy()
+    
+    if item.get("type") == "case" or "case_id" in item:
+        case_id = item.get("case_id")
+        if not case_id:
+            await ctx.send(f"❌ Ошибка: не удалось определить тип кейса!")
+            return
+        
+        if case_id not in CASES:
+            await ctx.send(f"❌ Ошибка: неизвестный тип кейса {case_id}!")
+            return
+        
+        cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
+        purchase_desc = f"{item.get('emoji', '📦')} {item.get('name', 'Кейс')} x{amount}"
+        
+        update_user_data(
+            guild_id, user_id,
+            number=new_number,
+            cases_dict=cases_dict,
+            last_command=None,
+            last_command_use_time=None
+        )
+    else:
+        items_dict = get_user_items(data['item_counts'])
+        items_dict[item["name"]] = items_dict.get(item["name"], 0) + amount
+        purchase_desc = f"{item['name']} x{amount}"
+        
+        update_user_data(
+            guild_id, user_id,
+            number=new_number,
+            item_counts=save_user_items(items_dict),
+            last_command=None,
+            last_command_use_time=None
+        )
+    
+    update_shop_data(guild_id, slots, last_update, next_update)
+    
+    levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, 20)
+    
+    try:
+        display_name = member.display_name
+        clean_name = display_name
+        if "kg" in display_name:
+            parts = display_name.split("kg", 1)
+            if len(parts) > 1:
+                clean_name = parts[1].strip()
+                if not clean_name:
+                    clean_name = member.name
+        else:
+            clean_name = display_name
+        
+        if not clean_name or len(clean_name) > 30:
+            clean_name = member.name
+        
+        new_nick = format_nick_with_prestige(data.get('prestige', 0), new_number, clean_name)
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        
+        await member.edit(nick=new_nick)
+    except:
+        pass
+    
+    embed = discord.Embed(
+        title="✅ Покупка совершена!",
+        description=f"**{member.mention}** приобрёл товары!",
+        color=0x00ff00
+    )
+    
+    embed.add_field(name="📦 Предмет", value=purchase_desc, inline=True)
+    embed.add_field(name="💰 Цена", value=f"{total_price} кг", inline=True)
+    embed.add_field(name="💸 Осталось", value=f"{new_number} кг", inline=True)
+    
+    if levels_gained > 0:
+        embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", 
+                       value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", 
+                       inline=False)
+    
+    await ctx.send(embed=embed)
+
+# ===== АДМИНСКИЕ КОМАНДЫ =====
+
+@bot.command(name='жир_сброс')
+async def fat_reset(ctx, member: discord.Member = None):
+    if not ctx.author.guild_permissions.administrator and ctx.author != ctx.guild.owner:
+        await ctx.send("❌ Эта команда только для администраторов!")
+        return
+    
+    guild_id = ctx.guild.id
+    target = member or ctx.author
+    user_id = str(target.id)
+    
+    data = get_user_data(guild_id, user_id, target.name)
+    
+    update_data = {
+        'number': 0,
+        'consecutive_plus': 0,
+        'consecutive_minus': 0,
+        'jackpot_pity': 0,
+        'item_counts': '{}'
+    }
+    
+    update_user_data(guild_id, user_id, **update_data)
+    
+    try:
+        new_nick = f"0kg {target.name}"
+        await target.edit(nick=new_nick)
+        await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg")
+    except:
+        await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg (ник не изменён)")
+
+@bot.command(name='сброскд')
+async def reset_cooldowns(ctx):
+    guild_id = ctx.guild.id
+    member = ctx.author
+    
+    is_high_tester = has_high_tester_role(member)
+    is_regular_tester = has_tester_role(member)
+    
+    if not is_regular_tester and not is_high_tester:
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}** или **{HIGH_TESTER_ROLE_NAME}**")
+        return
+    
+    if is_high_tester:
+        db_path = get_db_path(guild_id)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
+        fat_affected = cursor.rowcount
+        cursor.execute('UPDATE user_fat SET last_case_time = NULL')
+        case_affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        current_time = datetime.now()
+        new_slots = generate_shop_items()
+        last_update = current_time
+        next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
+        update_shop_data(guild_id, new_slots, last_update, next_update)
+        
+        embed = discord.Embed(
+            title="🔄 **ПОЛНЫЙ СБРОС** 🔄",
+            description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!",
+            color=0xff5500
+        )
+        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+        embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
+    else:
+        db_path = get_db_path(guild_id)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        embed = discord.Embed(
+            title="🔄 Кулдаун сброшен",
+            description=f"**{ctx.author.name}** сбросил кулдаун !жир для всех!",
+            color=0x00ff00
+        )
+        embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='сбросвсех')
+async def reset_all_users_weight(ctx):
+    if not has_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}**")
+        return
+    
+    guild_id = ctx.guild.id
+    confirmation = await ctx.send(f"⚠️ **Внимание!** Сбросить вес **ВСЕХ** на 0?\nНапишите `да` в течение 30 секунд.")
+    
+    def check(msg):
+        return msg.author == ctx.author and msg.content.lower() == "да"
+    
+    try:
+        await bot.wait_for('message', timeout=30.0, check=check)
+    except:
+        await ctx.send("❌ Отмена")
+        return
+    
+    db_path = get_db_path(guild_id)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''UPDATE user_fat SET 
+        current_number = 0, 
+        consecutive_plus = 0, 
+        consecutive_minus = 0, 
+        jackpot_pity = 0,
+        item_counts = "{}"''')
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    embed = discord.Embed(
+        title="⚖️ Глобальный сброс",
+        description=f"**{ctx.author.name}** обнулил всех!",
+        color=0xff5500
+    )
+    embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
+    await ctx.send(embed=embed)
+
+@bot.command(name='выдатьпредмет')
+async def give_shop_item(ctx, amount: int, *, item_name: str):
+    if not has_high_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{HIGH_TESTER_ROLE_NAME}**")
+        return
+    
+    if amount <= 0:
+        await ctx.send("❌ Количество должно быть больше 0!")
+        return
+    
+    if amount > 1000:
+        await ctx.send("⚠️ Слишком много! Максимум 1000 предметов за раз.")
+        amount = 1000
+    
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    user_name = member.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    item_name = item_name.strip()
+    
+    for case_id, case in CASES.items():
+        if case_id != "daily" and case["name"].lower() == item_name.lower():
+            cases_dict = data.get('cases_dict', {}).copy()
+            cases_dict[case_id] = cases_dict.get(case_id, 0) + amount
+            
+            update_user_data(
+                guild_id, user_id,
+                cases_dict=cases_dict
+            )
+            
+            embed = discord.Embed(
+                title="🎁 Выдача кейса",
+                description=f"**{member.mention}** выдал себе кейс!",
+                color=0xffaa00
+            )
+            embed.add_field(name="📦 Кейс", value=f"**{case['name']}** x{amount}", inline=True)
+            embed.add_field(name="📊 Всего кейсов", value=f"{cases_dict.get(case_id, 0)} шт", inline=True)
+            await ctx.send(embed=embed)
+            return
+    
+    found_item = None
+    for shop_item in SHOP_ITEMS:
+        if shop_item["name"].lower() == item_name.lower():
+            found_item = shop_item
+            break
+    
+    if not found_item:
+        items_list = "\n".join([f"• {item['name']}" for item in SHOP_ITEMS[:10]])
+        if len(SHOP_ITEMS) > 10:
+            items_list += f"\n... и ещё {len(SHOP_ITEMS) - 10} предметов"
+        await ctx.send(f"❌ Предмет '{item_name}' не найден в магазине!\n\n📦 **Доступные предметы:**\n{items_list}")
+        return
+    
+    items_dict = get_user_items(data['item_counts'])
+    items_dict[found_item["name"]] = items_dict.get(found_item["name"], 0) + amount
+    
+    update_user_data(
+        guild_id, user_id,
+        item_counts=save_user_items(items_dict)
+    )
+    
+    embed = discord.Embed(
+        title="🎁 Выдача предмета",
+        description=f"**{member.mention}** выдал себе предмет!",
+        color=0xffaa00
+    )
+    
+    embed.add_field(name="📦 Предмет", value=f"**{found_item['name']}** x{amount}", inline=True)
+    embed.add_field(name="📝 Описание", value=found_item['description'], inline=False)
+    
+    items_list = "\n".join([f"• {item}: {count} шт" for item, count in list(items_dict.items())[:8]])
+    if len(items_dict) > 8:
+        items_list += f"\n... и ещё {len(items_dict) - 8} предметов"
+    
+    embed.add_field(name="📊 Ваш инвентарь", value=items_list or "Пусто", inline=False)
+    embed.set_footer(text="✨ Только для высших тестеров!")
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='жир_кулдаун')
+async def cooldown_info(ctx):
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    
+    data = get_user_data(guild_id, user_id, member.name)
+    
+    fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
+    cd_reduction_minutes = get_fat_cd_reduction(fat_cd_upgrade)
+    actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - cd_reduction_minutes) / 60
+    
+    case_cd_upgrade = data.get('case_cd_upgrade', 0)
+    cd_reduction_minutes_case = get_case_cd_reduction(case_cd_upgrade)
+    actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction_minutes_case) / 60
+    
+    items_dict = get_user_items(data['item_counts'])
+    for item_name, count in items_dict.items():
+        if item_name == "Яблоко":
+            actual_fat_cooldown *= (1 - count * 0.05)
+        elif item_name == "Золотое Яблоко":
+            actual_fat_cooldown *= (1 - count * 0.10)
+        elif item_name == "Апельсин":
+            actual_case_cooldown *= (1 - count * 0.05)
+        elif item_name == "Золотой Апельсин":
+            actual_case_cooldown *= (1 - count * 0.10)
+    
+    actual_fat_cooldown = max(0.1, actual_fat_cooldown)
+    actual_case_cooldown = max(0.1, actual_case_cooldown)
+    
+    fat_can_use, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
+    case_can_use, case_remaining = check_cooldown(data['last_case_time'], actual_case_cooldown)
+    
+    embed = discord.Embed(
+        title=f"⏰ Кулдауны на сервере {ctx.guild.name}",
+        description=f"Для {member.mention}",
+        color=0x3498db
+    )
+    
+    if fat_can_use:
+        fat_status = "✅ Доступна"
+    else:
+        fat_status = f"⏳ {format_time(fat_remaining)}"
+    
+    embed.add_field(name="!жир", value=f"Кулдаун: {actual_fat_cooldown*60:.0f} мин\nСтатус: {fat_status}", inline=True)
+    
+    if case_can_use:
+        case_status = "✅ Доступен"
+    else:
+        case_status = f"⏳ {format_time(case_remaining)}"
+    
+    embed.add_field(name="!жиркейс", value=f"Кулдаун: {actual_case_cooldown:.1f} ч\nСтатус: {case_status}", inline=True)
+    
+    embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
+    
+    await ctx.send(embed=embed)
+
 # ===== ЗАПУСК БОТА =====
 @bot.event
 async def on_ready():
