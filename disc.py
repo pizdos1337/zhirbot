@@ -628,27 +628,37 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
 def open_case(case_id, prestige_luck=0, luck_upgrade=0):
     case = CASES[case_id]
     prizes = case["prizes"]
+    
     total_chance = sum(p["chance"] for p in prizes)
     for prize in prizes:
         prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
-    prestige_bonus = 1 + prestige_luck
-    luck_bonus = 1 + (luck_upgrade * 0.0025)
+    
+    # Престиж: +1% к шансу (абсолютный процент)
+    prestige_bonus = prestige_luck  # например, 5 престижа = +5%
+    # Удача: +0.25% к шансу за уровень (абсолютный процент)
+    luck_bonus = luck_upgrade * 0.25  # например, 10 удачи = +2.5%
+    
     modified_prizes = []
     for prize in prizes:
         p = prize.copy()
         if (isinstance(p["value"], int) and p["value"] >= 100) or p["value"] in ["rotten_leg", "water"]:
-            p["normalized_chance"] = prize["normalized_chance"] * prestige_bonus * luck_bonus
+            # Добавляем бонусы к шансу (абсолютные проценты)
+            p["normalized_chance"] = prize["normalized_chance"] + prestige_bonus + luck_bonus
         modified_prizes.append(p)
+    
+    # Нормализуем обратно, чтобы сумма была 100%
     total = sum(p["normalized_chance"] for p in modified_prizes)
     for p in modified_prizes:
         p["normalized_chance"] = (p["normalized_chance"] / total) * 100
     prizes = modified_prizes
+    
     roll = random.random() * 100
     cumulative = 0
     for prize in prizes:
         cumulative += prize["normalized_chance"]
         if roll < cumulative:
             return prize
+    
     return prizes[-1]
 
 async def apply_auto_fat(user_id, guild_id, user_name, channel_id=None):
