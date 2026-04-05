@@ -2385,28 +2385,55 @@ async def reset_cooldowns(ctx):
     if not has_tester_role(ctx.author) and not has_high_tester_role(ctx.author):
         await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}** или **{HIGH_TESTER_ROLE_NAME}**")
         return
+    
     db_path = get_db_path(ctx.guild.id)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
-    fat_affected = cursor.rowcount
-    if has_high_tester_role(ctx.author):
-        cursor.execute('UPDATE user_fat SET last_case_time = NULL')
-        case_affected = cursor.rowcount
-        current_time = datetime.now()
-        new_slots = generate_shop_items()
-        update_shop_data(ctx.guild.id, new_slots, current_time, current_time + timedelta(hours=SHOP_UPDATE_HOURS))
-        embed = discord.Embed(title="🔄 **ПОЛНЫЙ СБРОС** 🔄", description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!", color=0xff5500)
-        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
-        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
-        embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
-    else:
-        embed = discord.Embed(title="🔄 Кулдаун сброшен", description=f"**{ctx.author.name}** сбросил кулдаун !жир для всех!", color=0x00ff00)
-        embed.add_field(name="Затронуто пользователей", value=str(fat_affected), inline=True)
-    conn.commit()
-    conn.close()
-    await ctx.send(embed=embed)
-
+    
+    # Ждём пока БД разблокируется
+    await asyncio.sleep(0.5)
+    
+    try:
+        conn = sqlite3.connect(db_path, timeout=10.0)
+        cursor = conn.cursor()
+        
+        # Начинаем транзакцию
+        cursor.execute("BEGIN IMMEDIATE")
+        
+        cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
+        fat_affected = cursor.rowcount
+        
+        if has_high_tester_role(ctx.author):
+            cursor.execute('UPDATE user_fat SET last_case_time = NULL')
+            case_affected = cursor.rowcount
+            
+            # Генерируем новый магазин
+            current_time = datetime.now()
+            new_slots = generate_shop_items()
+            slots_json = json.dumps(new_slots)
+            last_update_str = current_time.isoformat()
+            next_update_str = (current_time + timedelta(hours=SHOP_UPDATE_HOURS)).isoformat()
+            
+            cursor.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', 
+                          (str(ctx.guild.id), slots_json, last_update_str, next_update_str))
+            
+            embed = discord.Embed(title="🔄 **ПОЛНЫЙ СБРОС** 🔄", description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!", color=0xff5500)
+            embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+            embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+            embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
+        else:
+            embed = discord.Embed(title="🔄 Кулдаун сброшен", description=f"**{ctx.author.name}** сбросил кулдаун !жир для всех!", color=0x00ff00)
+            embed.add_field(name="Затронуто пользователей", value=str(fat_affected), inline=True)
+        
+        conn.commit()
+        conn.close()
+        await ctx.send(embed=embed)
+        
+    except sqlite3.OperationalError as e:
+        if "locked" in str(e):
+            await ctx.send("⚠️ База данных временно заблокирована, попробуйте через пару секунд.")
+        else:
+            await ctx.send(f"❌ Ошибка базы данных: {e}")
+        print(f"❌ Ошибка при сбросе кулдаунов: {e}")
+        
 @bot.command(name='сбросвсех')
 async def reset_all_users_weight(ctx):
     if not has_tester_role(ctx.author):
