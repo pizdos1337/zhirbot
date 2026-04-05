@@ -2387,52 +2387,54 @@ async def reset_cooldowns(ctx):
         return
     
     db_path = get_db_path(ctx.guild.id)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
     
-    # Ждём пока БД разблокируется
-    await asyncio.sleep(0.5)
+    # Сбрасываем кулдаун !жир
+    cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
+    fat_affected = cursor.rowcount
     
-    try:
-        conn = sqlite3.connect(db_path, timeout=10.0)
-        cursor = conn.cursor()
-        
-        # Начинаем транзакцию
-        cursor.execute("BEGIN IMMEDIATE")
-        
-        cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
-        fat_affected = cursor.rowcount
-        
-        if has_high_tester_role(ctx.author):
-            cursor.execute('UPDATE user_fat SET last_case_time = NULL')
-            case_affected = cursor.rowcount
-            
-            # Генерируем новый магазин
-            current_time = datetime.now()
-            new_slots = generate_shop_items()
-            slots_json = json.dumps(new_slots)
-            last_update_str = current_time.isoformat()
-            next_update_str = (current_time + timedelta(hours=SHOP_UPDATE_HOURS)).isoformat()
-            
-            cursor.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', 
-                          (str(ctx.guild.id), slots_json, last_update_str, next_update_str))
-            
-            embed = discord.Embed(title="🔄 **ПОЛНЫЙ СБРОС** 🔄", description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!", color=0xff5500)
-            embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
-            embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
-            embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
-        else:
-            embed = discord.Embed(title="🔄 Кулдаун сброшен", description=f"**{ctx.author.name}** сбросил кулдаун !жир для всех!", color=0x00ff00)
-            embed.add_field(name="Затронуто пользователей", value=str(fat_affected), inline=True)
-        
+    # Сбрасываем кулдаун !жиркейс (оба поля)
+    cursor.execute('UPDATE user_fat SET last_case_time = NULL')
+    case_affected = cursor.rowcount
+    cursor.execute('UPDATE user_fat SET daily_case_last_time = NULL')
+    daily_affected = cursor.rowcount
+    
+    if has_high_tester_role(ctx.author):
+        # Закрываем соединение перед обновлением магазина
         conn.commit()
         conn.close()
-        await ctx.send(embed=embed)
         
-    except sqlite3.OperationalError as e:
-        if "locked" in str(e):
-            await ctx.send("⚠️ База данных временно заблокирована, попробуйте через пару секунд.")
-        else:
-            await ctx.send(f"❌ Ошибка базы данных: {e}")
-        print(f"❌ Ошибка при сбросе кулдаунов: {e}")
+        # Ждём немного
+        await asyncio.sleep(0.5)
+        
+        # Открываем новое соединение для магазина
+        conn2 = sqlite3.connect(db_path, timeout=10.0)
+        cursor2 = conn2.cursor()
+        
+        current_time = datetime.now()
+        new_slots = generate_shop_items()
+        slots_json = json.dumps(new_slots)
+        last_update_str = current_time.isoformat()
+        next_update_str = (current_time + timedelta(hours=SHOP_UPDATE_HOURS)).isoformat()
+        
+        cursor2.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', 
+                      (str(ctx.guild.id), slots_json, last_update_str, next_update_str))
+        conn2.commit()
+        conn2.close()
+        
+        embed = discord.Embed(title="🔄 **ПОЛНЫЙ СБРОС** 🔄", description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!", color=0xff5500)
+        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+        embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
+    else:
+        conn.commit()
+        conn.close()
+        embed = discord.Embed(title="🔄 Кулдаун сброшен", description=f"**{ctx.author.name}** сбросил кулдауны для всех!", color=0x00ff00)
+        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+    
+    await ctx.send(embed=embed)
         
 @bot.command(name='сбросвсех')
 async def reset_all_users_weight(ctx):
