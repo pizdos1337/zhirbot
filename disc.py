@@ -11,27 +11,84 @@ import shutil
 import glob
 import json
 
-# ===== НАСТРОЙКИ =====
+# ============================================
+# ========== НАСТРОЙКИ БОТА ==========
+# ============================================
+
+# ----- ОСНОВНЫЕ НАСТРОЙКИ -----
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 PREFIX = "!"
 DB_FOLDER = "/app/data/guild_databases"
 COOLDOWN_HOURS = 1
+CASE_COOLDOWN_HOURS = 24
+
+# ----- РОЛИ ДЛЯ ТЕСТЕРОВ -----
 TESTER_ROLE_NAME = "тестер"
 HIGH_TESTER_ROLE_NAME = "Высший тестер"
 
+# ===== НАСТРОЙКИ ВЕРОЯТНОСТЕЙ !жир =====
 BASE_MINUS_CHANCE = 0.2
 MAX_MINUS_CHANCE = 0.6
 PITY_INCREMENT = 0.1
 CONSECUTIVE_MINUS_BOOST = 0.2
 MAX_CONSECUTIVE_MINUS_BOOST = 0.8
 
+# ===== НАСТРОЙКИ ДЖЕКПОТА =====
 BASE_JACKPOT_CHANCE = 0.001
 JACKPOT_PITY_INCREMENT = 0.001
 MAX_JACKPOT_CHANCE = 0.05
 JACKPOT_MIN = 100
 JACKPOT_MAX = 500
 
-CASE_COOLDOWN_HOURS = 24
+# ===== НАСТРОЙКИ АВТО-ЖИРА =====
+AUTO_FAT_INTERVALS = {1: 6, 2: 3, 3: 1}
+AUTO_FAT_BASE_COST = 500
+AUTO_FAT_COST_INCREMENT = 500
+AUTO_FAT_MAX_LEVEL = 3
+
+# ===== НАСТРОЙКИ ПРЕСТИЖА =====
+PRESTIGE_BONUS_PER_LEVEL = 0.10
+PRESTIGE_LUCK_PER_LEVEL = 0.01
+PRESTIGE_BASE_COST = 2000
+PRESTIGE_COST_INCREMENT = 1000
+
+# ===== НАСТРОЙКИ ПРИБАВКИ =====
+INCOME_BONUS_PER_LEVEL = 0.05
+INCOME_BASE_COST = 250
+INCOME_COST_INCREMENT = 150
+
+# ===== НАСТРОЙКИ УДАЧИ =====
+LUCK_CASE_BONUS_PER_LEVEL = 0.25
+LUCK_UPGRADE_BONUS_PER_LEVEL = 0.5
+LUCK_BASE_COST = 1000
+LUCK_COST_INCREMENT = 500
+
+# ===== НАСТРОЙКИ КД !жир =====
+FAT_CD_REDUCTION_PER_LEVEL = 1
+FAT_CD_BASE_COST = 100
+FAT_CD_COST_INCREMENT = 50
+
+# ===== НАСТРОЙКИ КД кейса =====
+CASE_CD_REDUCTION_PER_LEVEL = 20
+CASE_CD_BASE_COST = 100
+CASE_CD_COST_INCREMENT = 50
+
+# ===== НАСТРОЙКИ МАГАЗИНА =====
+SHOP_SLOTS = 10
+SHOP_UPDATE_HOURS = 12
+
+# ===== НАСТРОЙКИ ОПЫТА =====
+XP_PER_FAT = 30
+XP_PER_UPGRADE = 50
+XP_PER_UPGRADE_KG = 40
+XP_PER_CASE = 100
+XP_PER_DUEL_WIN = 100
+XP_PER_SHOP_BUY = 20
+LEVEL_UP_REWARD_PER_LEVEL = 15
+
+# ============================================
+# ========== КОНЕЦ НАСТРОЕК ==========
+# ============================================
 
 CASE_PRIZES = [
     {"value": 0, "chance": 21.0, "emoji": "🔄", "name": "Ничего"},
@@ -53,11 +110,6 @@ total_chance = sum(prize["chance"] for prize in CASE_PRIZES)
 for prize in CASE_PRIZES:
     prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
 
-AUTO_FAT_INTERVALS = {1: 6, 2: 3, 3: 1}
-PRESTIGE_BONUS_PER_LEVEL = 0.10
-PRESTIGE_LUCK_PER_LEVEL = 0.01
-INCOME_BONUS_PER_LEVEL = 0.05
-
 CASES = {
     "daily": {"name": "Жиркейс", "emoji": "📦", "tradable": False, "daily": True, "prizes": CASE_PRIZES},
     "chicken": {"name": "Коробка от чикенбургера", "emoji": "🍗", "tradable": True, "daily": False, "shop_chance": 0.3, "min_shop": 1, "max_shop": 3, "price": 10, "prizes": [{"value": -10, "chance": 20, "emoji": "📉"}, {"value": 0, "chance": 30, "emoji": "🔄"}, {"value": 10, "chance": 20, "emoji": "📈"}, {"value": 15, "chance": 10, "emoji": "📈"}, {"value": 20, "chance": 10, "emoji": "⬆️"}, {"value": 25, "chance": 10, "emoji": "⬆️"}]},
@@ -69,9 +121,6 @@ CASES = {
     "rotten_pack": {"name": "Упаковка Гнилой Ножки KFC", "emoji": "💀📦", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 10, "price": 100, "prizes": [{"value": 0, "chance": 98, "emoji": "🔄"}, {"value": "rotten_leg", "chance": 2, "emoji": "💀"}]},
     "water_pack": {"name": "Упаковка Стакана Воды", "emoji": "💧📦", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 10, "price": 100, "prizes": [{"value": 0, "chance": 98, "emoji": "🔄"}, {"value": "water", "chance": 2, "emoji": "💧"}]}
 }
-
-SHOP_SLOTS = 10
-SHOP_UPDATE_HOURS = 12
 
 SHOP_ITEMS = [
     {"name": "Горелый бекон", "chance": 1.0, "min_amount": 3, "max_amount": 20, "price": 20, "gain_per_24h": 1, "description": "🏭 Даёт +1 кг каждые 24 часа"},
@@ -87,9 +136,9 @@ SHOP_ITEMS = [
     {"name": "Бездонная пачка чипсов", "chance": 0.03, "min_amount": 1, "max_amount": 1, "price": 3000, "gain_per_24h": 250, "description": "🥨 Даёт +250 кг каждые 24 часа"},
     {"name": "Пожизненный запас чикенбургеров", "chance": 0.02, "min_amount": 1, "max_amount": 1, "price": 5000, "gain_per_24h": 500, "description": "🍔🍔🍔 Даёт +500 кг каждые 24 часа"},
     {"name": "Автоматическая система подачи холестерина", "chance": 0.01, "min_amount": 1, "max_amount": 1, "price": 7000, "gain_per_24h": 1000, "description": "⚙️💉 Даёт +1000 кг каждые 24 часа"},
-    {"name": "Святой сэндвич", "chance": 0.005, "min_amount": 1, "max_amount": 1, "price": 10000, "gain_per_24h": 0, "description": "✨ **ЛЕГЕНДАРНО** ✨\nУвеличивает шанс джекпота до 30% за шт"},
-    {"name": "Гнилая ножка KFC", "chance": 0.005, "min_amount": 1, "max_amount": 5, "price": 1, "gain_per_24h": 0, "description": "💀 **ПРОКЛЯТО** 💀\n60% потерять 50% массы, 40% джекпот"},
-    {"name": "Стакан воды", "chance": 0.005, "min_amount": 1, "max_amount": 5, "price": 1, "gain_per_24h": 0, "description": "💧 **ОЧИЩЕНИЕ** 💧\nНет минусов, но весь прирост в 3 раза меньше"},
+    {"name": "Святой сэндвич", "chance": 0.005, "min_amount": 1, "max_amount": 1, "price": 10000, "gain_per_24h": 0, "description": "✨ **ЛЕГЕНДАРНО** ✨"},
+    {"name": "Гнилая ножка KFC", "chance": 0.005, "min_amount": 1, "max_amount": 5, "price": 1, "gain_per_24h": 0, "description": "💀 **ПРОКЛЯТО** 💀"},
+    {"name": "Стакан воды", "chance": 0.005, "min_amount": 1, "max_amount": 5, "price": 1, "gain_per_24h": 0, "description": "💧 **ОЧИЩЕНИЕ** 💧"},
     {"name": "Автохолестерол", "chance": 0.05, "min_amount": 1, "max_amount": 1, "price": 1000, "gain_per_24h": 0, "description": "💊 Даёт от 1кг до 10кг в час"},
     {"name": "Холестеринимус", "chance": 0.05, "min_amount": 1, "max_amount": 1, "price": 500, "gain_per_24h": 0, "description": "💊 Даёт от 1кг до 5кг в час"},
     {"name": "Яблоко", "chance": 0.05, "min_amount": 1, "max_amount": 1, "price": 500, "gain_per_24h": 0, "description": "🍎 Уменьшает кулдаун !жир на 5% за штуку"},
@@ -98,10 +147,10 @@ SHOP_ITEMS = [
     {"name": "Золотой Апельсин", "chance": 0.01, "min_amount": 1, "max_amount": 1, "price": 1000, "gain_per_24h": 0, "description": "🍊✨ Уменьшает кулдаун !жиркейс на 10% за штуку"},
     {"name": "Драгонфрукт", "chance": 0.01, "min_amount": 1, "max_amount": 1, "price": 1000, "gain_per_24h": 0, "description": "🐉🍈 Повышает шанс джекпота на 1% за штуку"},
     {"name": "Золотой Драгонфрукт", "chance": 0.005, "min_amount": 1, "max_amount": 1, "price": 3000, "gain_per_24h": 0, "description": "🐉🍈✨ Повышает шанс джекпота на 5% за штуку"},
-    {"name": "Снатчер", "chance": 0.001, "min_amount": 1, "max_amount": 1, "price": 2000, "gain_per_24h": 0, "description": "👾 **СНАТЧЕР** 👾\nКаждые 6 часов с шансом 20% генерирует 1 случайный предмет из магазина"},
+    {"name": "Снатчер", "chance": 0.001, "min_amount": 1, "max_amount": 1, "price": 2000, "gain_per_24h": 0, "description": "👾 **СНАТЧЕР** 👾"},
 ]
 
-ITEM_EMOJIS = {item["name"]: item.get("emoji", "📦") for item in SHOP_ITEMS}
+ITEM_EMOJIS = {item["name"]: "📦" for item in SHOP_ITEMS}
 ITEM_EMOJIS.update({"Снатчер": "👾", "Святой сэндвич": "✨", "Гнилая ножка KFC": "💀", "Стакан воды": "💧", "Автохолестерол": "💊", "Холестеринимус": "💊", "Яблоко": "🍎", "Апельсин": "🍊", "Золотое Яблоко": "🍎✨", "Золотой Апельсин": "🍊✨", "Драгонфрукт": "🐉🍈", "Золотой Драгонфрукт": "🐉🍈✨"})
 
 CASES["shop_case"] = {"name": "Магазинный кейс", "emoji": "🏪", "tradable": True, "daily": False, "shop_chance": 0.3, "min_shop": 1, "max_shop": 5, "price": 150, "prizes": []}
@@ -114,7 +163,32 @@ else:
         prize["chance"] = (prize["chance"] / total) * 100
 CASES["shop_case"]["prizes"] = shop_case_prizes
 
-LEGENDARY_UPGRADE_PRICES = {"Святой сэндвич": 20000, "Гнилая ножка KFC": 5000, "Стакан воды": 3000, "Автохолестерол": 5000, "Холестеринимус": 2500, "Яблоко": 1500, "Золотое Яблоко": 3000, "Апельсин": 2000, "Золотой Апельсин": 4000, "Драгонфрукт": 4000, "Золотой Драгонфрукт": 8000, "Снатчер": 20000}
+LEGENDARY_UPGRADE_PRICES = {
+    "Святой сэндвич": 20000, "Гнилая ножка KFC": 5000, "Стакан воды": 3000,
+    "Автохолестерол": 5000, "Холестеринимус": 2500, "Яблоко": 1500,
+    "Золотое Яблоко": 3000, "Апельсин": 2000, "Золотой Апельсин": 4000,
+    "Драгонфрукт": 4000, "Золотой Драгонфрукт": 8000, "Снатчер": 20000
+}
+
+RANKS = [
+    {"name": "Задолженность по кг", "min": -999, "max": -51, "emoji": "👻"},
+    {"name": "Невесомый", "min": -50, "max": -21, "emoji": "🍃"},
+    {"name": "Бедыч", "min": -20, "max": -1, "emoji": "🎈"},
+    {"name": "Абсолютный ноль", "min": 0, "max": 0, "emoji": "⚖️"},
+    {"name": "Микро жирик", "min": 1, "max": 29, "emoji": "🏃"},
+    {"name": "Мини жирик", "min": 30, "max": 69, "emoji": "🍔"},
+    {"name": "Вес имеет", "min": 70, "max": 119, "emoji": "🐘"},
+    {"name": "Толстый", "min": 120, "max": 199, "emoji": "🏋️"},
+    {"name": "Бронзовая лига Бургер Кинга", "min": 200, "max": 599, "emoji": "🟤"},
+    {"name": "Серебрянная лига Бургер Кинга", "min": 600, "max": 1199, "emoji": "🔘"},
+    {"name": "Золотая лига Бургер Кинга", "min": 1200, "max": 1799, "emoji": "🟡"},
+    {"name": "Платиновая лига Бургер Кинга", "min": 1800, "max": 2399, "emoji": "💠"},
+    {"name": "Алмазная лига Бургер Кинга", "min": 2400, "max": 2999, "emoji": "💎"},
+    {"name": "Ониксовая лига Бургер Кинга", "min": 3000, "max": 3599, "emoji": "◆︎"},
+    {"name": "Жирмезис", "min": 3600, "max": 5000, "emoji": "⚜️"},
+    {"name": "Арчжирмезис", "min": 5000, "max": 10000, "emoji": "♛"},
+    {"name": "ЖИРНАЯ ТОЛСТАЯ ОГРОМНАЯ СВИНЬЯ", "min": 10001, "max": 99999999, "emoji": "🐖"},
+]
 
 print("="*60)
 print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
@@ -154,7 +228,7 @@ def add_xp(guild_id, user_id, xp_amount):
     new_level, current_xp = get_level_and_xp(new_total_xp)
     total_kg_reward = 0
     for level in range(old_level + 1, new_level + 1):
-        total_kg_reward += 15 * level
+        total_kg_reward += LEVEL_UP_REWARD_PER_LEVEL * level
     new_weight = data['current_number'] + total_kg_reward
     update_user_data(guild_id, user_id, user_xp=new_total_xp, user_level=new_level, number=new_weight)
     return new_level - old_level, total_kg_reward, new_level
@@ -174,10 +248,10 @@ def get_income_bonus(income_upgrade):
     return 1 + (income_upgrade * INCOME_BONUS_PER_LEVEL)
 
 def get_fat_cd_reduction(upgrade_count):
-    return upgrade_count * 1
+    return upgrade_count * FAT_CD_REDUCTION_PER_LEVEL
 
 def get_case_cd_reduction(upgrade_count):
-    return upgrade_count * 20
+    return upgrade_count * CASE_CD_REDUCTION_PER_LEVEL
 
 def get_auto_fat_interval(auto_fat_level):
     if auto_fat_level <= 0:
@@ -186,17 +260,17 @@ def get_auto_fat_interval(auto_fat_level):
 
 def get_upgrade_cost(upgrade_type, current_level):
     if upgrade_type == "fat_cd":
-        return 100 + (current_level * 50)
+        return FAT_CD_BASE_COST + (current_level * FAT_CD_COST_INCREMENT)
     elif upgrade_type == "case_cd":
-        return 100 + (current_level * 50)
+        return CASE_CD_BASE_COST + (current_level * CASE_CD_COST_INCREMENT)
     elif upgrade_type == "luck":
-        return 1000 + (current_level * 500)
+        return LUCK_BASE_COST + (current_level * LUCK_COST_INCREMENT)
     elif upgrade_type == "income":
-        return 250 + (current_level * 150)
+        return INCOME_BASE_COST + (current_level * INCOME_COST_INCREMENT)
     elif upgrade_type == "prestige":
-        return 2000 + (current_level * 1000)
+        return PRESTIGE_BASE_COST + (current_level * PRESTIGE_COST_INCREMENT)
     elif upgrade_type == "auto_fat":
-        return 500 + (current_level * 500)
+        return AUTO_FAT_BASE_COST + (current_level * AUTO_FAT_COST_INCREMENT)
     return 0
 
 def repair_database(db_path):
@@ -422,26 +496,6 @@ def update_user_data(guild_id, user_id, **kwargs):
     except:
         pass
 
-RANKS = [
-    {"name": "Задолженность по кг", "min": -999, "max": -51, "emoji": "👻"},
-    {"name": "Невесомый", "min": -50, "max": -21, "emoji": "🍃"},
-    {"name": "Бедыч", "min": -20, "max": -1, "emoji": "🎈"},
-    {"name": "Абсолютный ноль", "min": 0, "max": 0, "emoji": "⚖️"},
-    {"name": "Микро жирик", "min": 1, "max": 29, "emoji": "🏃"},
-    {"name": "Мини жирик", "min": 30, "max": 69, "emoji": "🍔"},
-    {"name": "Вес имеет", "min": 70, "max": 119, "emoji": "🐘"},
-    {"name": "Толстый", "min": 120, "max": 199, "emoji": "🏋️"},
-    {"name": "Бронзовая лига Бургер Кинга", "min": 200, "max": 599, "emoji": "🟤"},
-    {"name": "Серебрянная лига Бургер Кинга", "min": 600, "max": 1199, "emoji": "🔘"},
-    {"name": "Золотая лига Бургер Кинга", "min": 1200, "max": 1799, "emoji": "🟡"},
-    {"name": "Платиновая лига Бургер Кинга", "min": 1800, "max": 2399, "emoji": "💠"},
-    {"name": "Алмазная лига Бургер Кинга", "min": 2400, "max": 2999, "emoji": "💎"},
-    {"name": "Ониксовая лига Бургер Кинга", "min": 3000, "max": 3599, "emoji": "◆︎"},
-    {"name": "Жирмезис", "min": 3600, "max": 5000, "emoji": "⚜️"},
-    {"name": "Арчжирмезис", "min": 5000, "max": 10000, "emoji": "♛"},
-    {"name": "ЖИРНАЯ ТОЛСТАЯ ОГРОМНАЯ СВИНЬЯ", "min": 10001, "max": 99999999, "emoji": "🐖"},
-]
-
 def get_rank(weight):
     for rank in RANKS:
         if rank["min"] <= weight <= rank["max"]:
@@ -465,15 +519,6 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 def get_user_cases(guild_id, user_id):
     data = get_user_data(guild_id, user_id)
     return data.get('cases_dict', {})
-
-def update_user_cases(guild_id, user_id, case_id, change=1):
-    data = get_user_data(guild_id, user_id)
-    cases_dict = data.get('cases_dict', {}).copy()
-    if case_id in cases_dict:
-        cases_dict[case_id] += change
-        if cases_dict[case_id] < 0:
-            cases_dict[case_id] = 0
-    update_user_data(guild_id, user_id, cases_dict=cases_dict)
 
 def can_get_daily_case(guild_id, user_id, custom_cooldown=None):
     data = get_user_data(guild_id, user_id)
@@ -628,36 +673,26 @@ def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpo
 def open_case(case_id, prestige_luck=0, luck_upgrade=0):
     case = CASES[case_id]
     prizes = case["prizes"]
-    
     total_chance = sum(p["chance"] for p in prizes)
     for prize in prizes:
         prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
-    
-    # Престиж: +1% к шансу за уровень (абсолютно)
-    # Удача: +0.25% к шансу за уровень (абсолютно)
-    bonus = prestige_luck * 100 + luck_upgrade * 0.25  # престиж 5 = +5%, удача 10 = +2.5%
-    
+    bonus = (prestige_luck * 100) + (luck_upgrade * LUCK_CASE_BONUS_PER_LEVEL)
     modified_prizes = []
     for prize in prizes:
         p = prize.copy()
-        # Только для редких предметов (>=100 кг или особые)
         if (isinstance(p["value"], int) and p["value"] >= 100) or p["value"] in ["rotten_leg", "water"]:
             p["normalized_chance"] = prize["normalized_chance"] + bonus
         modified_prizes.append(p)
-    
-    # Нормализуем обратно, чтобы сумма была 100%
     total = sum(p["normalized_chance"] for p in modified_prizes)
     for p in modified_prizes:
         p["normalized_chance"] = (p["normalized_chance"] / total) * 100
     prizes = modified_prizes
-    
     roll = random.random() * 100
     cumulative = 0
     for prize in prizes:
         cumulative += prize["normalized_chance"]
         if roll < cumulative:
             return prize
-    
     return prizes[-1]
 
 async def apply_auto_fat(user_id, guild_id, user_name, channel_id=None):
@@ -1055,7 +1090,7 @@ async def migrate_old_autoburgers_to_auto_fat():
                 users = cursor.fetchall()
                 for user_id, user_name, autoburger_count in users:
                     if autoburger_count > 0:
-                        new_level = min(autoburger_count, 3)
+                        new_level = min(autoburger_count, AUTO_FAT_MAX_LEVEL)
                         interval = get_auto_fat_interval(new_level)
                         next_time = datetime.now() + timedelta(hours=interval) if interval else None
                         cursor.execute("UPDATE user_fat SET auto_fat_level = ?, next_auto_fat_time = ?, autoburger_count = 0 WHERE user_id = ?", (new_level, next_time, user_id))
@@ -1153,7 +1188,7 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
     data = get_user_data(guild_id, user_id, member.name)
     shadow_chance = data.get('shadow_upgrade_chance', 0)
     prestige_bonus = 1 + prestige_luck
-    luck_bonus = 1 + (luck_upgrade * 0.005)
+    luck_bonus = 1 + (luck_upgrade * LUCK_UPGRADE_BONUS_PER_LEVEL / 100)
     base_chance = target_item['chance']
     real_chance = min(base_chance * prestige_bonus * luck_bonus + shadow_chance / 100, 1.0)
     display_chance = base_chance * prestige_bonus * luck_bonus * 100
@@ -1200,7 +1235,7 @@ async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0
     data = get_user_data(guild_id, user_id, member.name)
     shadow_chance = data.get('shadow_upgrade_chance', 0)
     prestige_bonus = 1 + prestige_luck
-    luck_bonus = 1 + (luck_upgrade * 0.005)
+    luck_bonus = 1 + (luck_upgrade * LUCK_UPGRADE_BONUS_PER_LEVEL / 100)
     base_chance = target_item['chance']
     real_chance = min(base_chance * prestige_bonus * luck_bonus + shadow_chance / 100, 1.0)
     display_chance = base_chance * prestige_bonus * luck_bonus * 100
@@ -1398,7 +1433,7 @@ async def upgrade_user_command(ctx):
         case_cd_color = "🟢" if data['current_number'] >= case_cd_cost else "🔴"
         stats_text += f"{case_cd_color} **📦 КД кейса** — ур.{case_cd_level} (-{case_cd_bonus} мин)\n   Стоимость: `{case_cd_cost} кг`\n\n"
         luck_color = "🟢" if data['current_number'] >= luck_cost else "🔴"
-        stats_text += f"{luck_color} **🍀 Удача** — ур.{luck_level} (+{luck_level * 0.25:.2f}% к редким, +{luck_level * 0.5:.2f}% к апгрейдам)\n   Стоимость: `{luck_cost} кг`\n\n"
+        stats_text += f"{luck_color} **🍀 Удача** — ур.{luck_level} (+{luck_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким, +{luck_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам)\n   Стоимость: `{luck_cost} кг`\n\n"
         income_color = "🟢" if data['current_number'] >= income_cost else "🔴"
         stats_text += f"{income_color} **📈 Прибавка** — ур.{income_level} (+{(income_bonus-1)*100:.0f}% к доходу от предметов)\n   Стоимость: `{income_cost} кг`\n\n"
         prestige_color = "🟢" if data['current_number'] >= prestige_cost else "🔴"
@@ -1407,7 +1442,7 @@ async def upgrade_user_command(ctx):
         stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
         
         embed.add_field(name="⚡ **ХАРАКТЕРИСТИКИ**", value=stats_text, inline=False)
-        embed.add_field(name="💡 **ЧТО ДАЁТ**", value="• **КД !жир** — уменьшает время ожидания команды\n• **КД кейса** — уменьшает время ожидания бесплатного кейса\n• **Удача** — повышает шанс редких предметов в кейсах (+0.25%/ур) и шанс апгрейдов (+0.5%/ур)\n• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов (+5%/ур)\n• **Престиж** — сбрасывает вес и улучшения, но даёт +10% ко всем кг и +1% к шансам за уровень (опыт и уровень сохраняются)\n• **Авто-жир** — автоматически использует !жир каждые 6/3/1 час(ов)", inline=False)
+        embed.add_field(name="💡 **ЧТО ДАЁТ**", value="• **КД !жир** — уменьшает время ожидания команды\n• **КД кейса** — уменьшает время ожидания бесплатного кейса\n• **Удача** — повышает шанс редких предметов в кейсах и шанс апгрейдов\n• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов\n• **Престиж** — сбрасывает вес и улучшения, но даёт +10% ко всем кг и +1% к шансам за уровень (опыт и уровень сохраняются)\n• **Авто-жир** — автоматически использует !жир каждые 6/3/1 час(ов)", inline=False)
         embed.set_footer(text="💰 Для улучшения нажмите на соответствующую реакцию")
         return embed
     
@@ -1448,8 +1483,8 @@ async def upgrade_user_command(ctx):
                 cost = get_upgrade_cost("prestige", current_level)
             elif upgrade_type == "auto_fat":
                 current_level = current_data.get('auto_fat_level', 0)
-                if current_level >= 3:
-                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Авто-жир уже на максимальном (3) уровне!", color=0xff0000)
+                if current_level >= AUTO_FAT_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Авто-жир уже на максимальном ({AUTO_FAT_MAX_LEVEL}) уровне!", color=0xff0000)
                     temp_msg = await ctx.send(embed=error_embed)
                     await asyncio.sleep(2)
                     await temp_msg.delete()
@@ -1463,7 +1498,6 @@ async def upgrade_user_command(ctx):
                 await temp_msg.delete()
                 continue
             
-            # ===== ПРЕСТИЖ =====
             if upgrade_type == "prestige":
                 confirm_embed = discord.Embed(
                     title="⚠️ **ПРЕСТИЖ** ⚠️",
@@ -1489,8 +1523,6 @@ async def upgrade_user_command(ctx):
                     continue
                 
                 new_prestige = current_level + 1
-                
-                # Сохраняем опыт и уровень (НЕ СБРАСЫВАЕМ)
                 current_xp = current_data.get('user_xp', 0)
                 current_user_level = current_data.get('user_level', 0)
                 
@@ -1506,8 +1538,6 @@ async def upgrade_user_command(ctx):
                     auto_fat_level=0,
                     next_auto_fat_time=None,
                     prestige=new_prestige,
-                    # Опыт и уровень НЕ трогаем!
-                    # user_xp и user_level остаются как есть
                     consecutive_plus=0,
                     consecutive_minus=0,
                     jackpot_pity=0,
@@ -1540,7 +1570,6 @@ async def upgrade_user_command(ctx):
                 await temp_msg.delete()
                 continue
             
-            # ===== ОБЫЧНЫЕ УЛУЧШЕНИЯ =====
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
@@ -1571,7 +1600,7 @@ async def upgrade_user_command(ctx):
                 new_bonus = get_case_cd_reduction(new_level)
                 bonus_text = f"КД кейса уменьшен на {new_bonus} мин"
             elif upgrade_type == "luck":
-                bonus_text = f"Удача увеличена до +{new_level * 0.25:.2f}% к редким предметам и +{new_level * 0.5:.2f}% к апгрейдам"
+                bonus_text = f"Удача увеличена до +{new_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким предметам и +{new_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам"
             elif upgrade_type == "income":
                 new_bonus = get_income_bonus(new_level)
                 bonus_text = f"Прибавка увеличена до +{(new_bonus-1)*100:.0f}% к доходу от предметов"
@@ -1614,7 +1643,7 @@ async def upgrade_user_command(ctx):
                 final_embed.set_footer(text="💤 Режим ожидания активирован. Используйте !апгрейдюзер заново для продолжения.")
                 await msg.edit(embed=final_embed)
                 break
-                
+
 @bot.command(name='жир')
 async def fat_command(ctx):
     guild_id = ctx.guild.id
@@ -1645,7 +1674,7 @@ async def fat_command(ctx):
         data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
     temp_number = data['current_number'] + change
     update_user_data(guild_id, user_id, number=temp_number)
-    levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, 30)
+    levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
     final_data = get_user_data(guild_id, user_id, user_name)
     final_number = final_data['current_number']
     update_user_data(guild_id, user_id, user_name=user_name, consecutive_plus=new_plus, consecutive_minus=new_minus, jackpot_pity=new_pity, fat_cooldown_time=datetime.now())
@@ -1806,7 +1835,7 @@ async def fat_case_command(ctx):
         luck_upgrade = data.get('luck_upgrade', 0)
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
         update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
-        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, 100)
+        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_CASE)
         line = [random.choice(prize_emojis) for _ in range(100)]
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
@@ -1909,10 +1938,53 @@ async def fat_case_command(ctx):
         timeout_embed = discord.Embed(title="⏰ Время вышло", description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён в инвентаре!", color=0xff0000)
         await case_msg.edit(embed=timeout_embed)
 
+@bot.command(name='сброскд')
+async def reset_cooldowns(ctx):
+    if not has_tester_role(ctx.author) and not has_high_tester_role(ctx.author):
+        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}** или **{HIGH_TESTER_ROLE_NAME}**")
+        return
+    
+    db_path = get_db_path(ctx.guild.id)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
+    fat_affected = cursor.rowcount
+    cursor.execute('UPDATE user_fat SET last_case_time = NULL')
+    case_affected = cursor.rowcount
+    cursor.execute('UPDATE user_fat SET daily_case_last_time = NULL')
+    daily_affected = cursor.rowcount
+    
+    if has_high_tester_role(ctx.author):
+        conn.commit()
+        conn.close()
+        await asyncio.sleep(0.5)
+        conn2 = sqlite3.connect(db_path, timeout=10.0)
+        cursor2 = conn2.cursor()
+        current_time = datetime.now()
+        new_slots = generate_shop_items()
+        slots_json = json.dumps(new_slots)
+        last_update_str = current_time.isoformat()
+        next_update_str = (current_time + timedelta(hours=SHOP_UPDATE_HOURS)).isoformat()
+        cursor2.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', (str(ctx.guild.id), slots_json, last_update_str, next_update_str))
+        conn2.commit()
+        conn2.close()
+        embed = discord.Embed(title="🔄 **ПОЛНЫЙ СБРОС** 🔄", description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!", color=0xff5500)
+        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+        embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
+    else:
+        conn.commit()
+        conn.close()
+        embed = discord.Embed(title="🔄 Кулдаун сброшен", description=f"**{ctx.author.name}** сбросил кулдауны для всех!", color=0x00ff00)
+        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
+        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
+    
+    await ctx.send(embed=embed)
+
 @bot.command(name='жиротрясы')
 async def fat_leaderboard(ctx):
-    guild_id = ctx.guild.id
-    users = get_all_users_sorted(guild_id)
+    users = get_all_users_sorted(ctx.guild.id)
     if not users:
         await ctx.send(f"📭 На сервере **{ctx.guild.name}** пока никто не участвовал!")
         return
@@ -1937,7 +2009,7 @@ async def fat_leaderboard(ctx):
             leaderboard_text += "... и ещё несколько участников"
             break
     embed.description = leaderboard_text
-    stats = get_guild_stats(guild_id)
+    stats = get_guild_stats(ctx.guild.id)
     embed.add_field(name="📊 Статистика сервера", value=f"Участников: {stats['total_users']}\nСуммарный вес: {stats['total_weight']}kg\nСредний вес: {stats['avg_weight']:.1f}kg\n🔼 Толстых: {stats['positive']} | 🔽 Худых: {stats['negative']} | ⚖️ Нулевых: {stats['zero']}", inline=False)
     await ctx.send(embed=embed)
 
@@ -2048,7 +2120,7 @@ async def fat_help(ctx):
     embed.add_field(name="⚔️ **ДУЭЛИ**", value="`!дуэль @user [кг/\"все\"]` - вызвать на дуэль", inline=False)
     embed.add_field(name="🔧 **АПГРЕЙДЫ**", value="`!апгрейд` - улучшить предмет\n`!апгрейдкг [кол-во]` - улучшить кг в предмет\n`!апгрейдюзер` - улучшить характеристики персонажа\n`!выбрать [номер]` - выбрать цель апгрейда", inline=False)
     embed.add_field(name="💰 **ЭКОНОМИКА**", value="`!магазин` - магазин предметов\n`!купить [слот] [кол-во]` - купить предмет\n`!продать [предмет] [кол-во]` - продать предмет\n`!датьжир [@user] [кол-во]` - передать кг\n`!датьпредмет [@user] [кол-во] [предмет]` - передать предмет", inline=False)
-    embed.add_field(name="⭐ **ХАРАКТЕРИСТИКИ**", value="• **КД !жир** — уменьшает время ожидания\n• **КД кейса** — уменьшает время ожидания кейса\n• **Удача** — повышает шансы в кейсах и апгрейдах\n• **Прибавка** — +5% к доходу от предметов за уровень\n• **Престиж** — +10% ко всем кг и +1% к шансам за уровень\n• **Авто-жир** — автоматический !жир каждые 6/3/1 час", inline=False)
+    embed.add_field(name="⭐ **ХАРАКТЕРИСТИКИ**", value="• **КД !жир** — уменьшает время ожидания\n• **КД кейса** — уменьшает время ожидания кейса\n• **Удача** — повышает шансы в кейсах и апгрейдах\n• **Прибавка** — +5% к доходу от предметов за уровень\n• **Престиж** — +10% ко всем кг и +1% к шансам за уровень (опыт сохраняется)\n• **Авто-жир** — автоматический !жир каждые 6/3/1 час", inline=False)
     embed.set_footer(text="🔥❄️💰 - следите за показателями!")
     await ctx.send(embed=embed)
 
@@ -2143,7 +2215,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             loser_new_weight = opponent_data['current_number'] - duel_amount
             update_user_data(guild_id, str(winner.id), number=winner_new_weight)
             update_user_data(guild_id, str(loser.id), number=loser_new_weight)
-            levels_gained, kg_reward, new_level = add_xp(guild_id, str(winner.id), 100)
+            levels_gained, kg_reward, new_level = add_xp(guild_id, str(winner.id), XP_PER_DUEL_WIN)
             result_description = f"**Победитель:** {winner.mention}\n\n📊 **Результаты:**\n{winner.mention}: {challenger_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n{loser.mention}: {opponent_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})"
             if levels_gained > 0:
                 result_description += f"\n\n⭐ +{kg_reward} кг за повышение уровня!"
@@ -2153,7 +2225,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             loser_new_weight = challenger_data['current_number'] - duel_amount
             update_user_data(guild_id, str(winner.id), number=winner_new_weight)
             update_user_data(guild_id, str(loser.id), number=loser_new_weight)
-            levels_gained, kg_reward, new_level = add_xp(guild_id, str(winner.id), 100)
+            levels_gained, kg_reward, new_level = add_xp(guild_id, str(winner.id), XP_PER_DUEL_WIN)
             result_description = f"**Победитель:** {winner.mention}\n\n📊 **Результаты:**\n{winner.mention}: {opponent_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n{loser.mention}: {challenger_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})"
             if levels_gained > 0:
                 result_description += f"\n\n⭐ +{kg_reward} кг за повышение уровня!"
@@ -2442,7 +2514,7 @@ async def buy_command(ctx, slot: int, amount: int = 1):
         purchase_desc = f"{item['name']} x{amount}"
         update_user_data(ctx.guild.id, str(ctx.author.id), number=new_number, item_counts=save_user_items(items_dict), last_command=None, last_command_use_time=None)
     update_shop_data(ctx.guild.id, slots, last_update, next_update)
-    levels_gained, kg_reward, new_level = add_xp(ctx.guild.id, str(ctx.author.id), 20)
+    levels_gained, kg_reward, new_level = add_xp(ctx.guild.id, str(ctx.author.id), XP_PER_SHOP_BUY)
     embed = discord.Embed(title="✅ Покупка совершена!", description=f"**{ctx.author.mention}** приобрёл товары!", color=0x00ff00)
     embed.add_field(name="📦 Предмет", value=purchase_desc, inline=True)
     embed.add_field(name="💰 Цена", value=f"{total_price} кг", inline=True)
@@ -2460,62 +2532,6 @@ async def fat_reset(ctx, member: discord.Member = None):
     update_user_data(ctx.guild.id, str(target.id), number=0, consecutive_plus=0, consecutive_minus=0, jackpot_pity=0, item_counts='{}')
     await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg")
 
-@bot.command(name='сброскд')
-async def reset_cooldowns(ctx):
-    if not has_tester_role(ctx.author) and not has_high_tester_role(ctx.author):
-        await ctx.send(f"❌ У вас нет прав! Нужна роль **{TESTER_ROLE_NAME}** или **{HIGH_TESTER_ROLE_NAME}**")
-        return
-    
-    db_path = get_db_path(ctx.guild.id)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Сбрасываем кулдаун !жир
-    cursor.execute('UPDATE user_fat SET fat_cooldown_time = NULL')
-    fat_affected = cursor.rowcount
-    
-    # Сбрасываем кулдаун !жиркейс (оба поля)
-    cursor.execute('UPDATE user_fat SET last_case_time = NULL')
-    case_affected = cursor.rowcount
-    cursor.execute('UPDATE user_fat SET daily_case_last_time = NULL')
-    daily_affected = cursor.rowcount
-    
-    if has_high_tester_role(ctx.author):
-        # Закрываем соединение перед обновлением магазина
-        conn.commit()
-        conn.close()
-        
-        # Ждём немного
-        await asyncio.sleep(0.5)
-        
-        # Открываем новое соединение для магазина
-        conn2 = sqlite3.connect(db_path, timeout=10.0)
-        cursor2 = conn2.cursor()
-        
-        current_time = datetime.now()
-        new_slots = generate_shop_items()
-        slots_json = json.dumps(new_slots)
-        last_update_str = current_time.isoformat()
-        next_update_str = (current_time + timedelta(hours=SHOP_UPDATE_HOURS)).isoformat()
-        
-        cursor2.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', 
-                      (str(ctx.guild.id), slots_json, last_update_str, next_update_str))
-        conn2.commit()
-        conn2.close()
-        
-        embed = discord.Embed(title="🔄 **ПОЛНЫЙ СБРОС** 🔄", description=f"**{ctx.author.name}** (Высший тестер) выполнил глобальный сброс!", color=0xff5500)
-        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
-        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
-        embed.add_field(name="🏪 Магазин", value=f"Принудительно обновлён", inline=True)
-    else:
-        conn.commit()
-        conn.close()
-        embed = discord.Embed(title="🔄 Кулдаун сброшен", description=f"**{ctx.author.name}** сбросил кулдауны для всех!", color=0x00ff00)
-        embed.add_field(name="⏰ Сброс !жир", value=f"Затронуто: {fat_affected} пользователей", inline=True)
-        embed.add_field(name="📦 Сброс !жиркейс", value=f"Затронуто: {case_affected} пользователей", inline=True)
-    
-    await ctx.send(embed=embed)
-        
 @bot.command(name='сбросвсех')
 async def reset_all_users_weight(ctx):
     if not has_tester_role(ctx.author):
