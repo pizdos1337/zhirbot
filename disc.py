@@ -37,14 +37,14 @@ MAX_CONSECUTIVE_MINUS_BOOST = 0.8
 BASE_JACKPOT_CHANCE = 0.001
 JACKPOT_PITY_INCREMENT = 0.001
 MAX_JACKPOT_CHANCE = 0.05
-JACKPOT_MIN = 100
-JACKPOT_MAX = 500
+JACKPOT_MIN = 500
+JACKPOT_MAX = 1000
 
 # ===== НАСТРОЙКИ АВТО-ЖИРА =====
-AUTO_FAT_INTERVALS = {1: 6, 2: 3, 3: 1}
+AUTO_FAT_INTERVALS = {1: 6, 2: 3, 3: 1, 4: 0.5, 5: 0.25, 6: 0.1}
 AUTO_FAT_BASE_COST = 500
 AUTO_FAT_COST_INCREMENT = 500
-AUTO_FAT_MAX_LEVEL = 3
+AUTO_FAT_MAX_LEVEL = 6
 
 # ===== НАСТРОЙКИ ПРЕСТИЖА =====
 PRESTIGE_BONUS_PER_LEVEL = 0.10
@@ -55,7 +55,7 @@ PRESTIGE_COST_INCREMENT = 1000
 # ===== НАСТРОЙКИ ПРИБАВКИ =====
 INCOME_BONUS_PER_LEVEL = 0.05
 INCOME_BASE_COST = 250
-INCOME_COST_INCREMENT = 150
+INCOME_COST_INCREMENT = 100
 
 # ===== НАСТРОЙКИ УДАЧИ =====
 LUCK_CASE_BONUS_PER_LEVEL = 0.25
@@ -64,14 +64,14 @@ LUCK_BASE_COST = 1000
 LUCK_COST_INCREMENT = 500
 
 # ===== НАСТРОЙКИ КД !жир =====
-FAT_CD_REDUCTION_PER_LEVEL = 1
-FAT_CD_BASE_COST = 100
+FAT_CD_REDUCTION_PER_LEVEL = 5
+FAT_CD_BASE_COST = 150
 FAT_CD_COST_INCREMENT = 50
 
 # ===== НАСТРОЙКИ КД кейса =====
-CASE_CD_REDUCTION_PER_LEVEL = 20
+CASE_CD_REDUCTION_PER_LEVEL = 60
 CASE_CD_BASE_COST = 100
-CASE_CD_COST_INCREMENT = 50
+CASE_CD_COST_INCREMENT = 100
 
 # ===== НАСТРОЙКИ МАГАЗИНА =====
 SHOP_SLOTS = 10
@@ -104,6 +104,7 @@ CASE_PRIZES = [
     {"value": 1500, "chance": 2.0, "emoji": "⭐", "name": "+1500 кг"},
     {"value": 2500, "chance": 1.0, "emoji": "💥", "name": "+2500 кг"},
     {"value": 5000, "chance": 1.0, "emoji": "💥", "name": "+5000 кг"},
+    {"value": 10000, "chance": 0.5, "emoji": "💥", "name": "+10000 кг"},
 ]
 
 total_chance = sum(prize["chance"] for prize in CASE_PRIZES)
@@ -118,8 +119,8 @@ CASES = {
     "green_whopper": {"name": "Коробка от Зеленого Воппера", "emoji": "💚", "tradable": True, "daily": False, "shop_chance": 0.17, "min_shop": 1, "max_shop": 2, "price": 50, "prizes": [{"value": -25, "chance": 20, "emoji": "📉"}, {"value": 0, "chance": 10, "emoji": "🔄"}, {"value": 10, "chance": 20, "emoji": "📈"}, {"value": 30, "chance": 10, "emoji": "🚀"}, {"value": 50, "chance": 10, "emoji": "💫"}, {"value": 100, "chance": 9, "emoji": "⭐"}, {"value": 250, "chance": 1, "emoji": "💥"}]},
     "burger_pizza": {"name": "Коробка от Бургер пиццы", "emoji": "🍕", "tradable": True, "daily": False, "shop_chance": 0.15, "min_shop": 1, "max_shop": 2, "price": 100, "prizes": [{"value": -10, "chance": 20, "emoji": "📉"}, {"value": 0, "chance": 10, "emoji": "🔄"}, {"value": 30, "chance": 20, "emoji": "🚀"}, {"value": 50, "chance": 30, "emoji": "💫"}, {"value": 100, "chance": 5, "emoji": "⭐"}, {"value": 250, "chance": 5, "emoji": "⭐"}, {"value": 500, "chance": 4, "emoji": "💥"}, {"value": 1000, "chance": 1, "emoji": "💥"}]},
     "mcguffin": {"name": "Коробка от МакГаффина", "emoji": "🎁", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 1, "price": 200, "prizes": [{"value": 100, "chance": 80, "emoji": "⭐"}, {"value": 200, "chance": 5, "emoji": "💥"}, {"value": 250, "chance": 5, "emoji": "💥"}, {"value": 500, "chance": 5, "emoji": "💥"}, {"value": 750, "chance": 1, "emoji": "✨"}, {"value": 1000, "chance": 1, "emoji": "✨"}, {"value": 1200, "chance": 1, "emoji": "✨"}, {"value": 1500, "chance": 1, "emoji": "✨"}]},
-    "rotten_pack": {"name": "Упаковка Гнилой Ножки KFC", "emoji": "💀📦", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 10, "price": 100, "prizes": [{"value": 0, "chance": 98, "emoji": "🔄"}, {"value": "rotten_leg", "chance": 2, "emoji": "💀"}]},
-    "water_pack": {"name": "Упаковка Стакана Воды", "emoji": "💧📦", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 10, "price": 100, "prizes": [{"value": 0, "chance": 98, "emoji": "🔄"}, {"value": "water", "chance": 2, "emoji": "💧"}]}
+    "rotten_pack": {"name": "Упаковка Гнилой Ножки KFC", "emoji": "💀📦", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 10, "price": 100, "prizes": [{"value": 0, "chance": 90, "emoji": "🔄"}, {"value": "rotten_leg", "chance": 10, "emoji": "💀"}]},
+    "water_pack": {"name": "Упаковка Стакана Воды", "emoji": "💧📦", "tradable": True, "daily": False, "shop_chance": 0.1, "min_shop": 1, "max_shop": 10, "price": 100, "prizes": [{"value": 0, "chance": 90, "emoji": "🔄"}, {"value": "water", "chance": 10, "emoji": "💧"}]}
 }
 
 SHOP_ITEMS = [
@@ -153,7 +154,7 @@ SHOP_ITEMS = [
 ITEM_EMOJIS = {item["name"]: "📦" for item in SHOP_ITEMS}
 ITEM_EMOJIS.update({"Снатчер": "👾", "Святой сэндвич": "✨", "Гнилая ножка KFC": "💀", "Стакан воды": "💧", "Автохолестерол": "💊", "Холестеринимус": "💊", "Яблоко": "🍎", "Апельсин": "🍊", "Золотое Яблоко": "🍎✨", "Золотой Апельсин": "🍊✨", "Драгонфрукт": "🐉🍈", "Золотой Драгонфрукт": "🐉🍈✨"})
 
-CASES["shop_case"] = {"name": "Магазинный кейс", "emoji": "🏪", "tradable": True, "daily": False, "shop_chance": 0.3, "min_shop": 1, "max_shop": 5, "price": 150, "prizes": []}
+CASES["shop_case"] = {"name": "Магазинный кейс", "emoji": "🏪", "tradable": True, "daily": False, "shop_chance": 0.2, "min_shop": 1, "max_shop": 5, "price": 100, "prizes": []}
 shop_case_prizes = [{"value": item["name"], "chance": item["chance"] * 100, "emoji": ITEM_EMOJIS.get(item["name"], "🎁"), "name": item["name"]} for item in SHOP_ITEMS]
 total = sum(p["chance"] for p in shop_case_prizes)
 if total < 100:
