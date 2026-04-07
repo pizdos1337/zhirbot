@@ -696,25 +696,48 @@ def open_case(case_id, prestige_luck=0, luck_upgrade=0):
             return prize
     return prizes[-1]
 
-async def apply_auto_fat(user_id, guild_id, user_name, channel_id=None):
+async def apply_auto_fat(user_id, guild_id, user_name):
     try:
         data = get_user_data(guild_id, user_id, user_name)
         items_dict = get_user_items(data['item_counts'])
         prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
+        
         change, was_minus, new_plus, new_minus, new_pity, was_jackpot = get_change_with_pity_and_jackpot(
             data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
             data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
+        
         new_number = data['current_number'] + change
-        update_data = {'number': new_number, 'user_name': user_name, 'consecutive_plus': new_plus, 'consecutive_minus': new_minus, 'jackpot_pity': new_pity, 'fat_cooldown_time': datetime.now()}
+        
+        update_data = {
+            'number': new_number,
+            'user_name': user_name,
+            'consecutive_plus': new_plus,
+            'consecutive_minus': new_minus,
+            'jackpot_pity': new_pity,
+            'fat_cooldown_time': datetime.now()
+        }
+        
         update_user_data(guild_id, user_id, **update_data)
+        
+        # Обновляем ник (тихо, без сообщений)
         guild = bot.get_guild(guild_id)
         if guild:
             member = guild.get_member(int(user_id))
             if member:
                 display_name = member.display_name
-                clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
+                clean_name = display_name
+                if "kg" in display_name:
+                    parts = display_name.split("kg", 1)
+                    if len(parts) > 1:
+                        clean_name = parts[1].strip()
+                        if not clean_name:
+                            clean_name = user_name
+                else:
+                    clean_name = display_name
+                
                 if not clean_name or len(clean_name) > 30:
                     clean_name = user_name
+                
                 new_nick = format_nick_with_prestige(data.get('prestige', 0), new_number, clean_name)
                 if len(new_nick) > 32:
                     new_nick = new_nick[:32]
@@ -722,23 +745,7 @@ async def apply_auto_fat(user_id, guild_id, user_name, channel_id=None):
                     await member.edit(nick=new_nick)
                 except:
                     pass
-        if channel_id:
-            channel = bot.get_channel(channel_id)
-            if channel:
-                rank_name, rank_emoji = get_rank(new_number)
-                embed_color = 0xffd700 if was_jackpot else (0xff9933 if new_number >= 0 else 0x66ccff)
-                embed_title = "💰 ДЖЕКПОТ! 💰 (Авто-жир)" if was_jackpot else "🍔 Авто-жир"
-                embed = discord.Embed(title=embed_title, description=f"**{member.mention if member else user_name}** теперь весит **{abs(new_number)}kg**!", color=embed_color)
-                if was_jackpot:
-                    embed.add_field(name="💰 ДЖЕКПОТ!", value=f"+{change} кг", inline=True)
-                elif change > 0:
-                    embed.add_field(name="📈 Изменение", value=f"+{change} кг", inline=True)
-                elif change < 0:
-                    embed.add_field(name="📉 Изменение", value=f"{change} кг", inline=True)
-                embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
-                embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
-                embed.set_footer(text="⚡ Сработал авто-жир!")
-                await channel.send(embed=embed)
+        
         print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг")
     except Exception as e:
         print(f"❌ Ошибка в авто-жире: {e}")
