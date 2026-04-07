@@ -753,11 +753,7 @@ async def auto_fat_loop():
                 db_path = get_db_path(guild_id)
                 if not os.path.exists(db_path):
                     continue
-                default_channel = None
-                for channel in guild.text_channels:
-                    if channel.permissions_for(guild.me).send_messages:
-                        default_channel = channel
-                        break
+                
                 try:
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
@@ -766,9 +762,12 @@ async def auto_fat_loop():
                     if 'auto_fat_level' not in columns or 'next_auto_fat_time' not in columns:
                         conn.close()
                         continue
-                    cursor.execute('''SELECT user_id, user_name, auto_fat_level, next_auto_fat_time FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL''')
+                    
+                    cursor.execute('''SELECT user_id, user_name, auto_fat_level, next_auto_fat_time 
+                                    FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL''')
                     users = cursor.fetchall()
                     conn.close()
+                    
                     for user_id, user_name, auto_fat_level, next_time_str in users:
                         try:
                             if next_time_str:
@@ -777,13 +776,14 @@ async def auto_fat_loop():
                                 else:
                                     next_time = next_time_str
                                 if current_time >= next_time:
-                                    await apply_auto_fat(user_id, guild_id, user_name, default_channel.id if default_channel else None)
+                                    await apply_auto_fat(user_id, guild_id, user_name)
                                     interval = get_auto_fat_interval(auto_fat_level)
                                     if interval:
                                         new_next_time = current_time + timedelta(hours=interval)
                                         conn2 = sqlite3.connect(db_path)
                                         c2 = conn2.cursor()
-                                        c2.execute('''UPDATE user_fat SET next_auto_fat_time = ? WHERE user_id = ?''', (new_next_time.isoformat(), user_id))
+                                        c2.execute('''UPDATE user_fat SET next_auto_fat_time = ? WHERE user_id = ?''', 
+                                                  (new_next_time.isoformat(), user_id))
                                         conn2.commit()
                                         conn2.close()
                         except Exception as e:
@@ -793,7 +793,7 @@ async def auto_fat_loop():
         except Exception as e:
             print(f"❌ Ошибка в цикле авто-жира: {e}")
         await asyncio.sleep(60)
-
+        
 async def passive_income_loop():
     await bot.wait_until_ready()
     while not bot.is_closed():
