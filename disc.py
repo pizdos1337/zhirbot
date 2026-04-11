@@ -2849,7 +2849,7 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
         await ctx.send("❌ Неизвестный тип апгрейда!")
         update_user_data(guild_id, str(member.id), upgrade_active=0)
 
-@bot.command(name='отмена')
+@bot.command(name='отменавсё')
 async def cancel_all(ctx):
     """Отменяет все активные действия: дуэль, апгрейд, открытие кейса"""
     guild_id = ctx.guild.id
