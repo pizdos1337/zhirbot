@@ -229,6 +229,12 @@ def get_level_and_xp(total_xp):
 def add_xp(guild_id, user_id, xp_amount):
     data = get_user_data(guild_id, user_id)
     old_level = data.get('user_level', 0)
+    
+    # Применяем бонус опыта от престижа
+    prestige = data.get('prestige', 0)
+    xp_bonus = get_prestige_xp_bonus(prestige)
+    xp_amount = int(xp_amount * xp_bonus)
+    
     new_total_xp = data.get('user_xp', 0) + xp_amount
     new_level, current_xp = get_level_and_xp(new_total_xp)
     total_kg_reward = 0
