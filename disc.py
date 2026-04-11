@@ -2064,11 +2064,18 @@ async def fat_info(ctx, member: discord.Member = None):
     target = member or ctx.author
     data = get_user_data(ctx.guild.id, str(target.id), target.name)
     rank_name, rank_emoji = get_rank(data['current_number'])
+    
+    # Расчёт реального кулдауна !жир с учётом улучшений
     fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
     actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
+    
+    # Расчёт реального кулдауна !жиркейс с учётом улучшений
     case_cd_upgrade = data.get('case_cd_upgrade', 0)
     actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(case_cd_upgrade)) / 60
+    
     items_dict = get_user_items(data['item_counts'])
+    
+    # Пассивный доход
     total_passive_income = 0
     for item_name, count in items_dict.items():
         for shop_item in SHOP_ITEMS:
@@ -2077,27 +2084,35 @@ async def fat_info(ctx, member: discord.Member = None):
                 if gain > 0:
                     total_passive_income += gain * count
                 break
+    
     income_bonus = get_income_bonus(data.get('income_upgrade', 0))
     prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
     total_passive_income = int(total_passive_income * income_bonus * prestige_bonus)
+    
+    # Применяем эффекты яблок и апельсинов
     for item_name, count in items_dict.items():
-        if item_name == "Яблоко":
-            actual_fat_cooldown *= (1 - count * 0.05)
-        elif item_name == "Золотое Яблоко":
-            actual_fat_cooldown *= (1 - count * 0.10)
-        elif item_name == "Апельсин":
-            actual_case_cooldown *= (1 - count * 0.05)
-        elif item_name == "Золотой Апельсин":
-            actual_case_cooldown *= (1 - count * 0.10)
+        if item_name in ["Яблоко", "Золотое Яблоко"]:
+            actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
+        elif item_name in ["Апельсин", "Золотой Апельсин"]:
+            actual_case_cooldown *= (1 - count * (0.05 if item_name == "Апельсин" else 0.10))
+    
     actual_fat_cooldown = max(0.1, actual_fat_cooldown)
     actual_case_cooldown = max(0.1, actual_case_cooldown)
+    
     embed = discord.Embed(title=f"🍔 Информация о {target.display_name}", color=0x00ff00)
     embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
     embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
+    
     if data.get('prestige', 0) > 0:
-        embed.add_field(name="🌟 Престиж", value=f"{data['prestige']} уровень (+{data['prestige']*10}% ко всему, +{data['prestige']}% к шансам)", inline=True)
+        embed.add_field(name="🌟 Престиж", value=f"{data['prestige']} уровень (+{data['prestige']*10}% ко всему, +{data['prestige']}% к шансам, +{data['prestige']*50}% к опыту)", inline=True)
+    
+    if data.get('auto_fat_level', 0) > 0:
+        interval = get_auto_fat_interval(data['auto_fat_level'])
+        embed.add_field(name="🤖 Авто-жир", value=f"{data['auto_fat_level']} уровень (каждые {interval} ч)", inline=True)
+    
     if total_passive_income > 0:
         embed.add_field(name="💰 Пассивный доход", value=f"{total_passive_income} кг/24ч", inline=True)
+    
     pity_emojis = []
     if data['consecutive_plus'] > 0:
         pity_emojis.append(f"🔥{data['consecutive_plus']}")
@@ -2107,9 +2122,7 @@ async def fat_info(ctx, member: discord.Member = None):
         pity_emojis.append(f"💰{data['jackpot_pity']}")
     if pity_emojis:
         embed.add_field(name="📊 Счётчики", value=" ".join(pity_emojis), inline=True)
-    if data.get('auto_fat_level', 0) > 0:
-        interval = get_auto_fat_interval(data['auto_fat_level'])
-        embed.add_field(name="🤖 Авто-жир", value=f"{data['auto_fat_level']} уровень (каждые {interval} ч)", inline=True)
+    
     cases_dict = data.get('cases_dict', {})
     cases_text = ""
     for case_id, count in cases_dict.items():
@@ -2117,13 +2130,27 @@ async def fat_info(ctx, member: discord.Member = None):
             cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
     if cases_text:
         embed.add_field(name="📦 Кейсы", value=cases_text, inline=True)
-    can_use, remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
-    cooldown_status = f"✅ !жир доступен (КД {actual_fat_cooldown*60:.0f} мин)" if can_use else f"⏳ !жир через {format_time(remaining)}"
-    can_use_case, case_remaining = check_cooldown(data['last_case_time'], actual_case_cooldown)
-    case_status = f"✅ !жиркейс доступен (КД {actual_case_cooldown:.1f} ч)" if can_use_case else f"⏳ !жиркейс через {format_time(case_remaining)}"
-    embed.add_field(name="Команды", value=f"{cooldown_status}\n{case_status}", inline=False)
+    
+    # Проверка кулдауна !жир
+    can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
+    if can_use_fat:
+        fat_status = f"✅ Доступен (КД {actual_fat_cooldown*60:.0f} мин)"
+    else:
+        fat_status = f"⏳ Через {format_time(fat_remaining)}"
+    
+    # Проверка кулдауна ЕЖЕДНЕВНОГО кейса (используем daily_case_last_time, а не last_case_time!)
+    daily_last_time = data.get('daily_case_last_time')
+    can_use_case, case_remaining = can_get_daily_case(ctx.guild.id, str(target.id))
+    
+    if can_use_case:
+        case_status = f"✅ Доступен (КД {actual_case_cooldown:.1f} ч)"
+    else:
+        case_status = f"⏳ Через {format_time(case_remaining)}"
+    
+    embed.add_field(name="⏰ Команды", value=f"**!жир:** {fat_status}\n**!жиркейс:** {case_status}", inline=False)
+    
     await ctx.send(embed=embed)
-
+    
 @bot.command(name='инвентарь')
 async def show_inventory(ctx, member: discord.Member = None):
     target = member or ctx.author
