@@ -1426,41 +1426,51 @@ async def upgrade_user_command(ctx):
         total_xp = data.get('user_xp', 0)
         level, current_xp = get_level_and_xp(total_xp)
         next_level_xp = get_xp_for_next_level(level)
+        
         fat_cd_cost = get_upgrade_cost("fat_cd", fat_cd_level)
         case_cd_cost = get_upgrade_cost("case_cd", case_cd_level)
         luck_cost = get_upgrade_cost("luck", luck_level)
         income_cost = get_upgrade_cost("income", income_level)
         prestige_cost = get_upgrade_cost("prestige", prestige_level)
         auto_fat_cost = get_upgrade_cost("auto_fat", auto_fat_level)
+        
         fat_cd_bonus = get_fat_cd_reduction(fat_cd_level)
         case_cd_bonus = get_case_cd_reduction(case_cd_level)
         prestige_bonus = get_prestige_bonus(prestige_level)
+        prestige_xp_bonus = 1 + (prestige_level * 0.5)  # +50% опыта за уровень
         income_bonus = get_income_bonus(income_level)
         auto_fat_interval = get_auto_fat_interval(auto_fat_level)
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
         
         embed = discord.Embed(title=f"⭐ **ПРОКАЧКА ПЕРСОНАЖА** ⭐", description=f"**{member.display_name}**\n\nВыберите характеристику для улучшения, нажав на реакцию ниже:\n🟢 - доступно | 🔴 - недостаточно кг", color=0xffaa00)
+        
         xp_bar_length = 20
         xp_progress = int((current_xp / next_level_xp) * xp_bar_length) if next_level_xp > 0 else 0
         xp_bar = "█" * xp_progress + "░" * (xp_bar_length - xp_progress)
         embed.add_field(name="📊 **УРОВЕНЬ И ОПЫТ**", value=f"Уровень: **{level}**\nОпыт: {current_xp} / {next_level_xp}\n`{xp_bar}`\nВсего опыта: {total_xp}", inline=False)
         
         stats_text = ""
+        
         fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
         stats_text += f"{fat_cd_color} **⏰ КД !жир** — ур.{fat_cd_level} (-{fat_cd_bonus} мин)\n   Стоимость: `{fat_cd_cost} кг`\n\n"
+        
         case_cd_color = "🟢" if data['current_number'] >= case_cd_cost else "🔴"
         stats_text += f"{case_cd_color} **📦 КД кейса** — ур.{case_cd_level} (-{case_cd_bonus} мин)\n   Стоимость: `{case_cd_cost} кг`\n\n"
+        
         luck_color = "🟢" if data['current_number'] >= luck_cost else "🔴"
         stats_text += f"{luck_color} **🍀 Удача** — ур.{luck_level} (+{luck_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким, +{luck_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам)\n   Стоимость: `{luck_cost} кг`\n\n"
+        
         income_color = "🟢" if data['current_number'] >= income_cost else "🔴"
         stats_text += f"{income_color} **📈 Прибавка** — ур.{income_level} (+{(income_bonus-1)*100:.0f}% к доходу от предметов)\n   Стоимость: `{income_cost} кг`\n\n"
+        
         prestige_color = "🟢" if data['current_number'] >= prestige_cost else "🔴"
-        stats_text += f"{prestige_color} **🌟 Престиж** — ур.{prestige_level} (+{(prestige_bonus-1)*100:.0f}% ко всему, +{prestige_level}% к шансам)\n   Стоимость: `{prestige_cost} кг`\n\n"
+        stats_text += f"{prestige_color} **🌟 Престиж** — ур.{prestige_level} (+{(prestige_bonus-1)*100:.0f}% ко всем кг, +{prestige_level}% к шансам, +{prestige_level * 50:.0f}% к опыту)\n   Стоимость: `{prestige_cost} кг`\n\n"
+        
         auto_fat_color = "🟢" if data['current_number'] >= auto_fat_cost else "🔴"
         stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
         
         embed.add_field(name="⚡ **ХАРАКТЕРИСТИКИ**", value=stats_text, inline=False)
-        embed.add_field(name="💡 **ЧТО ДАЁТ**", value="• **КД !жир** — уменьшает время ожидания команды\n• **КД кейса** — уменьшает время ожидания бесплатного кейса\n• **Удача** — повышает шанс редких предметов в кейсах и шанс апгрейдов\n• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов\n• **Престиж** — сбрасывает вес и улучшения, но даёт +10% ко всем кг и +1% к шансам за уровень (опыт и уровень сохраняются)\n• **Авто-жир** — автоматически использует !жир каждые 6/3/1 час(ов)", inline=False)
+        embed.add_field(name="💡 **ЧТО ДАЁТ**", value="• **КД !жир** — уменьшает время ожидания команды\n• **КД кейса** — уменьшает время ожидания бесплатного кейса\n• **Удача** — повышает шанс редких предметов в кейсах и шанс апгрейдов\n• **Прибавка** — увеличивает получаемые кг от пассивного дохода и почасовых предметов\n• **Престиж** — сбрасывает вес и предметы, НО сохраняет улучшения! Даёт +10% ко всем кг, +1% к шансам и +50% к опыту за уровень\n• **Авто-жир** — автоматически использует !жир каждые 6/3/1/0,5/0,25/0,1 час(ов)", inline=False)
         embed.set_footer(text="💰 Для улучшения нажмите на соответствующую реакцию")
         return embed
     
@@ -1520,12 +1530,12 @@ async def upgrade_user_command(ctx):
                 confirm_embed = discord.Embed(
                     title="⚠️ **ПРЕСТИЖ** ⚠️",
                     description=f"{member.mention}, вы уверены, что хотите получить престиж?\n\n"
-                               f"**Это действие НЕОБРАТИМО!**\n"
+                               f"**Что произойдёт:**\n"
                                f"• Вес сбросится до 0\n"
                                f"• Все предметы и кейсы исчезнут\n"
-                               f"• Все улучшения (КД, удача, прибавка, авто-жир) обнулятся\n"
                                f"• Опыт и уровень сохранятся\n"
-                               f"• Останется только +1 уровень престижа\n\n"
+                               f"• Улучшения (КД, удача, прибавка, авто-жир) **СОХРАНЯТСЯ**\n"
+                               f"• Престиж увеличится на 1\n\n"
                                f"Напишите `да` в течение 15 секунд для подтверждения.",
                     color=0xff5500
                 )
@@ -1541,26 +1551,42 @@ async def upgrade_user_command(ctx):
                     continue
                 
                 new_prestige = current_level + 1
+                
+                # Сохраняем текущие улучшения
+                current_fat_cd = current_data.get('fat_cd_upgrade', 0)
+                current_case_cd = current_data.get('case_cd_upgrade', 0)
+                current_luck = current_data.get('luck_upgrade', 0)
+                current_income = current_data.get('income_upgrade', 0)
+                current_auto_fat = current_data.get('auto_fat_level', 0)
                 current_xp = current_data.get('user_xp', 0)
                 current_user_level = current_data.get('user_level', 0)
                 
+                # Сбрасываем только вес и предметы, улучшения сохраняем
                 update_user_data(
                     guild_id, user_id,
                     current_number=0,
                     item_counts='{}',
                     cases_dict={},
-                    fat_cd_upgrade=0,
-                    case_cd_upgrade=0,
-                    luck_upgrade=0,
-                    income_upgrade=0,
-                    auto_fat_level=0,
-                    next_auto_fat_time=None,
                     prestige=new_prestige,
+                    user_xp=current_xp,
+                    user_level=current_user_level,
+                    fat_cd_upgrade=current_fat_cd,
+                    case_cd_upgrade=current_case_cd,
+                    luck_upgrade=current_luck,
+                    income_upgrade=current_income,
+                    auto_fat_level=current_auto_fat,
                     consecutive_plus=0,
                     consecutive_minus=0,
                     jackpot_pity=0,
                     shadow_upgrade_chance=0
                 )
+                
+                # Обновляем время следующего авто-жира если есть
+                if current_auto_fat > 0:
+                    interval = get_auto_fat_interval(current_auto_fat)
+                    if interval:
+                        next_time = datetime.now() + timedelta(hours=interval)
+                        update_user_data(guild_id, user_id, next_auto_fat_time=next_time)
                 
                 try:
                     new_nick = format_nick_with_prestige(new_prestige, 0, user_name)
@@ -1578,9 +1604,10 @@ async def upgrade_user_command(ctx):
                     title="🌟 **ПРЕСТИЖ ПОЛУЧЕН!** 🌟",
                     description=f"{member.mention} достиг **{new_prestige}** уровня престижа!\n\n"
                                f"Вес сброшен до 0\n"
-                               f"Все предметы и улучшения обнулены\n"
-                               f"Опыт и уровень сохранены!\n"
-                               f"Теперь вы получаете +{new_prestige * 10}% ко всему и +{new_prestige}% к шансам!",
+                               f"Все предметы удалены\n"
+                               f"Улучшения **СОХРАНЕНЫ**!\n"
+                               f"Опыт и уровень сохранены!\n\n"
+                               f"Теперь вы получаете +{new_prestige * 10}% ко всем кг, +{new_prestige}% к шансам и +{new_prestige * 50}% к опыту!",
                     color=0xffd700
                 )
                 temp_msg = await ctx.send(embed=success_embed)
@@ -1588,6 +1615,7 @@ async def upgrade_user_command(ctx):
                 await temp_msg.delete()
                 continue
             
+            # Обычное улучшение (не престиж)
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
