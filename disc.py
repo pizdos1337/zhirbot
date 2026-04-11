@@ -1293,9 +1293,16 @@ async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0
             items_dict[target_item["name"]] = items_dict.get(target_item["name"], 0) + 1
             update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
             result_description = f"✅ **Поздравляем!**\n\n{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно получен!"
+        
+        # ===== НАЧИСЛЕНИЕ ОПЫТА ЗА УСПЕШНЫЙ АПГРЕЙД =====
+        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_UPGRADE_KG)
+        if levels_gained > 0:
+            result_description += f"\n\n⭐ **ПОВЫШЕНИЕ УРОВНЯ!** +{kg_reward} кг! Теперь у вас **{new_level}** уровень!"
+        
     else:
         update_user_data(guild_id, user_id, shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
         result_description = f"❌ **Неудача!**\n\n{amount} кг сгорели в процессе улучшения!"
+    
     result_embed = discord.Embed(title="💱 **РЕЗУЛЬТАТ АПГРЕЙДА** 💱", description=f"**{display_line}**\n\n{result_text}\n\n{result_description}", color=result_color)
     result_embed.set_footer(text=f"Шанс был: {display_chance:.1f}%")
     await upgrade_msg.edit(embed=result_embed)
