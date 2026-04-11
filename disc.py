@@ -51,6 +51,10 @@ PRESTIGE_BONUS_PER_LEVEL = 0.10
 PRESTIGE_LUCK_PER_LEVEL = 0.01
 PRESTIGE_BASE_COST = 2000
 PRESTIGE_COST_INCREMENT = 1000
+# Настройки престижа
+PRESTIGE_BONUS_PER_LEVEL = 0.10
+PRESTIGE_LUCK_PER_LEVEL = 0.01
+PRESTIGE_XP_BONUS_PER_LEVEL = 0.5  # +50% опыта за уровень престижа
 
 # ===== НАСТРОЙКИ ПРИБАВКИ =====
 INCOME_BONUS_PER_LEVEL = 0.05
@@ -2951,6 +2955,9 @@ async def cancel_all(ctx):
             color=0xffaa00
         )
         await ctx.send(embed=embed)
+
+def get_prestige_xp_bonus(prestige):
+    return 1 + (prestige * PRESTIGE_XP_BONUS_PER_LEVEL)
 
 @bot.event
 async def on_ready():
