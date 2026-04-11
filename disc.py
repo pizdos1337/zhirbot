@@ -2619,6 +2619,56 @@ async def cooldown_info(ctx):
     embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
     await ctx.send(embed=embed)
 
+@bot.command(name='апгрейдкг')
+async def upgrade_kg_command(ctx, amount: int):
+    if amount <= 0:
+        await ctx.send("❌ Количество кг должно быть больше 0!")
+        return
+    guild_id = ctx.guild.id
+    member = ctx.author
+    data = get_user_data(guild_id, str(member.id), member.name)
+    if data.get('upgrade_active', 0) == 1:
+        await ctx.send("⚠️ У вас уже есть активный апгрейд! Дождитесь его завершения.")
+        return
+    if data['current_number'] < amount:
+        await ctx.send(f"❌ У вас недостаточно кг! Есть: {data['current_number']} кг, нужно: {amount} кг")
+        return
+    new_number = data['current_number'] - amount
+    update_user_data(guild_id, str(member.id), number=new_number, last_command="upgrade_kg_select", last_command_target=str(amount), last_command_use_time=datetime.now(), upgrade_active=1, upgrade_data=json.dumps({'amount': amount}))
+    all_items = set([item["name"] for item in SHOP_ITEMS] + list(LEGENDARY_UPGRADE_PRICES.keys()))
+    possible_upgrades = []
+    for item_name in all_items:
+        target_price = get_item_price(item_name)
+        if target_price == 0 or target_price < amount:
+            continue
+        chance = amount / target_price
+        if chance < 0.01:
+            continue
+        is_case = any(case.get("name") == item_name for case in CASES.values())
+        case_id = next((cid for cid, case in CASES.items() if case.get("name") == item_name), None)
+        possible_upgrades.append({"name": item_name, "price": target_price, "chance": chance, "emoji": ITEM_EMOJIS.get(item_name, "🎁"), "is_case": is_case, "case_id": case_id})
+    possible_upgrades.sort(key=lambda x: x["price"])
+    if not possible_upgrades:
+        update_user_data(guild_id, str(member.id), number=data['current_number'], upgrade_active=0)
+        await ctx.send(f"❌ На {amount} кг нет доступных улучшений! Кг возвращены.")
+        return
+    
+    # Ограничиваем количество отображаемых предметов (максимум 15)
+    max_display = 15
+    display_upgrades = possible_upgrades[:max_display]
+    remaining_count = len(possible_upgrades) - max_display
+    
+    embed = discord.Embed(title="💱 **АПГРЕЙД КГ В ПРЕДМЕТЫ** 💱", description=f"{member.mention}, вы потратили **{amount} кг**!\n\nВыберите цель (используйте `!выбрать [номер]`):", color=0xffaa00)
+    
+    upgrades_text = "\n".join([f"**{i+1}.** {upgrade['emoji']} **{upgrade['name']}** — {upgrade['chance']*100:.1f}% шанс (нужно: {upgrade['price']} кг)" for i, upgrade in enumerate(display_upgrades)])
+    
+    if remaining_count > 0:
+        upgrades_text += f"\n\n... и ещё {remaining_count} предметов"
+    
+    embed.add_field(name="📈 Возможные улучшения", value=upgrades_text, inline=False)
+    embed.set_footer(text="Кг уже списаны! Всего доступно: {} предметов".format(len(possible_upgrades)))
+    await ctx.send(embed=embed)
+
 @bot.command(name='апгрейд')
 async def upgrade_command(ctx, choice: str = None):
     guild_id = ctx.guild.id
