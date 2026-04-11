@@ -2811,6 +2811,147 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
         await ctx.send("❌ Неизвестный тип апгрейда!")
         update_user_data(guild_id, str(member.id), upgrade_active=0)
 
+@bot.command(name='отмена')
+async def cancel_all(ctx):
+    """Отменяет все активные действия: дуэль, апгрейд, открытие кейса"""
+    guild_id = ctx.guild.id
+    member = ctx.author
+    user_id = str(member.id)
+    
+    data = get_user_data(guild_id, user_id, member.name)
+    
+    cancelled_items = []
+    
+    # ===== ОТМЕНА ДУЭЛИ =====
+    duel_info = get_duel_info(data)
+    if duel_info['active']:
+        # Получаем данные оппонента
+        opponent_data = get_user_data(guild_id, duel_info['opponent'])
+        
+        # Сбрасываем у challenger
+        update_user_data(guild_id, user_id,
+                       duel_active=0, 
+                       duel_opponent=None, 
+                       duel_amount=0,
+                       duel_message_id=None, 
+                       duel_channel_id=None, 
+                       duel_initiator=0, 
+                       duel_start_time=None)
+        
+        # Сбрасываем у opponent
+        if duel_info['opponent']:
+            update_user_data(guild_id, duel_info['opponent'],
+                           duel_active=0, 
+                           duel_opponent=None, 
+                           duel_amount=0,
+                           duel_message_id=None, 
+                           duel_channel_id=None, 
+                           duel_initiator=0, 
+                           duel_start_time=None)
+        
+        # Удаляем сообщение с дуэлью
+        try:
+            if duel_info['message_id'] and duel_info['channel_id']:
+                channel = bot.get_channel(int(duel_info['channel_id']))
+                if channel:
+                    msg = await channel.fetch_message(int(duel_info['message_id']))
+                    await msg.delete()
+        except:
+            pass
+        
+        cancelled_items.append("⚔️ Дуэль")
+    
+    # ===== ОТМЕНА АПГРЕЙДА =====
+    if data.get('upgrade_active', 0) == 1:
+        last_command = data.get('last_command')
+        last_target = data.get('last_command_target')
+        
+        # Возвращаем предмет или кг, если они были списаны
+        if last_command == "upgrade_select":
+            # Возвращаем предмет
+            items_dict = get_user_items(data['item_counts'])
+            items_dict[last_target] = items_dict.get(last_target, 0) + 1
+            update_user_data(guild_id, user_id, 
+                           item_counts=save_user_items(items_dict),
+                           upgrade_active=0,
+                           upgrade_data=None,
+                           last_command=None,
+                           last_command_target=None,
+                           last_command_use_time=None)
+            cancelled_items.append(f"🔧 Апгрейд предмета ({last_target} возвращён)")
+            
+        elif last_command == "upgrade_kg_select":
+            # Возвращаем кг
+            try:
+                amount = int(last_target)
+                new_number = data['current_number'] + amount
+                update_user_data(guild_id, user_id,
+                               number=new_number,
+                               upgrade_active=0,
+                               upgrade_data=None,
+                               last_command=None,
+                               last_command_target=None,
+                               last_command_use_time=None)
+                cancelled_items.append(f"💱 Апгрейд кг ({amount} кг возвращены)")
+            except:
+                update_user_data(guild_id, user_id,
+                               upgrade_active=0,
+                               upgrade_data=None,
+                               last_command=None,
+                               last_command_target=None,
+                               last_command_use_time=None)
+                cancelled_items.append("💱 Апгрейд кг (отменён)")
+        else:
+            # Просто сбрасываем флаг
+            update_user_data(guild_id, user_id,
+                           upgrade_active=0,
+                           upgrade_data=None,
+                           last_command=None,
+                           last_command_target=None,
+                           last_command_use_time=None)
+            cancelled_items.append("🔧 Апгрейд (отменён)")
+    
+    # ===== ОТМЕНА ОТКРЫТИЯ КЕЙСА =====
+    if data.get('active_case_message_id'):
+        # Пытаемся удалить сообщение с кейсом
+        try:
+            channel = bot.get_channel(int(data['active_case_channel_id'])) if data.get('active_case_channel_id') else None
+            if channel:
+                old_msg = await channel.fetch_message(int(data['active_case_message_id']))
+                await old_msg.delete()
+        except:
+            pass
+        
+        # Очищаем статус (кейс не списывался, так что возвращать нечего)
+        update_user_data(guild_id, user_id,
+                       active_case_message_id=None,
+                       active_case_channel_id=None,
+                       last_case_type=None)
+        
+        cancelled_items.append("📦 Открытие кейса")
+    
+    # ===== РЕЗУЛЬТАТ =====
+    if cancelled_items:
+        embed = discord.Embed(
+            title="✅ ОТМЕНА",
+            description=f"{member.mention}, отменены следующие действия:",
+            color=0x00ff00
+        )
+        embed.add_field(name="Отменено", value="\n".join(cancelled_items), inline=False)
+        embed.set_footer(text="Все ресурсы возвращены!")
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(
+            title="ℹ️ НЕТ АКТИВНЫХ ДЕЙСТВИЙ",
+            description=f"{member.mention}, у вас нет активных действий для отмены.\n\n"
+                       f"Команда отменяет:\n"
+                       f"• Активную дуэль\n"
+                       f"• Активный апгрейд предмета или кг\n"
+                       f"• Ожидающее открытие кейса",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+
 @bot.event
 async def on_ready():
     print(f"\n✅ Бот успешно запущен как {bot.user}")
