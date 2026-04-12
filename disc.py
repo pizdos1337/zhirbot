@@ -387,7 +387,7 @@ def create_new_database(db_path, guild_id, guild_name):
         shadow_upgrade_chance INTEGER DEFAULT 0, user_xp INTEGER DEFAULT 0, user_level INTEGER DEFAULT 0,
         fat_cd_upgrade INTEGER DEFAULT 0, case_cd_upgrade INTEGER DEFAULT 0, luck_upgrade INTEGER DEFAULT 0,
         income_upgrade INTEGER DEFAULT 0, prestige INTEGER DEFAULT 0, auto_fat_level INTEGER DEFAULT 0,
-        next_auto_fat_time TIMESTAMP, 'animations_enabled INTEGER DEFAULT 1')''')
+        next_auto_fat_time TIMESTAMP, animations_enabled INTEGER DEFAULT 1)''')
     for case_id in CASES.keys():
         if case_id != "daily":
             try:
