@@ -329,7 +329,7 @@ def add_missing_columns(db_path, existing_columns):
         'upgrade_data': "TEXT", 'duel_start_time': "TIMESTAMP", 'shadow_upgrade_chance': "INTEGER DEFAULT 0",
         'user_xp': "INTEGER DEFAULT 0", 'user_level': "INTEGER DEFAULT 0", 'fat_cd_upgrade': "INTEGER DEFAULT 0",
         'case_cd_upgrade': "INTEGER DEFAULT 0", 'luck_upgrade': "INTEGER DEFAULT 0", 'income_upgrade': "INTEGER DEFAULT 0",
-        'prestige': "INTEGER DEFAULT 0", 'auto_fat_level': "INTEGER DEFAULT 0", 'next_auto_fat_time': "TIMESTAMP"
+        'prestige': "INTEGER DEFAULT 0", 'auto_fat_level': "INTEGER DEFAULT 0", 'next_auto_fat_time': "TIMESTAMP",'animations_enabled': "INTEGER DEFAULT 1"
     }
     for col_name, col_type in required_columns.items():
         if col_name not in existing_columns:
@@ -710,6 +710,9 @@ def open_case(case_id, prestige_luck=0, luck_upgrade=0):
         if roll < cumulative:
             return prize
     return prizes[-1]
+
+def are_animations_enabled(user_data):
+    return user_data.get('animations_enabled', 1) == 1
 
 async def apply_auto_fat(user_id, guild_id, user_name):
     try:
@@ -2122,98 +2125,6 @@ async def fat_leaderboard(ctx):
     stats = get_guild_stats(ctx.guild.id)
     embed.add_field(name="📊 Статистика сервера", value=f"Участников: {stats['total_users']}\nСуммарный вес: {stats['total_weight']}kg\nСредний вес: {stats['avg_weight']:.1f}kg\n🔼 Толстых: {stats['positive']} | 🔽 Худых: {stats['negative']} | ⚖️ Нулевых: {stats['zero']}", inline=False)
     await ctx.send(embed=embed)
-
-@bot.command(name='жир_инфо')
-async def fat_info(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    data = get_user_data(ctx.guild.id, str(target.id), target.name)
-    rank_name, rank_emoji = get_rank(data['current_number'])
-    
-    # Расчёт реального кулдауна !жир с учётом улучшений
-    fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
-    actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
-    
-    # Расчёт реального кулдауна !жиркейс с учётом улучшений
-    case_cd_upgrade = data.get('case_cd_upgrade', 0)
-    actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(case_cd_upgrade)) / 60
-    
-    items_dict = get_user_items(data['item_counts'])
-    
-    # Пассивный доход
-    total_passive_income = 0
-    for item_name, count in items_dict.items():
-        for shop_item in SHOP_ITEMS:
-            if shop_item["name"] == item_name:
-                gain = shop_item.get("gain_per_24h", 0)
-                if gain > 0:
-                    total_passive_income += gain * count
-                break
-    
-    income_bonus = get_income_bonus(data.get('income_upgrade', 0))
-    prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
-    total_passive_income = int(total_passive_income * income_bonus * prestige_bonus)
-    
-    # Применяем эффекты яблок и апельсинов
-    for item_name, count in items_dict.items():
-        if item_name in ["Яблоко", "Золотое Яблоко"]:
-            actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
-        elif item_name in ["Апельсин", "Золотой Апельсин"]:
-            actual_case_cooldown *= (1 - count * (0.05 if item_name == "Апельсин" else 0.10))
-    
-    actual_fat_cooldown = max(0.1, actual_fat_cooldown)
-    actual_case_cooldown = max(0.1, actual_case_cooldown)
-    
-    embed = discord.Embed(title=f"🍔 Информация о {target.display_name}", color=0x00ff00)
-    embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
-    embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
-    
-    if data.get('prestige', 0) > 0:
-        embed.add_field(name="🌟 Престиж", value=f"{data['prestige']} уровень (+{data['prestige']*10}% ко всему, +{data['prestige']}% к шансам, +{data['prestige']*50}% к опыту)", inline=True)
-    
-    if data.get('auto_fat_level', 0) > 0:
-        interval = get_auto_fat_interval(data['auto_fat_level'])
-        embed.add_field(name="🤖 Авто-жир", value=f"{data['auto_fat_level']} уровень (каждые {interval} ч)", inline=True)
-    
-    if total_passive_income > 0:
-        embed.add_field(name="💰 Пассивный доход", value=f"{total_passive_income} кг/24ч", inline=True)
-    
-    pity_emojis = []
-    if data['consecutive_plus'] > 0:
-        pity_emojis.append(f"🔥{data['consecutive_plus']}")
-    if data['consecutive_minus'] > 0:
-        pity_emojis.append(f"❄️{data['consecutive_minus']}")
-    if data['jackpot_pity'] > 0:
-        pity_emojis.append(f"💰{data['jackpot_pity']}")
-    if pity_emojis:
-        embed.add_field(name="📊 Счётчики", value=" ".join(pity_emojis), inline=True)
-    
-    cases_dict = data.get('cases_dict', {})
-    cases_text = ""
-    for case_id, count in cases_dict.items():
-        if count > 0 and case_id in CASES:
-            cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
-    if cases_text:
-        embed.add_field(name="📦 Кейсы", value=cases_text, inline=True)
-    
-    # Проверка кулдауна !жир
-    can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
-    if can_use_fat:
-        fat_status = f"✅ Доступен (КД {actual_fat_cooldown*60:.0f} мин)"
-    else:
-        fat_status = f"⏳ Через {format_time(fat_remaining)}"
-    
-    # Проверка кулдауна ЕЖЕДНЕВНОГО кейса (используем daily_case_last_time, а не last_case_time!)
-    daily_last_time = data.get('daily_case_last_time')
-    can_use_case, case_remaining = can_get_daily_case(ctx.guild.id, str(target.id))
-    
-    if can_use_case:
-        case_status = f"✅ Доступен (КД {actual_case_cooldown:.1f} ч)"
-    else:
-        case_status = f"⏳ Через {format_time(case_remaining)}"
-    
-    embed.add_field(name="⏰ Команды", value=f"**!жир:** {fat_status}\n**!жиркейс:** {case_status}", inline=False)
-    
-    await ctx.send(embed=embed)
     
 @bot.command(name='инвентарь')
 async def show_inventory(ctx, member: discord.Member = None):
@@ -2283,12 +2194,19 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         return
     challenger_data = get_user_data(guild_id, str(challenger.id), challenger.name)
     opponent_data = get_user_data(guild_id, str(opponent.id), opponent.name)
+    
     if not can_duel(challenger_data):
         await ctx.send(f"❌ {challenger.mention}, вы уже участвуете в дуэли!")
         return
     if not can_duel(opponent_data):
         await ctx.send(f"❌ {opponent.mention} уже участвует в дуэли!")
         return
+    
+    # Проверяем настройки анимаций
+    challenger_anim = are_animations_enabled(challenger_data)
+    opponent_anim = are_animations_enabled(opponent_data)
+    both_animations_on = challenger_anim and opponent_anim
+    
     if amount is None or amount.lower() == "все":
         duel_amount = min(challenger_data['current_number'], opponent_data['current_number'])
         amount_text = f"**всё ({duel_amount}кг)**"
@@ -2302,20 +2220,32 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         except ValueError:
             await ctx.send("❌ Укажите корректное число кг или 'все'!")
             return
+    
     if challenger_data['current_number'] < duel_amount:
         await ctx.send(f"❌ У вас недостаточно кг! Есть: {challenger_data['current_number']}кг, нужно: {duel_amount}кг")
         return
     if opponent_data['current_number'] < duel_amount:
         await ctx.send(f"❌ У {opponent.mention} недостаточно кг! У него: {opponent_data['current_number']}кг, нужно: {duel_amount}кг")
         return
-    embed = discord.Embed(title="🔫 **ВЫЗОВ НА ДУЭЛЬ!** 🔫", description=f"{challenger.mention} вызывает {opponent.mention} на дуэль!\n\n**Ставка:** {amount_text}\n\nОба должны нажать ✅ чтобы принять\nЕсли кто-то нажмёт ❌ - дуэль отменяется", color=0xff5500)
+    
+    embed = discord.Embed(
+        title="🔫 **ВЫЗОВ НА ДУЭЛЬ!** 🔫",
+        description=f"{challenger.mention} вызывает {opponent.mention} на дуэль!\n\n"
+                   f"**Ставка:** {amount_text}\n\n"
+                   f"Оба должны нажать ✅ чтобы принять\n"
+                   f"Если кто-то нажмёт ❌ - дуэль отменяется",
+        color=0xff5500
+    )
     embed.set_footer(text="У вас 30 секунд чтобы принять решение!")
+    
     duel_msg = await ctx.send(embed=embed)
     await duel_msg.add_reaction("✅")
     await duel_msg.add_reaction("❌")
+    
     current_time = datetime.now()
     update_user_data(guild_id, str(challenger.id), duel_active=1, duel_opponent=str(opponent.id), duel_amount=duel_amount, duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=1, duel_start_time=current_time)
     update_user_data(guild_id, str(opponent.id), duel_active=1, duel_opponent=str(challenger.id), duel_amount=duel_amount, duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=0, duel_start_time=current_time)
+    
     accepted_users = set()
     duel_cancelled = False
     
@@ -2342,10 +2272,39 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
                 return
             if str(reaction.emoji) == "✅" and user.id not in accepted_users:
                 accepted_users.add(user.id)
+        
         if duel_cancelled:
             return
+        
         await duel_msg.clear_reactions()
-        result = await duel_animation(duel_msg, challenger, opponent)
+        
+        # Определяем результат
+        if both_animations_on:
+            # Полная анимация
+            result = await duel_animation(duel_msg, challenger, opponent)
+        else:
+            # Без анимации - сразу определяем результат
+            result = random.randint(0, 2)
+            c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
+            o_name = opponent.display_name[:15] + "..." if len(opponent.display_name) > 15 else opponent.display_name
+            if result == 0:
+                result_text = f"🏆 **Победитель:** {challenger.mention}"
+                result_color = 0xffd700
+            elif result == 1:
+                result_text = f"🏆 **Победитель:** {opponent.mention}"
+                result_color = 0xc0c0c0
+            else:
+                result_text = "🤝 **НИЧЬЯ!** 🤝"
+                result_color = 0x9b59b6
+            result_embed = discord.Embed(
+                title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
+                description=f"**{c_name}** ⚔️ **{o_name}**\n\n{result_text}",
+                color=result_color
+            )
+            await duel_msg.edit(embed=result_embed)
+            await asyncio.sleep(1.5)
+        
+        # Обработка результата
         if result == 0:
             winner, loser = challenger, opponent
             winner_new_weight = challenger_data['current_number'] + duel_amount
@@ -2355,7 +2314,7 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             levels_gained, kg_reward, new_level = add_xp(guild_id, str(winner.id), XP_PER_DUEL_WIN)
             result_description = f"**Победитель:** {winner.mention}\n\n📊 **Результаты:**\n{winner.mention}: {challenger_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n{loser.mention}: {opponent_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})"
             if levels_gained > 0:
-                result_description += f"\n\n⭐ +{kg_reward} кг за повышение уровня!"
+                result_description += f"\n\n⭐ +{kg_reward} кг за повышение уровня! Теперь у вас **{new_level}** уровень!"
         elif result == 1:
             winner, loser = opponent, challenger
             winner_new_weight = opponent_data['current_number'] + duel_amount
@@ -2365,16 +2324,27 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             levels_gained, kg_reward, new_level = add_xp(guild_id, str(winner.id), XP_PER_DUEL_WIN)
             result_description = f"**Победитель:** {winner.mention}\n\n📊 **Результаты:**\n{winner.mention}: {opponent_data['current_number']}кг → **{winner_new_weight}кг** (+{duel_amount})\n{loser.mention}: {challenger_data['current_number']}кг → **{loser_new_weight}кг** (-{duel_amount})"
             if levels_gained > 0:
-                result_description += f"\n\n⭐ +{kg_reward} кг за повышение уровня!"
+                result_description += f"\n\n⭐ +{kg_reward} кг за повышение уровня! Теперь у вас **{new_level}** уровень!"
         else:
             update_user_data(guild_id, str(challenger.id), number=challenger_data['current_number'])
             update_user_data(guild_id, str(opponent.id), number=opponent_data['current_number'])
             result_description = f"🤝 **НИЧЬЯ!** 🤝\n\n📊 **Результаты:**\n{challenger.mention}: {challenger_data['current_number']}кг → **{challenger_data['current_number']}кг** (без изменений)\n{opponent.mention}: {opponent_data['current_number']}кг → **{opponent_data['current_number']}кг** (без изменений)"
+        
         update_user_data(guild_id, str(challenger.id), duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
         update_user_data(guild_id, str(opponent.id), duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
-        result_embed = discord.Embed(title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️", description=result_description, color=0xffd700 if result == 0 else (0xc0c0c0 if result == 1 else 0x9b59b6))
+        
+        # Обновляем ники
+        await update_user_nick(guild_id, str(winner.id) if result != 2 else str(challenger.id))
+        await update_user_nick(guild_id, str(loser.id) if result != 2 else str(opponent.id))
+        
+        result_embed = discord.Embed(
+            title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
+            description=result_description,
+            color=0xffd700 if result == 0 else (0xc0c0c0 if result == 1 else 0x9b59b6)
+        )
         result_embed.set_footer(text="⚔️ Следующая дуэль доступна!")
         await ctx.send(embed=result_embed)
+        
     except asyncio.TimeoutError:
         await duel_msg.clear_reactions()
         update_user_data(guild_id, str(challenger.id), duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
@@ -2748,29 +2718,6 @@ async def give_shop_item(ctx, amount: int, *, item_name: str):
     embed.add_field(name="📦 Предмет", value=f"**{found_item['name']}** x{amount}", inline=True)
     await ctx.send(embed=embed)
 
-@bot.command(name='жир_кулдаун')
-async def cooldown_info(ctx):
-    data = get_user_data(ctx.guild.id, str(ctx.author.id), ctx.author.name)
-    fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
-    actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
-    case_cd_upgrade = data.get('case_cd_upgrade', 0)
-    actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(case_cd_upgrade)) / 60
-    items_dict = get_user_items(data['item_counts'])
-    for item_name, count in items_dict.items():
-        if item_name in ["Яблоко", "Золотое Яблоко"]:
-            actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
-        elif item_name in ["Апельсин", "Золотой Апельсин"]:
-            actual_case_cooldown *= (1 - count * (0.05 if item_name == "Апельсин" else 0.10))
-    actual_fat_cooldown = max(0.1, actual_fat_cooldown)
-    actual_case_cooldown = max(0.1, actual_case_cooldown)
-    fat_can_use, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
-    case_can_use, case_remaining = check_cooldown(data['last_case_time'], actual_case_cooldown)
-    embed = discord.Embed(title=f"⏰ Кулдауны на сервере {ctx.guild.name}", description=f"Для {ctx.author.mention}", color=0x3498db)
-    embed.add_field(name="!жир", value=f"Кулдаун: {actual_fat_cooldown*60:.0f} мин\nСтатус: {'✅ Доступна' if fat_can_use else f'⏳ {format_time(fat_remaining)}'}", inline=True)
-    embed.add_field(name="!жиркейс", value=f"Кулдаун: {actual_case_cooldown:.1f} ч\nСтатус: {'✅ Доступен' if case_can_use else f'⏳ {format_time(case_remaining)}'}", inline=True)
-    embed.add_field(name="Текущий вес", value=f"{data['current_number']}kg", inline=True)
-    await ctx.send(embed=embed)
-
 @bot.command(name='апгрейдкг')
 async def upgrade_kg_command(ctx, amount: int):
     if amount <= 0:
@@ -3103,6 +3050,400 @@ async def cancel_all(ctx):
             color=0xffaa00
         )
         await ctx.send(embed=embed)
+
+@bot.command(name='профиль')
+async def profile_command(ctx, member: discord.Member = None):
+    """Показывает профиль пользователя с возможностью прокачки и настройки анимаций"""
+    target = member or ctx.author
+    guild_id = ctx.guild.id
+    user_id = str(target.id)
+    user_name = target.name
+    
+    data = get_user_data(guild_id, user_id, user_name)
+    animations_enabled = data.get('animations_enabled', 1)
+    
+    def create_profile_embed(data):
+        # Основная информация
+        rank_name, rank_emoji = get_rank(data['current_number'])
+        
+        # Кулдауны
+        fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
+        actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
+        
+        case_cd_upgrade = data.get('case_cd_upgrade', 0)
+        actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(case_cd_upgrade)) / 60
+        
+        items_dict = get_user_items(data['item_counts'])
+        
+        # Применяем эффекты яблок и апельсинов
+        for item_name, count in items_dict.items():
+            if item_name in ["Яблоко", "Золотое Яблоко"]:
+                actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
+            elif item_name in ["Апельсин", "Золотой Апельсин"]:
+                actual_case_cooldown *= (1 - count * (0.05 if item_name == "Апельсин" else 0.10))
+        
+        actual_fat_cooldown = max(0.1, actual_fat_cooldown)
+        actual_case_cooldown = max(0.1, actual_case_cooldown)
+        
+        # Пассивный доход
+        total_passive_income = 0
+        for item_name, count in items_dict.items():
+            for shop_item in SHOP_ITEMS:
+                if shop_item["name"] == item_name:
+                    gain = shop_item.get("gain_per_24h", 0)
+                    if gain > 0:
+                        total_passive_income += gain * count
+                    break
+        
+        income_bonus = get_income_bonus(data.get('income_upgrade', 0))
+        prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
+        total_passive_income = int(total_passive_income * income_bonus * prestige_bonus)
+        
+        # Уровень и опыт
+        total_xp = data.get('user_xp', 0)
+        level, current_xp = get_level_and_xp(total_xp)
+        next_level_xp = get_xp_for_next_level(level)
+        
+        # Улучшения
+        fat_cd_level = data.get('fat_cd_upgrade', 0)
+        case_cd_level = data.get('case_cd_upgrade', 0)
+        luck_level = data.get('luck_upgrade', 0)
+        income_level = data.get('income_upgrade', 0)
+        prestige_level = data.get('prestige', 0)
+        auto_fat_level = data.get('auto_fat_level', 0)
+        
+        # Стоимости
+        fat_cd_cost = get_upgrade_cost("fat_cd", fat_cd_level)
+        case_cd_cost = get_upgrade_cost("case_cd", case_cd_level)
+        luck_cost = get_upgrade_cost("luck", luck_level)
+        income_cost = get_upgrade_cost("income", income_level)
+        prestige_cost = get_upgrade_cost("prestige", prestige_level)
+        auto_fat_cost = get_upgrade_cost("auto_fat", auto_fat_level)
+        
+        # Бонусы
+        fat_cd_bonus = get_fat_cd_reduction(fat_cd_level)
+        case_cd_bonus = get_case_cd_reduction(case_cd_level)
+        auto_fat_interval = get_auto_fat_interval(auto_fat_level)
+        auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
+        
+        # Проверка кулдаунов для отображения
+        can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
+        can_use_case, case_remaining = can_get_daily_case(guild_id, user_id)
+        
+        fat_status = f"✅ Доступен" if can_use_fat else f"⏳ {format_time(fat_remaining)}"
+        case_status = f"✅ Доступен" if can_use_case else f"⏳ {format_time(case_remaining)}"
+        
+        embed = discord.Embed(
+            title=f"⭐ **ПРОФИЛЬ** ⭐",
+            description=f"**{target.display_name}**\n{'🎬 Анимации: ВКЛ' if animations_enabled else '🔇 Анимации: ВЫКЛ'}",
+            color=0xffaa00
+        )
+        
+        # Статистика
+        xp_bar_length = 20
+        xp_progress = int((current_xp / next_level_xp) * xp_bar_length) if next_level_xp > 0 else 0
+        xp_bar = "█" * xp_progress + "░" * (xp_bar_length - xp_progress)
+        
+        embed.add_field(
+            name="📊 **ОСНОВНАЯ ИНФОРМАЦИЯ**",
+            value=f"🍖 Вес: **{data['current_number']}kg**\n"
+                  f"🎖️ Звание: {rank_emoji} **{rank_name}**\n"
+                  f"📈 Уровень: **{level}**\n"
+                  f"✨ Опыт: {current_xp} / {next_level_xp}\n`{xp_bar}`\n"
+                  f"🌟 Престиж: **{prestige_level}** (+{prestige_level*10}% к кг, +{prestige_level}% к шансам, +{prestige_level*50}% к опыту)",
+            inline=False
+        )
+        
+        # Команды
+        embed.add_field(
+            name="⏰ **КОМАНДЫ**",
+            value=f"**!жир:** {fat_status} (КД {actual_fat_cooldown*60:.0f} мин)\n"
+                  f"**!жиркейс:** {case_status} (КД {actual_case_cooldown:.1f} ч)",
+            inline=False
+        )
+        
+        # Пассивный доход
+        if total_passive_income > 0:
+            embed.add_field(name="💰 **ПАССИВНЫЙ ДОХОД**", value=f"{total_passive_income} кг/24ч", inline=True)
+        
+        if data.get('auto_fat_level', 0) > 0:
+            embed.add_field(name="🤖 **АВТО-ЖИР**", value=f"{auto_fat_level} уровень (каждые {auto_fat_text})", inline=True)
+        
+        # Характеристики для прокачки
+        stats_text = ""
+        
+        fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
+        stats_text += f"{fat_cd_color} **⏰ КД !жир** — ур.{fat_cd_level} (-{fat_cd_bonus} мин)\n   Стоимость: `{fat_cd_cost} кг`\n\n"
+        
+        case_cd_color = "🟢" if data['current_number'] >= case_cd_cost else "🔴"
+        stats_text += f"{case_cd_color} **📦 КД кейса** — ур.{case_cd_level} (-{case_cd_bonus} мин)\n   Стоимость: `{case_cd_cost} кг`\n\n"
+        
+        luck_color = "🟢" if data['current_number'] >= luck_cost else "🔴"
+        stats_text += f"{luck_color} **🍀 Удача** — ур.{luck_level} (+{luck_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким, +{luck_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам)\n   Стоимость: `{luck_cost} кг`\n\n"
+        
+        income_color = "🟢" if data['current_number'] >= income_cost else "🔴"
+        stats_text += f"{income_color} **📈 Прибавка** — ур.{income_level} (+{(income_bonus-1)*100:.0f}% к доходу)\n   Стоимость: `{income_cost} кг`\n\n"
+        
+        prestige_color = "🟢" if data['current_number'] >= prestige_cost else "🔴"
+        stats_text += f"{prestige_color} **🌟 Престиж** — ур.{prestige_level}\n   Стоимость: `{prestige_cost} кг`\n\n"
+        
+        auto_fat_color = "🟢" if data['current_number'] >= auto_fat_cost else "🔴"
+        stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
+        
+        embed.add_field(name="⚡ **ПРОКАЧКА**", value=stats_text, inline=False)
+        
+        # Счётчики
+        pity_emojis = []
+        if data['consecutive_plus'] > 0:
+            pity_emojis.append(f"🔥{data['consecutive_plus']}")
+        if data['consecutive_minus'] > 0:
+            pity_emojis.append(f"❄️{data['consecutive_minus']}")
+        if data['jackpot_pity'] > 0:
+            pity_emojis.append(f"💰{data['jackpot_pity']}")
+        if pity_emojis:
+            embed.add_field(name="📊 **СЧЁТЧИКИ**", value=" ".join(pity_emojis), inline=True)
+        
+        # Кейсы в инвентаре
+        cases_dict = data.get('cases_dict', {})
+        cases_text = ""
+        for case_id, count in cases_dict.items():
+            if count > 0 and case_id in CASES:
+                cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
+        if cases_text:
+            embed.add_field(name="📦 **КЕЙСЫ**", value=cases_text, inline=False)
+        
+        embed.set_footer(text="🟢🟢 Нажмите на реакцию для улучшения | 🎬 Нажмите 🎬 для переключения анимаций")
+        return embed
+    
+    embed = create_profile_embed(data)
+    msg = await ctx.send(embed=embed)
+    
+    # Реакции для улучшений
+    upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
+    for reaction in upgrade_reactions:
+        await msg.add_reaction(reaction)
+    await msg.add_reaction("🎬")  # Реакция для переключения анимаций
+    
+    upgrade_map = {"1️⃣": "fat_cd", "2️⃣": "case_cd", "3️⃣": "luck", "4️⃣": "income", "5️⃣": "prestige", "6️⃣": "auto_fat"}
+    
+    def check(reaction, user):
+        return user == ctx.author and reaction.message.id == msg.id and str(reaction.emoji) in upgrade_reactions + ["🎬"]
+    
+    while True:
+        try:
+            reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+            emoji = str(reaction.emoji)
+            
+            # Переключение анимаций
+            if emoji == "🎬":
+                current = data.get('animations_enabled', 1)
+                new_value = 0 if current == 1 else 1
+                update_user_data(guild_id, user_id, animations_enabled=new_value)
+                data = get_user_data(guild_id, user_id, user_name)
+                animations_enabled = new_value
+                
+                # Обновляем embed
+                new_embed = create_profile_embed(data)
+                await msg.edit(embed=new_embed)
+                
+                status = "включены" if new_value == 1 else "выключены"
+                temp_msg = await ctx.send(f"🎬 Анимации {status}!")
+                await asyncio.sleep(2)
+                await temp_msg.delete()
+                
+                try:
+                    await msg.remove_reaction(reaction, user)
+                except:
+                    pass
+                continue
+            
+            if emoji not in upgrade_map:
+                continue
+            
+            upgrade_type = upgrade_map[emoji]
+            current_data = get_user_data(guild_id, user_id, user_name)
+            
+            if upgrade_type == "fat_cd":
+                current_level = current_data.get('fat_cd_upgrade', 0)
+                cost = get_upgrade_cost("fat_cd", current_level)
+            elif upgrade_type == "case_cd":
+                current_level = current_data.get('case_cd_upgrade', 0)
+                cost = get_upgrade_cost("case_cd", current_level)
+            elif upgrade_type == "luck":
+                current_level = current_data.get('luck_upgrade', 0)
+                cost = get_upgrade_cost("luck", current_level)
+            elif upgrade_type == "income":
+                current_level = current_data.get('income_upgrade', 0)
+                cost = get_upgrade_cost("income", current_level)
+            elif upgrade_type == "prestige":
+                current_level = current_data.get('prestige', 0)
+                cost = get_upgrade_cost("prestige", current_level)
+            elif upgrade_type == "auto_fat":
+                current_level = current_data.get('auto_fat_level', 0)
+                if current_level >= AUTO_FAT_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Авто-жир уже на максимальном ({AUTO_FAT_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                cost = get_upgrade_cost("auto_fat", current_level)
+            
+            if current_data['current_number'] < cost:
+                error_embed = discord.Embed(title="❌ Недостаточно кг!", description=f"Для улучшения нужно **{cost} кг**, у вас: **{current_data['current_number']} кг**", color=0xff0000)
+                temp_msg = await ctx.send(embed=error_embed)
+                await asyncio.sleep(2)
+                await temp_msg.delete()
+                continue
+            
+            # Обработка престижа
+            if upgrade_type == "prestige":
+                confirm_embed = discord.Embed(
+                    title="⚠️ **ПРЕСТИЖ** ⚠️",
+                    description=f"{target.mention}, вы уверены, что хотите получить престиж?\n\n"
+                               f"**Что произойдёт:**\n"
+                               f"• Вес сбросится до 0\n"
+                               f"• Все предметы и кейсы исчезнут\n"
+                               f"• Опыт и уровень сохранятся\n"
+                               f"• Улучшения (КД, удача, прибавка, авто-жир) **СОХРАНЯТСЯ**\n"
+                               f"• Престиж увеличится на 1\n\n"
+                               f"Напишите `да` в течение 15 секунд для подтверждения.",
+                    color=0xff5500
+                )
+                await ctx.send(embed=confirm_embed)
+                
+                def confirm_check(m):
+                    return m.author == ctx.author and m.content.lower() == "да"
+                
+                try:
+                    await bot.wait_for('message', timeout=15.0, check=confirm_check)
+                except asyncio.TimeoutError:
+                    await ctx.send("❌ Престиж отменён.")
+                    continue
+                
+                new_prestige = current_level + 1
+                
+                # Сохраняем текущие улучшения
+                current_fat_cd = current_data.get('fat_cd_upgrade', 0)
+                current_case_cd = current_data.get('case_cd_upgrade', 0)
+                current_luck = current_data.get('luck_upgrade', 0)
+                current_income = current_data.get('income_upgrade', 0)
+                current_auto_fat = current_data.get('auto_fat_level', 0)
+                current_xp = current_data.get('user_xp', 0)
+                current_user_level = current_data.get('user_level', 0)
+                
+                update_user_data(
+                    guild_id, user_id,
+                    current_number=0,
+                    item_counts='{}',
+                    cases_dict={},
+                    prestige=new_prestige,
+                    user_xp=current_xp,
+                    user_level=current_user_level,
+                    fat_cd_upgrade=current_fat_cd,
+                    case_cd_upgrade=current_case_cd,
+                    luck_upgrade=current_luck,
+                    income_upgrade=current_income,
+                    auto_fat_level=current_auto_fat,
+                    consecutive_plus=0,
+                    consecutive_minus=0,
+                    jackpot_pity=0,
+                    shadow_upgrade_chance=0
+                )
+                
+                if current_auto_fat > 0:
+                    interval = get_auto_fat_interval(current_auto_fat)
+                    if interval:
+                        next_time = datetime.now() + timedelta(hours=interval)
+                        update_user_data(guild_id, user_id, next_auto_fat_time=next_time)
+                
+                try:
+                    new_nick = format_nick_with_prestige(new_prestige, 0, user_name)
+                    if len(new_nick) > 32:
+                        new_nick = new_nick[:32]
+                    await target.edit(nick=new_nick)
+                except:
+                    pass
+                
+                data = get_user_data(guild_id, user_id, user_name)
+                new_embed = create_profile_embed(data)
+                await msg.edit(embed=new_embed)
+                
+                success_embed = discord.Embed(
+                    title="🌟 **ПРЕСТИЖ ПОЛУЧЕН!** 🌟",
+                    description=f"{target.mention} достиг **{new_prestige}** уровня престижа!\n\n"
+                               f"Вес сброшен до 0\n"
+                               f"Все предметы удалены\n"
+                               f"Улучшения **СОХРАНЕНЫ**!\n"
+                               f"Опыт и уровень сохранены!",
+                    color=0xffd700
+                )
+                temp_msg = await ctx.send(embed=success_embed)
+                await asyncio.sleep(3)
+                await temp_msg.delete()
+                continue
+            
+            # Обычное улучшение
+            new_level = current_level + 1
+            new_number = current_data['current_number'] - cost
+            
+            if upgrade_type == "auto_fat":
+                interval = get_auto_fat_interval(new_level)
+                next_time = datetime.now() + timedelta(hours=interval) if interval else None
+                update_user_data(guild_id, user_id, number=new_number, auto_fat_level=new_level, next_auto_fat_time=next_time)
+            else:
+                update_field = {"fat_cd": "fat_cd_upgrade", "case_cd": "case_cd_upgrade", "luck": "luck_upgrade", "income": "income_upgrade"}[upgrade_type]
+                update_user_data(guild_id, user_id, number=new_number, **{update_field: new_level})
+            
+            try:
+                new_nick = format_nick_with_prestige(current_data.get('prestige', 0), new_number, user_name)
+                if len(new_nick) > 32:
+                    new_nick = new_nick[:32]
+                await target.edit(nick=new_nick)
+            except:
+                pass
+            
+            data = get_user_data(guild_id, user_id, user_name)
+            new_embed = create_profile_embed(data)
+            await msg.edit(embed=new_embed)
+            
+            if upgrade_type == "fat_cd":
+                new_bonus = get_fat_cd_reduction(new_level)
+                bonus_text = f"КД !жир уменьшен на {new_bonus} мин"
+            elif upgrade_type == "case_cd":
+                new_bonus = get_case_cd_reduction(new_level)
+                bonus_text = f"КД кейса уменьшен на {new_bonus} мин"
+            elif upgrade_type == "luck":
+                bonus_text = f"Удача увеличена до +{new_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким и +{new_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам"
+            elif upgrade_type == "income":
+                new_bonus = get_income_bonus(new_level)
+                bonus_text = f"Прибавка увеличена до +{(new_bonus-1)*100:.0f}% к доходу"
+            elif upgrade_type == "auto_fat":
+                interval = get_auto_fat_interval(new_level)
+                bonus_text = f"Авто-жир будет срабатывать каждые {interval} час(ов)"
+            
+            success_embed = discord.Embed(
+                title="✅ **УЛУЧШЕНИЕ ПОЛУЧЕНО!** ✅",
+                description=f"{target.mention} улучшил характеристику!\n\n"
+                           f"**Потрачено:** {cost} кг\n"
+                           f"**Осталось:** {new_number} кг\n\n"
+                           f"**{bonus_text}**",
+                color=0x00ff00
+            )
+            temp_msg = await ctx.send(embed=success_embed)
+            await asyncio.sleep(2)
+            await temp_msg.delete()
+            
+            try:
+                await msg.remove_reaction(reaction, user)
+            except:
+                pass
+            
+        except asyncio.TimeoutError:
+            try:
+                await msg.clear_reactions()
+            except:
+                pass
+            break
 
 def get_prestige_xp_bonus(prestige):
     return 1 + (prestige * PRESTIGE_XP_BONUS_PER_LEVEL)
