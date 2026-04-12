@@ -1199,7 +1199,7 @@ def get_possible_upgrades(item_name, item_count):
     possible_upgrades.sort(key=lambda x: x["price"])
     return possible_upgrades
 
-async def upgrade_animation(ctx, member, source_item, target_item, item_count, prestige_luck=0, luck_upgrade=0, animations_enabled=True):
+async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0, luck_upgrade=0, animations_enabled=True):
     guild_id = ctx.guild.id
     user_id = str(member.id)
     data = get_user_data(guild_id, user_id, member.name)
@@ -1224,7 +1224,7 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
         result_text = f"❌ **НЕУДАЧА!** ❌"
         result_color = 0xff0000
     line[57] = result_emoji
-    anim_embed = discord.Embed(title="🔧 **АПГРЕЙД** 🔧", description=f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nШанс: **{display_chance:.1f}%**", color=0xff5500)
+    anim_embed = discord.Embed(title="💱 **АПГРЕЙД КГ** 💱", description=f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\nШанс: **{display_chance:.1f}%**", color=0xff5500)
     upgrade_msg = await ctx.send(embed=anim_embed)
     animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 56), (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)]
     
@@ -1232,32 +1232,42 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
         for frame_num, center_pos in animation_frames:
             visible = line[center_pos-4:center_pos+5]
             display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\nШанс: **{display_chance:.1f}%**"
+            anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\nШанс: **{display_chance:.1f}%**"
             await upgrade_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
-    else:
-        visible = line[52:61]
-        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-        anim_embed.description = f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+    
+    # ПОКАЗЫВАЕМ ФИНАЛЬНЫЙ КАДР С РЕЗУЛЬТАТОМ (всегда)
+    visible = line[53:62]  # Центрируем результат (индекс 57 в центре)
+    display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+    
+    if not animations_enabled:
+        # Если анимации выключены - сразу показываем финальный кадр
+        anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
         await upgrade_msg.edit(embed=anim_embed)
     
     current_data = get_user_data(guild_id, user_id, member.name)
-    items_dict = get_user_items(current_data['item_counts'])
     if success:
-        items_dict[target_item['name']] = items_dict.get(target_item['name'], 0) + 1
-        update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
-        result_description = f"✅ **Поздравляем!**\n\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно улучшен!"
+        if target_item.get("is_case", False):
+            cases_dict = current_data.get('cases_dict', {}).copy()
+            cases_dict[target_item["case_id"]] = cases_dict.get(target_item["case_id"], 0) + 1
+            update_user_data(guild_id, user_id, cases_dict=cases_dict, shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
+            result_description = f"✅ **Поздравляем!**\n\n{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно получен!"
+        else:
+            items_dict = get_user_items(current_data['item_counts'])
+            items_dict[target_item["name"]] = items_dict.get(target_item["name"], 0) + 1
+            update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
+            result_description = f"✅ **Поздравляем!**\n\n{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно получен!"
         
-        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_UPGRADE)
+        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_UPGRADE_KG)
         if levels_gained > 0:
             result_description += f"\n\n⭐ **ПОВЫШЕНИЕ УРОВНЯ!** +{kg_reward} кг! Теперь у вас **{new_level}** уровень!"
         
         await update_user_nick(guild_id, user_id, member.name)
     else:
-        update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
-        result_description = f"❌ **Неудача!**\n\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** был утерян в процессе улучшения!"
+        update_user_data(guild_id, user_id, shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
+        result_description = f"❌ **Неудача!**\n\n{amount} кг сгорели в процессе улучшения!"
     
-    result_embed = discord.Embed(title="🔧 **РЕЗУЛЬТАТ АПГРЕЙДА** 🔧", description=f"**{display_line}**\n\n{result_text}\n\n{result_description}", color=result_color)
+    result_embed = discord.Embed(title="💱 **РЕЗУЛЬТАТ АПГРЕЙДА** 💱", description=f"**{display_line}**\n\n{result_text}\n\n{result_description}", color=result_color)
     result_embed.set_footer(text=f"Шанс был: {display_chance:.1f}%")
     await upgrade_msg.edit(embed=result_embed)
 
@@ -1297,9 +1307,13 @@ async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0
             anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\nШанс: **{display_chance:.1f}%**"
             await upgrade_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
-    else:
-        visible = line[52:61]
-        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+    
+    # ПОКАЗЫВАЕМ ФИНАЛЬНЫЙ КАДР С РЕЗУЛЬТАТОМ (всегда)
+    visible = line[53:62]  # Центрируем результат (индекс 57 в центре)
+    display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+    
+    if not animations_enabled:
+        # Если анимации выключены - сразу показываем финальный кадр
         anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
         await upgrade_msg.edit(embed=anim_embed)
     
