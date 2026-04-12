@@ -729,33 +729,23 @@ async def apply_auto_fat(user_id, guild_id, user_name):
         
         update_user_data(guild_id, user_id, **update_data)
         
-        guild = bot.get_guild(guild_id)
-        if guild:
-            member = guild.get_member(int(user_id))
-            if member:
-                display_name = member.display_name
-                clean_name = display_name
-                if "kg" in display_name:
-                    parts = display_name.split("kg", 1)
-                    if len(parts) > 1:
-                        clean_name = parts[1].strip()
-                        if not clean_name:
-                            clean_name = user_name
-                else:
-                    clean_name = display_name
-                
-                if not clean_name or len(clean_name) > 30:
-                    clean_name = user_name
-                
-                new_nick = format_nick_with_prestige(data.get('prestige', 0), new_number, clean_name)
-                if len(new_nick) > 32:
-                    new_nick = new_nick[:32]
-                try:
-                    await member.edit(nick=new_nick)
-                except:
-                    pass
+        # НАЧИСЛЯЕМ ОПЫТ (как за обычный !жир)
+        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
         
-        print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг")
+        # Обновляем ник
+        await update_user_nick(guild_id, user_id, user_name)
+        
+        # Если есть повышение уровня - отправляем сообщение в канал (опционально)
+        if levels_gained > 0:
+            # Пытаемся найти канал для уведомления
+            guild = bot.get_guild(guild_id)
+            if guild:
+                for channel in guild.text_channels:
+                    if channel.permissions_for(guild.me).send_messages:
+                        await channel.send(f"🌟 {user_name} повысил уровень до **{new_level}** и получил +{kg_reward} кг!")
+                        break
+        
+        print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг, опыт +{XP_PER_FAT}")
     except Exception as e:
         print(f"❌ Ошибка в авто-жире: {e}")
 
