@@ -1423,6 +1423,45 @@ async def ensure_shop_updated(guild_id):
         update_shop_data(guild_id, new_slots, last_update, next_update)
         return new_slots, last_update, next_update
 
+async def update_user_nick(guild_id, user_id, user_name=None):
+    """Обновляет ник пользователя в соответствии с текущим весом и престижем"""
+    try:
+        guild = bot.get_guild(guild_id)
+        if not guild:
+            return
+        
+        member = guild.get_member(int(user_id))
+        if not member:
+            return
+        
+        data = get_user_data(guild_id, user_id, user_name)
+        if not data:
+            return
+        
+        display_name = member.display_name
+        clean_name = display_name
+        if "kg" in display_name:
+            parts = display_name.split("kg", 1)
+            if len(parts) > 1:
+                clean_name = parts[1].strip()
+                if not clean_name:
+                    clean_name = data.get('user_name', str(user_id))
+        else:
+            clean_name = display_name
+        
+        if not clean_name or len(clean_name) > 30:
+            clean_name = data.get('user_name', str(user_id))
+        
+        new_nick = format_nick_with_prestige(data.get('prestige', 0), data['current_number'], clean_name)
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+        
+        await member.edit(nick=new_nick)
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка обновления ника для {user_id}: {e}")
+        return False
+
 @bot.command(name='апгрейдюзер')
 async def upgrade_user_command(ctx):
     guild_id = ctx.guild.id
