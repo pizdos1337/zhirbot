@@ -2806,14 +2806,9 @@ async def profile_command(ctx, member: discord.Member = None):
     user_id = str(target.id)
     user_name = target.name
     
-    data = get_user_data(guild_id, user_id, user_name)
-    animations_enabled = data.get('animations_enabled', 1)
-    
-    def create_profile_embed(data):
-        # Основная информация
+    def create_profile_embed(data, animations_status):
         rank_name, rank_emoji = get_rank(data['current_number'])
         
-        # Кулдауны
         fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
         actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
         
@@ -2822,7 +2817,6 @@ async def profile_command(ctx, member: discord.Member = None):
         
         items_dict = get_user_items(data['item_counts'])
         
-        # Применяем эффекты яблок и апельсинов
         for item_name, count in items_dict.items():
             if item_name in ["Яблоко", "Золотое Яблоко"]:
                 actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
@@ -2832,7 +2826,6 @@ async def profile_command(ctx, member: discord.Member = None):
         actual_fat_cooldown = max(0.1, actual_fat_cooldown)
         actual_case_cooldown = max(0.1, actual_case_cooldown)
         
-        # Пассивный доход
         total_passive_income = 0
         for item_name, count in items_dict.items():
             for shop_item in SHOP_ITEMS:
@@ -2846,12 +2839,10 @@ async def profile_command(ctx, member: discord.Member = None):
         prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
         total_passive_income = int(total_passive_income * income_bonus * prestige_bonus)
         
-        # Уровень и опыт
         total_xp = data.get('user_xp', 0)
         level, current_xp = get_level_and_xp(total_xp)
         next_level_xp = get_xp_for_next_level(level)
         
-        # Улучшения
         fat_cd_level = data.get('fat_cd_upgrade', 0)
         case_cd_level = data.get('case_cd_upgrade', 0)
         luck_level = data.get('luck_upgrade', 0)
@@ -2859,7 +2850,6 @@ async def profile_command(ctx, member: discord.Member = None):
         prestige_level = data.get('prestige', 0)
         auto_fat_level = data.get('auto_fat_level', 0)
         
-        # Стоимости
         fat_cd_cost = get_upgrade_cost("fat_cd", fat_cd_level)
         case_cd_cost = get_upgrade_cost("case_cd", case_cd_level)
         luck_cost = get_upgrade_cost("luck", luck_level)
@@ -2867,13 +2857,11 @@ async def profile_command(ctx, member: discord.Member = None):
         prestige_cost = get_upgrade_cost("prestige", prestige_level)
         auto_fat_cost = get_upgrade_cost("auto_fat", auto_fat_level)
         
-        # Бонусы
         fat_cd_bonus = get_fat_cd_reduction(fat_cd_level)
         case_cd_bonus = get_case_cd_reduction(case_cd_level)
         auto_fat_interval = get_auto_fat_interval(auto_fat_level)
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
         
-        # Проверка кулдаунов для отображения
         can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
         can_use_case, case_remaining = can_get_daily_case(guild_id, user_id)
         
@@ -2882,11 +2870,10 @@ async def profile_command(ctx, member: discord.Member = None):
         
         embed = discord.Embed(
             title=f"⭐ **ПРОФИЛЬ** ⭐",
-            description=f"**{target.display_name}**\n{'🎬 Анимации: ВКЛ' if animations_enabled else '🔇 Анимации: ВЫКЛ'}",
+            description=f"**{target.display_name}**\n{'🎬 Анимации: ВКЛ' if animations_status else '🔇 Анимации: ВЫКЛ'}",
             color=0xffaa00
         )
         
-        # Статистика
         xp_bar_length = 20
         xp_progress = int((current_xp / next_level_xp) * xp_bar_length) if next_level_xp > 0 else 0
         xp_bar = "█" * xp_progress + "░" * (xp_bar_length - xp_progress)
@@ -2901,7 +2888,6 @@ async def profile_command(ctx, member: discord.Member = None):
             inline=False
         )
         
-        # Команды
         embed.add_field(
             name="⏰ **КОМАНДЫ**",
             value=f"**!жир:** {fat_status} (КД {actual_fat_cooldown*60:.0f} мин)\n"
@@ -2909,14 +2895,12 @@ async def profile_command(ctx, member: discord.Member = None):
             inline=False
         )
         
-        # Пассивный доход
         if total_passive_income > 0:
             embed.add_field(name="💰 **ПАССИВНЫЙ ДОХОД**", value=f"{total_passive_income} кг/24ч", inline=True)
         
         if data.get('auto_fat_level', 0) > 0:
             embed.add_field(name="🤖 **АВТО-ЖИР**", value=f"{auto_fat_level} уровень (каждые {auto_fat_text})", inline=True)
         
-        # Характеристики для прокачки
         stats_text = ""
         
         fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
@@ -2939,7 +2923,6 @@ async def profile_command(ctx, member: discord.Member = None):
         
         embed.add_field(name="⚡ **ПРОКАЧКА**", value=stats_text, inline=False)
         
-        # Счётчики
         pity_emojis = []
         if data['consecutive_plus'] > 0:
             pity_emojis.append(f"🔥{data['consecutive_plus']}")
@@ -2950,7 +2933,6 @@ async def profile_command(ctx, member: discord.Member = None):
         if pity_emojis:
             embed.add_field(name="📊 **СЧЁТЧИКИ**", value=" ".join(pity_emojis), inline=True)
         
-        # Кейсы в инвентаре
         cases_dict = data.get('cases_dict', {})
         cases_text = ""
         for case_id, count in cases_dict.items():
@@ -2959,17 +2941,18 @@ async def profile_command(ctx, member: discord.Member = None):
         if cases_text:
             embed.add_field(name="📦 **КЕЙСЫ**", value=cases_text, inline=False)
         
-        embed.set_footer(text="🟢🟢 Нажмите на реакцию для улучшения | 🎬 Нажмите 🎬 для переключения анимаций")
+        embed.set_footer(text="🟢 Нажмите на реакцию для улучшения | 🎬 Нажмите 🎬 для переключения анимаций")
         return embed
     
-    embed = create_profile_embed(data)
+    data = get_user_data(guild_id, user_id, user_name)
+    animations_enabled = data.get('animations_enabled', 1)
+    embed = create_profile_embed(data, animations_enabled)
     msg = await ctx.send(embed=embed)
     
-    # Реакции для улучшений
     upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
     for reaction in upgrade_reactions:
         await msg.add_reaction(reaction)
-    await msg.add_reaction("🎬")  # Реакция для переключения анимаций
+    await msg.add_reaction("🎬")
     
     upgrade_map = {"1️⃣": "fat_cd", "2️⃣": "case_cd", "3️⃣": "luck", "4️⃣": "income", "5️⃣": "prestige", "6️⃣": "auto_fat"}
     
@@ -2981,20 +2964,19 @@ async def profile_command(ctx, member: discord.Member = None):
             reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
             emoji = str(reaction.emoji)
             
-            # Переключение анимаций
             if emoji == "🎬":
-                current = data.get('animations_enabled', 1)
-                new_value = 0 if current == 1 else 1
-                update_user_data(guild_id, user_id, animations_enabled=new_value)
-                data = get_user_data(guild_id, user_id, user_name)
-                animations_enabled = new_value
+                current_data = get_user_data(guild_id, user_id, user_name)
+                current_status = current_data.get('animations_enabled', 1)
+                new_status = 0 if current_status == 1 else 1
                 
-                # Обновляем embed
-                new_embed = create_profile_embed(data)
+                update_user_data(guild_id, user_id, animations_enabled=new_status)
+                animations_enabled = new_status
+                
+                new_embed = create_profile_embed(current_data, new_status)
                 await msg.edit(embed=new_embed)
                 
-                status = "включены" if new_value == 1 else "выключены"
-                temp_msg = await ctx.send(f"🎬 Анимации {status}!")
+                status_text = "включены" if new_status == 1 else "выключены"
+                temp_msg = await ctx.send(f"🎬 Анимации {status_text}!")
                 await asyncio.sleep(2)
                 await temp_msg.delete()
                 
@@ -3042,7 +3024,6 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
-            # Обработка престижа
             if upgrade_type == "prestige":
                 confirm_embed = discord.Embed(
                     title="⚠️ **ПРЕСТИЖ** ⚠️",
@@ -3069,7 +3050,6 @@ async def profile_command(ctx, member: discord.Member = None):
                 
                 new_prestige = current_level + 1
                 
-                # Сохраняем текущие улучшения
                 current_fat_cd = current_data.get('fat_cd_upgrade', 0)
                 current_case_cd = current_data.get('case_cd_upgrade', 0)
                 current_luck = current_data.get('luck_upgrade', 0)
@@ -3112,7 +3092,7 @@ async def profile_command(ctx, member: discord.Member = None):
                     pass
                 
                 data = get_user_data(guild_id, user_id, user_name)
-                new_embed = create_profile_embed(data)
+                new_embed = create_profile_embed(data, animations_enabled)
                 await msg.edit(embed=new_embed)
                 
                 success_embed = discord.Embed(
@@ -3129,7 +3109,6 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
-            # Обычное улучшение
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
@@ -3150,7 +3129,7 @@ async def profile_command(ctx, member: discord.Member = None):
                 pass
             
             data = get_user_data(guild_id, user_id, user_name)
-            new_embed = create_profile_embed(data)
+            new_embed = create_profile_embed(data, animations_enabled)
             await msg.edit(embed=new_embed)
             
             if upgrade_type == "fat_cd":
@@ -3191,7 +3170,7 @@ async def profile_command(ctx, member: discord.Member = None):
             except:
                 pass
             break
-
+            
 def get_prestige_xp_bonus(prestige):
     return 1 + (prestige * PRESTIGE_XP_BONUS_PER_LEVEL)
 
