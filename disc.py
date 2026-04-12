@@ -232,7 +232,7 @@ def add_xp(guild_id, user_id, xp_amount):
     
     # Применяем бонус опыта от престижа
     prestige = data.get('prestige', 0)
-    xp_bonus = get_prestige_xp_bonus(prestige)
+    xp_bonus = 1 + (prestige * 0.5)  # +50% за уровень
     xp_amount = int(xp_amount * xp_bonus)
     
     new_total_xp = data.get('user_xp', 0) + xp_amount
@@ -242,8 +242,13 @@ def add_xp(guild_id, user_id, xp_amount):
         total_kg_reward += LEVEL_UP_REWARD_PER_LEVEL * level
     new_weight = data['current_number'] + total_kg_reward
     update_user_data(guild_id, user_id, user_xp=new_total_xp, user_level=new_level, number=new_weight)
+    
+    # Обновляем ник асинхронно (создаём задачу, чтобы не блокировать)
+    if total_kg_reward > 0:
+        asyncio.create_task(update_user_nick(guild_id, user_id, data.get('user_name')))
+    
     return new_level - old_level, total_kg_reward, new_level
-
+    
 def format_nick_with_prestige(prestige, weight, user_name):
     if prestige > 0:
         return f"{prestige}🌟 {weight}kg {user_name}"
