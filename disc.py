@@ -2420,6 +2420,10 @@ async def sell_command(ctx, *, args: str = None):
             return
         new_number = data['current_number'] + total_gain
         update_user_data(ctx.guild.id, str(ctx.author.id), number=new_number, item_counts=save_user_items(items_dict))
+        
+        # Обновляем ник
+        await update_user_nick(ctx.guild.id, str(ctx.author.id), ctx.author.name)
+        
         embed = discord.Embed(title="💰 Продажа всех предметов", description=f"**{ctx.author.mention}** продал всё!", color=0x00ff00)
         sold_text = "\n".join(sold_items[:10])
         if len(sold_items) > 10:
@@ -2474,6 +2478,10 @@ async def sell_command(ctx, *, args: str = None):
         del items_dict[found_item]
     new_number = data['current_number'] + total_gain
     update_user_data(ctx.guild.id, str(ctx.author.id), number=new_number, item_counts=save_user_items(items_dict))
+    
+    # Обновляем ник
+    await update_user_nick(ctx.guild.id, str(ctx.author.id), ctx.author.name)
+    
     embed = discord.Embed(title="💰 Продажа предмета", description=f"**{ctx.author.mention}** продал предмет!", color=0x00ff00)
     embed.add_field(name="📦 Предмет", value=f"{found_item} x{amount}", inline=True)
     embed.add_field(name="💎 Цена за шт", value=f"{price} кг", inline=True)
