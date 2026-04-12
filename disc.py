@@ -1241,10 +1241,13 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
         update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
         result_description = f"✅ **Поздравляем!**\n\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно улучшен!"
         
-        # ===== НАЧИСЛЕНИЕ ОПЫТА ЗА УСПЕШНЫЙ АПГРЕЙД =====
+        # Начисление опыта
         levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_UPGRADE)
         if levels_gained > 0:
             result_description += f"\n\n⭐ **ПОВЫШЕНИЕ УРОВНЯ!** +{kg_reward} кг! Теперь у вас **{new_level}** уровень!"
+        
+        # Обновляем ник
+        await update_user_nick(guild_id, user_id, member.name)
         
     else:
         update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
@@ -1253,7 +1256,7 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
     result_embed = discord.Embed(title="🔧 **РЕЗУЛЬТАТ АПГРЕЙДА** 🔧", description=f"**{display_line}**\n\n{result_text}\n\n{result_description}", color=result_color)
     result_embed.set_footer(text=f"Шанс был: {display_chance:.1f}%")
     await upgrade_msg.edit(embed=result_embed)
-
+    
 async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0, luck_upgrade=0):
     guild_id = ctx.guild.id
     user_id = str(member.id)
