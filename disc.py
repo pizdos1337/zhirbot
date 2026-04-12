@@ -2806,7 +2806,7 @@ async def profile_command(ctx, member: discord.Member = None):
     user_id = str(target.id)
     user_name = target.name
     
-    def create_profile_embed(data, animations_status):
+    def create_profile_embed(data):
         rank_name, rank_emoji = get_rank(data['current_number'])
         
         fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
@@ -2868,9 +2868,12 @@ async def profile_command(ctx, member: discord.Member = None):
         fat_status = f"✅ Доступен" if can_use_fat else f"⏳ {format_time(fat_remaining)}"
         case_status = f"✅ Доступен" if can_use_case else f"⏳ {format_time(case_remaining)}"
         
+        # Получаем статус анимаций из БД
+        animations_status = data.get('animations_enabled', 1)
+        
         embed = discord.Embed(
             title=f"⭐ **ПРОФИЛЬ** ⭐",
-            description=f"**{target.display_name}**\n{'🎬 Анимации: ВКЛ' if animations_status else '🔇 Анимации: ВЫКЛ'}",
+            description=f"**{target.display_name}**\n{'🎬 Анимации: ВКЛ' if animations_status == 1 else '🔇 Анимации: ВЫКЛ'}",
             color=0xffaa00
         )
         
@@ -2944,11 +2947,12 @@ async def profile_command(ctx, member: discord.Member = None):
         embed.set_footer(text="🟢 Нажмите на реакцию для улучшения | 🎬 Нажмите 🎬 для переключения анимаций")
         return embed
     
+    # Отправляем начальное сообщение
     data = get_user_data(guild_id, user_id, user_name)
-    animations_enabled = data.get('animations_enabled', 1)
-    embed = create_profile_embed(data, animations_enabled)
+    embed = create_profile_embed(data)
     msg = await ctx.send(embed=embed)
     
+    # Добавляем реакции
     upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
     for reaction in upgrade_reactions:
         await msg.add_reaction(reaction)
@@ -2964,22 +2968,27 @@ async def profile_command(ctx, member: discord.Member = None):
             reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
             emoji = str(reaction.emoji)
             
+            # Обработка переключения анимаций
             if emoji == "🎬":
+                # Получаем текущие данные пользователя
                 current_data = get_user_data(guild_id, user_id, user_name)
                 current_status = current_data.get('animations_enabled', 1)
+                # Переключаем статус
                 new_status = 0 if current_status == 1 else 1
-                
+                # Сохраняем в БД
                 update_user_data(guild_id, user_id, animations_enabled=new_status)
-                animations_enabled = new_status
                 
-                new_embed = create_profile_embed(current_data, new_status)
+                # Обновляем embed
+                new_embed = create_profile_embed(get_user_data(guild_id, user_id, user_name))
                 await msg.edit(embed=new_embed)
                 
-                status_text = "включены" if new_status == 1 else "выключены"
-                temp_msg = await ctx.send(f"🎬 Анимации {status_text}!")
+                # Отправляем временное сообщение
+                status_text = "включены 🎬" if new_status == 1 else "выключены 🔇"
+                temp_msg = await ctx.send(f"Анимации {status_text}!")
                 await asyncio.sleep(2)
                 await temp_msg.delete()
                 
+                # Убираем реакцию пользователя
                 try:
                     await msg.remove_reaction(reaction, user)
                 except:
@@ -3024,6 +3033,7 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
+            # Обработка престижа
             if upgrade_type == "prestige":
                 confirm_embed = discord.Embed(
                     title="⚠️ **ПРЕСТИЖ** ⚠️",
@@ -3091,8 +3101,8 @@ async def profile_command(ctx, member: discord.Member = None):
                 except:
                     pass
                 
-                data = get_user_data(guild_id, user_id, user_name)
-                new_embed = create_profile_embed(data, animations_enabled)
+                # Обновляем сообщение
+                new_embed = create_profile_embed(get_user_data(guild_id, user_id, user_name))
                 await msg.edit(embed=new_embed)
                 
                 success_embed = discord.Embed(
@@ -3109,6 +3119,7 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
+            # Обычное улучшение
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
@@ -3128,8 +3139,8 @@ async def profile_command(ctx, member: discord.Member = None):
             except:
                 pass
             
-            data = get_user_data(guild_id, user_id, user_name)
-            new_embed = create_profile_embed(data, animations_enabled)
+            # Обновляем сообщение
+            new_embed = create_profile_embed(get_user_data(guild_id, user_id, user_name))
             await msg.edit(embed=new_embed)
             
             if upgrade_type == "fat_cd":
