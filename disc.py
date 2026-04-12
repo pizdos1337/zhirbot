@@ -2931,7 +2931,7 @@ async def profile_command(ctx, member: discord.Member = None):
     user_id = str(target.id)
     user_name = target.name
     
-    def create_profile_embed(data):
+    def create_profile_embed(data, animations_status):
         rank_name, rank_emoji = get_rank(data['current_number'])
         
         fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
@@ -2992,9 +2992,6 @@ async def profile_command(ctx, member: discord.Member = None):
         
         fat_status = f"✅ Доступен" if can_use_fat else f"⏳ {format_time(fat_remaining)}"
         case_status = f"✅ Доступен" if can_use_case else f"⏳ {format_time(case_remaining)}"
-        
-        # Получаем статус анимаций ПРЯМО ИЗ ДАННЫХ
-        animations_status = data.get('animations_enabled', 1)
         
         embed = discord.Embed(
             title=f"⭐ **ПРОФИЛЬ** ⭐",
@@ -3074,7 +3071,8 @@ async def profile_command(ctx, member: discord.Member = None):
     
     # Отправляем начальное сообщение
     data = get_user_data(guild_id, user_id, user_name)
-    embed = create_profile_embed(data)
+    animations_status = data.get('animations_enabled', 1)
+    embed = create_profile_embed(data, animations_status)
     msg = await ctx.send(embed=embed)
     
     # Добавляем реакции
@@ -3103,9 +3101,9 @@ async def profile_command(ctx, member: discord.Member = None):
                 # Сохраняем в БД
                 update_user_data(guild_id, user_id, animations_enabled=new_status)
                 
-                # Обновляем embed с НОВЫМИ данными
+                # Получаем обновлённые данные и создаём embed с новым статусом
                 fresh_data = get_user_data(guild_id, user_id, user_name)
-                new_embed = create_profile_embed(fresh_data)
+                new_embed = create_profile_embed(fresh_data, new_status)
                 await msg.edit(embed=new_embed)
                 
                 # Отправляем временное сообщение
@@ -3229,7 +3227,8 @@ async def profile_command(ctx, member: discord.Member = None):
                 
                 # Обновляем сообщение
                 fresh_data = get_user_data(guild_id, user_id, user_name)
-                new_embed = create_profile_embed(fresh_data)
+                current_anim_status = fresh_data.get('animations_enabled', 1)
+                new_embed = create_profile_embed(fresh_data, current_anim_status)
                 await msg.edit(embed=new_embed)
                 
                 success_embed = discord.Embed(
@@ -3268,7 +3267,8 @@ async def profile_command(ctx, member: discord.Member = None):
             
             # Обновляем сообщение
             fresh_data = get_user_data(guild_id, user_id, user_name)
-            new_embed = create_profile_embed(fresh_data)
+            current_anim_status = fresh_data.get('animations_enabled', 1)
+            new_embed = create_profile_embed(fresh_data, current_anim_status)
             await msg.edit(embed=new_embed)
             
             if upgrade_type == "fat_cd":
