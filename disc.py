@@ -2501,6 +2501,11 @@ async def give_fat(ctx, target: discord.Member, amount: int):
     new_target_number = target_data['current_number'] + amount
     update_user_data(ctx.guild.id, str(ctx.author.id), number=new_giver_number)
     update_user_data(ctx.guild.id, str(target.id), number=new_target_number)
+    
+    # Обновляем ники
+    await update_user_nick(ctx.guild.id, str(ctx.author.id), ctx.author.name)
+    await update_user_nick(ctx.guild.id, str(target.id), target.name)
+    
     embed = discord.Embed(title="⚖️ Перевод жира", description=f"**{ctx.author.mention}** передал кг **{target.mention}**!", color=0xffaa00)
     giver_rank, giver_rank_emoji = get_rank(new_giver_number)
     target_rank, target_rank_emoji = get_rank(new_target_number)
@@ -2508,7 +2513,7 @@ async def give_fat(ctx, target: discord.Member, amount: int):
     embed.add_field(name="📥 Получатель", value=f"{target.mention}\nБыло: {target_data['current_number']}kg\nСтало: {new_target_number}kg\n{target_rank_emoji} {target_rank}", inline=True)
     embed.add_field(name="📦 Количество", value=f"{amount} кг", inline=True)
     await ctx.send(embed=embed)
-
+    
 @bot.command(name='датьпредмет')
 async def give_item(ctx, target: discord.Member, amount: int, *, item_name: str):
     if amount <= 0:
