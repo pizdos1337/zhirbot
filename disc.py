@@ -1705,17 +1705,24 @@ async def fat_case_command(ctx):
         line[56] = prize_emoji
         anim_embed = discord.Embed(title=f"🎰 **{case['name']}** 🎰", description="", color=0xffaa00)
         animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 55), (16, 55), (17, 56), (18, 56)]
-        for frame_num, center_pos in animation_frames:
-            visible = line[center_pos-4:center_pos+5]
+        
+        # ПОЛУЧАЕМ НАСТРОЙКИ АНИМАЦИЙ
+        animations_enabled = are_animations_enabled(data)
+        
+        if animations_enabled:
+            for frame_num, center_pos in animation_frames:
+                visible = line[center_pos-4:center_pos+5]
+                display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+                anim_embed.description = f"**{display_line}**"
+                await case_msg.edit(embed=anim_embed)
+                await asyncio.sleep(0.5)
+        else:
+            visible = line[52:61]
             display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{display_line}**"
+            anim_embed.description = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
             await case_msg.edit(embed=anim_embed)
-            await asyncio.sleep(0.5)
-        visible = line[52:61]
-        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-        anim_embed.description = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
-        await case_msg.edit(embed=anim_embed)
-        await asyncio.sleep(1)
+            await asyncio.sleep(1)
+        
         items_dict = get_user_items(data['item_counts'])
         new_number = data['current_number']
         prize_value = prize["value"]
