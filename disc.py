@@ -2590,6 +2590,11 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
         await ctx.send("❌ Время ожидания истекло. Используйте команду заново!")
         update_user_data(guild_id, str(member.id), upgrade_active=0)
         return
+    
+    # ПОЛУЧАЕМ НАСТРОЙКИ АНИМАЦИЙ
+    user_data = get_user_data(guild_id, str(member.id), member.name)
+    animations_enabled = are_animations_enabled(user_data)
+    
     if last_command == "upgrade_kg_select":
         amount = int(data['last_command_target'])
         all_items = set([item["name"] for item in SHOP_ITEMS] + list(LEGENDARY_UPGRADE_PRICES.keys()))
@@ -2617,7 +2622,10 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             return
         target_item = possible_upgrades[item_index]
         update_user_data(guild_id, str(member.id), upgrade_active=0)
-        await upgrade_kg_animation(ctx, member, amount, target_item, get_prestige_luck(data.get('prestige', 0)), data.get('luck_upgrade', 0))
+        await upgrade_kg_animation(ctx, member, amount, target_item, 
+                                  get_prestige_luck(user_data.get('prestige', 0)), 
+                                  user_data.get('luck_upgrade', 0),
+                                  animations_enabled)
     elif last_command == "upgrade_select":
         source_item = data.get('last_command_target')
         if not source_item:
@@ -2641,11 +2649,14 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             return
         target_item = possible_upgrades[item_index]
         update_user_data(guild_id, str(member.id), upgrade_active=0)
-        await upgrade_animation(ctx, member, source_item, target_item, 1, get_prestige_luck(data.get('prestige', 0)), data.get('luck_upgrade', 0))
+        await upgrade_animation(ctx, member, source_item, target_item, 1, 
+                               get_prestige_luck(user_data.get('prestige', 0)), 
+                               user_data.get('luck_upgrade', 0),
+                               animations_enabled)
     else:
         await ctx.send("❌ Неизвестный тип апгрейда!")
         update_user_data(guild_id, str(member.id), upgrade_active=0)
-
+        
 @bot.command(name='отменавсё')
 async def cancel_all(ctx):
     """Отменяет все активные действия: дуэль, апгрейд, открытие кейса"""
