@@ -2675,6 +2675,10 @@ async def fat_reset(ctx, member: discord.Member = None):
         return
     target = member or ctx.author
     update_user_data(ctx.guild.id, str(target.id), number=0, consecutive_plus=0, consecutive_minus=0, jackpot_pity=0, item_counts='{}')
+    
+    # Обновляем ник
+    await update_user_nick(ctx.guild.id, str(target.id), target.name)
+    
     await ctx.send(f"✅ Вес {target.mention} сброшен на 0kg")
 
 @bot.command(name='сбросвсех')
@@ -2695,10 +2699,16 @@ async def reset_all_users_weight(ctx):
     affected = cursor.rowcount
     conn.commit()
     conn.close()
+    
+    # Обновляем ники всех пользователей на сервере
+    for member in ctx.guild.members:
+        await update_user_nick(ctx.guild.id, str(member.id), member.name)
+        await asyncio.sleep(0.5)  # Чтобы не спамить API Discord
+    
     embed = discord.Embed(title="⚖️ Глобальный сброс", description=f"**{ctx.author.name}** обнулил всех!", color=0xff5500)
     embed.add_field(name="Затронуто пользователей", value=str(affected), inline=True)
     await ctx.send(embed=embed)
-
+    
 @bot.command(name='выдатьпредмет')
 async def give_shop_item(ctx, amount: int, *, item_name: str):
     if not has_high_tester_role(ctx.author):
