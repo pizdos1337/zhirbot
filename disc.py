@@ -729,23 +729,19 @@ async def apply_auto_fat(user_id, guild_id, user_name):
         
         update_user_data(guild_id, user_id, **update_data)
         
-        # НАЧИСЛЯЕМ ОПЫТ (как за обычный !жир)
+        # Начисляем опыт (как за обычный !жир)
         levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
         
         # Обновляем ник
         await update_user_nick(guild_id, user_id, user_name)
         
-        # Если есть повышение уровня - отправляем сообщение в канал (опционально)
-        if levels_gained > 0:
-            # Пытаемся найти канал для уведомления
-            guild = bot.get_guild(guild_id)
-            if guild:
-                for channel in guild.text_channels:
-                    if channel.permissions_for(guild.me).send_messages:
-                        await channel.send(f"🌟 {user_name} повысил уровень до **{new_level}** и получил +{kg_reward} кг!")
-                        break
-        
+        # Только лог в консоль, без сообщений в каналы
         print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг, опыт +{XP_PER_FAT}")
+        
+        # Если было повышение уровня - тоже только в консоль
+        if levels_gained > 0:
+            print(f"🌟 {user_name} повысил уровень до {new_level} (+{kg_reward} кг)")
+            
     except Exception as e:
         print(f"❌ Ошибка в авто-жире: {e}")
 
