@@ -3023,6 +3023,90 @@ async def cancel_all(ctx):
         embed = discord.Embed(title="ℹ️ НЕТ АКТИВНЫХ ДЕЙСТВИЙ", description=f"{member.mention}, у вас нет активных действий для отмены.", color=0xffaa00)
         await ctx.send(embed=embed)
 
+@bot.command(name='жирглобал')
+async def global_leaderboard(ctx):
+    """
+    Показывает топ серверов по общей жирности
+    """
+    guild_data = []
+    
+    for guild in bot.guilds:
+        try:
+            stats = get_guild_stats(guild.id)
+            
+            guild_data.append({
+                'name': guild.name,
+                'members': stats['total_users'],
+                'total_weight': stats['total_weight'],
+                'avg_weight': stats['avg_weight']
+            })
+        except Exception as e:
+            print(f"❌ Ошибка при получении статистики для сервера {guild.name}: {e}")
+            continue
+    
+    if not guild_data:
+        await ctx.send("📭 Нет данных по серверам!")
+        return
+    
+    guild_data.sort(key=lambda x: x['total_weight'], reverse=True)
+    
+    embed = discord.Embed(
+        title="🌍 **ГЛОБАЛЬНЫЙ РЕЙТИНГ СЕРВЕРОВ** 🌍",
+        description="Топ серверов по общей массе жира",
+        color=0xffaa00
+    )
+    
+    leaderboard_text = ""
+    for i, guild in enumerate(guild_data[:10], 1):
+        if i == 1:
+            place_icon = "🥇"
+        elif i == 2:
+            place_icon = "🥈"
+        elif i == 3:
+            place_icon = "🥉"
+        else:
+            place_icon = "🔹"
+        
+        if guild['total_weight'] >= 1000:
+            weight_display = f"{guild['total_weight']/1000:.1f}т"
+        else:
+            weight_display = f"{guild['total_weight']}кг"
+        
+        leaderboard_text += f"{place_icon} **{i}.** {guild['name'][:30]}\n"
+        leaderboard_text += f"   📦 **{weight_display}** | 👥 {guild['members']} уч.\n"
+        leaderboard_text += f"   📊 Средний вес: {guild['avg_weight']:.0f}кг\n\n"
+        
+        if len(leaderboard_text) > 1900:
+            leaderboard_text += "... и ещё несколько серверов"
+            break
+    
+    embed.description = leaderboard_text
+    
+    total_servers = len(guild_data)
+    total_global_weight = sum(g['total_weight'] for g in guild_data)
+    total_global_members = sum(g['members'] for g in guild_data)
+    
+    if total_global_weight >= 1000000:
+        global_display = f"{total_global_weight/1000000:.1f}млн кг"
+    elif total_global_weight >= 1000:
+        global_display = f"{total_global_weight/1000:.1f}т"
+    else:
+        global_display = f"{total_global_weight}кг"
+    
+    embed.add_field(
+        name="📊 **ГЛОБАЛЬНАЯ СТАТИСТИКА**",
+        value=(
+            f"🌍 Серверов: **{total_servers}**\n"
+            f"👥 Участников: **{total_global_members}**\n"
+            f"⚖️ Всего массы: **{global_display}**"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="🏆 Топ-10 серверов")
+    
+    await ctx.send(embed=embed)
+
 @bot.event
 async def on_ready():
     print(f"\n✅ Бот успешно запущен как {bot.user}")
