@@ -1655,7 +1655,8 @@ async def fat_case_command(ctx):
         luck_upgrade = data.get('luck_upgrade', 0)
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
         update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
-        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_CASE)
+        
+        # Анимация
         line = [random.choice(prize_emojis) for _ in range(100)]
         
         if "emoji" in prize:
@@ -1701,51 +1702,72 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(1)
         
-        items_dict = get_user_items(data['item_counts'])
-        new_number = data['current_number']
+        # ===== ПОЛУЧАЕМ АКТУАЛЬНЫЕ ДАННЫЕ =====
+        current_data = get_user_data(guild_id, user_id, user_name)
+        current_weight = current_data['current_number']
+        items_dict = get_user_items(current_data['item_counts'])
         prize_value = prize["value"]
-        prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
+        prestige_bonus = get_prestige_bonus(current_data.get('prestige', 0))
         has_water = items_dict.get("Стакан воды", 0) > 0
         
+        # ===== НАЧИСЛЯЕМ ОПЫТ (МОЖЕТ ПОВЫСИТЬ УРОВЕНЬ) =====
+        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_CASE)
+        
+        # ===== ПОЛУЧАЕМ ВЕС ПОСЛЕ НАЧИСЛЕНИЯ ОПЫТА =====
+        after_xp_data = get_user_data(guild_id, user_id, user_name)
+        after_xp_weight = after_xp_data['current_number']
+        
+        # ===== ОБРАБОТКА ПРИЗА =====
         if prize_value == "rotten_leg":
             items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
+            new_number = after_xp_weight
             result_display = f"💀 **Гнилая ножка KFC!** 💀"
             result_color = 0x993366
+            
         elif prize_value == "water":
             items_dict["Стакан воды"] = items_dict.get("Стакан воды", 0) + 1
+            new_number = after_xp_weight
             result_display = f"💧 **Стакан воды!** 💧"
             result_color = 0x66ccff
+            
         elif isinstance(prize_value, str):
             items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
+            new_number = after_xp_weight
             result_display = f"🎁 **{prize_value}** {prize_emoji}"
             result_color = 0x9b59b6
+            
         else:
             if has_water and case_to_open != "daily":
                 prize_value = prize_value // 3
             prize_value = int(prize_value * prestige_bonus)
-            new_number = data['current_number'] + prize_value
+            new_number = after_xp_weight + prize_value
             result_display = f"🎉 **{prize_value:+d} кг** {prize_emoji}"
             result_color = 0xffaa00
         
+        # ===== ОБНОВЛЯЕМ ДАННЫЕ =====
         update_data = {'number': new_number, 'user_name': user_name, 'item_counts': save_user_items(items_dict)}
         update_user_data(guild_id, user_id, **update_data)
         await update_user_nick(guild_id, user_id, user_name)
         
+        # ===== ФИНАЛЬНЫЙ EMBED =====
         rank_name, rank_emoji = get_rank(new_number)
         final_embed = discord.Embed(title=f"{case['emoji']} Открытие {case['name']}", description=f"**{member.mention}** открыл кейс и получил:", color=result_color)
         final_embed.add_field(name="🎁 Приз", value=result_display, inline=True)
+        
         if not isinstance(prize_value, str) and prize_value not in ["rotten_leg", "water"]:
             final_embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
             final_embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
+        
         if levels_gained > 0:
             final_embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", inline=False)
+        
         if case_to_open != "daily":
-            current_data = get_user_data(guild_id, user_id)
-            remaining = current_data.get('cases_dict', {}).get(case_to_open, 0)
+            remaining = after_xp_data.get('cases_dict', {}).get(case_to_open, 0)
             if remaining > 0:
                 final_embed.add_field(name="📦 Осталось кейсов", value=f"{case['emoji']} {case['name']}: {remaining} шт", inline=False)
         else:
             final_embed.add_field(name="⏰ Следующий ежедневный кейс", value=f"через {actual_case_cooldown} часов", inline=False)
+        
         final_embed.set_footer(text=f"{case['emoji']} Удачи в следующий раз!")
         await ctx.send(embed=final_embed)
         
@@ -1757,7 +1779,7 @@ async def fat_case_command(ctx):
             pass
         timeout_embed = discord.Embed(title="⏰ Время вышло", description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён в инвентаре!", color=0xff0000)
         await case_msg.edit(embed=timeout_embed)
-
+        
 @bot.command(name='профиль')
 async def profile_command(ctx, member: discord.Member = None):
     target = member or ctx.author
