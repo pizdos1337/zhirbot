@@ -541,18 +541,19 @@ async def daily_case_accumulation_loop():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     
-                    # Проверяем колонки
+                    # Проверяем и добавляем колонки если нужно
                     cursor.execute("PRAGMA table_info(user_fat)")
                     columns = [col[1] for col in cursor.fetchall()]
-                    if 'daily_case_last_time' not in columns:
-                        cursor.execute("ALTER TABLE user_fat ADD COLUMN daily_case_last_time TIMESTAMP")
-                        conn.commit()
                     if 'daily_case_count' not in columns:
                         cursor.execute("ALTER TABLE user_fat ADD COLUMN daily_case_count INTEGER DEFAULT 0")
+                        conn.commit()
+                    if 'daily_case_last_time' not in columns:
+                        cursor.execute("ALTER TABLE user_fat ADD COLUMN daily_case_last_time TIMESTAMP")
                         conn.commit()
                         conn.close()
                         continue
                     
+                    # Получаем всех пользователей
                     cursor.execute("SELECT user_id, user_name, daily_case_last_time, case_cd_upgrade FROM user_fat")
                     users = cursor.fetchall()
                     conn.close()
@@ -569,25 +570,27 @@ async def daily_case_accumulation_loop():
                                 else:
                                     last_time = last_time_str
                             
+                            # Подключаемся к БД напрямую для обновления
+                            conn2 = sqlite3.connect(db_path)
+                            c2 = conn2.cursor()
+                            
                             if not last_time:
                                 # Первый раз: даём 1 кейс
-                                update_user_data(guild_id, user_id, daily_case_count=1, daily_case_last_time=current_time)
+                                c2.execute("UPDATE user_fat SET daily_case_count = daily_case_count + 1, daily_case_last_time = ? WHERE user_id = ?", (current_time, user_id))
+                                conn2.commit()
                                 print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
-                                continue
-                            
-                            diff_minutes = (current_time - last_time).total_seconds() / 60
-                            
-                            if diff_minutes >= cooldown_minutes:
-                                intervals = int(diff_minutes // cooldown_minutes)
-                                if intervals > 0:
-                                    data = get_user_data(guild_id, user_id, user_name)
-                                    old_count = data.get('daily_case_count', 0)
-                                    new_count = old_count + intervals
-                                    new_last_time = last_time + timedelta(minutes=cooldown_minutes * intervals)
-                                    update_user_data(guild_id, user_id, daily_case_count=new_count, daily_case_last_time=new_last_time)
-                                    print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (было {old_count}, стало {new_count})")
+                            else:
+                                diff_minutes = (current_time - last_time).total_seconds() / 60
+                                if diff_minutes >= cooldown_minutes:
+                                    intervals = int(diff_minutes // cooldown_minutes)
+                                    if intervals > 0:
+                                        new_last_time = last_time + timedelta(minutes=cooldown_minutes * intervals)
+                                        c2.execute("UPDATE user_fat SET daily_case_count = daily_case_count + ?, daily_case_last_time = ? WHERE user_id = ?", (intervals, new_last_time, user_id))
+                                        conn2.commit()
+                                        print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
+                            conn2.close()
                         except Exception as e:
-                            print(f"❌ Ошибка {user_id}: {e}")
+                            print(f"❌ Ошибка пользователя {user_id}: {e}")
                 except Exception as e:
                     print(f"❌ Ошибка сервера {guild_id}: {e}")
             await asyncio.sleep(60)
