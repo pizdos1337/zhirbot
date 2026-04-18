@@ -748,6 +748,7 @@ async def apply_auto_fat(user_id, guild_id, user_name):
 async def daily_case_accumulation_loop():
     """Фоновая задача: каждую минуту добавляет ежедневные кейсы в инвентарь с учётом КД"""
     await bot.wait_until_ready()
+    print("🟢 Запущен цикл накопления ежедневных кейсов")
     while not bot.is_closed():
         try:
             current_time = datetime.now()
@@ -759,11 +760,17 @@ async def daily_case_accumulation_loop():
                 try:
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
+                    # Проверяем наличие колонки daily_case_last_time
                     cursor.execute("PRAGMA table_info(user_fat)")
                     columns = [col[1] for col in cursor.fetchall()]
-                    if 'daily_case_last_time' not in columns or 'case_cd_upgrade' not in columns:
+                    if 'daily_case_last_time' not in columns:
+                        print(f"⚠️ Нет колонки daily_case_last_time на сервере {guild.name}, создаём...")
+                        cursor.execute("ALTER TABLE user_fat ADD COLUMN daily_case_last_time TIMESTAMP")
+                        conn.commit()
                         conn.close()
                         continue
+                    
+                    # Получаем всех пользователей
                     cursor.execute("SELECT user_id, user_name, daily_case_last_time, case_cd_upgrade FROM user_fat")
                     users = cursor.fetchall()
                     conn.close()
@@ -788,6 +795,7 @@ async def daily_case_accumulation_loop():
                                 cases = data.get('cases_dict', {}).copy()
                                 cases["daily"] = cases.get("daily", 0) + 1
                                 update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=current_time)
+                                print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
                                 continue
                             
                             # Сколько времени прошло
@@ -800,11 +808,12 @@ async def daily_case_accumulation_loop():
                                     cases["daily"] = cases.get("daily", 0) + intervals
                                     new_last_time = last_time + cooldown * intervals
                                     update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=new_last_time)
+                                    print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
                         except Exception as e:
                             print(f"❌ Ошибка обработки пользователя {user_id}: {e}")
                 except Exception as e:
                     print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
-            await asyncio.sleep(60)  # проверяем каждую минуту
+            await asyncio.sleep(60)
         except Exception as e:
             print(f"❌ Ошибка в цикле накопления кейсов: {e}")
             await asyncio.sleep(60)
