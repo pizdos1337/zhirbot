@@ -1595,8 +1595,43 @@ async def fat_case_command(ctx):
     user_id = str(member.id)
     user_name = member.name
     
+    # ===== ПРИНУДИТЕЛЬНОЕ НАЧИСЛЕНИЕ КЕЙСОВ ПРЯМО СЕЙЧАС =====
     data = get_user_data(guild_id, user_id, user_name)
+    last_time = data.get('daily_case_last_time')
     
+    # Получаем кулдаун с учётом прокачки
+    case_cd_upgrade = data.get('case_cd_upgrade', 0)
+    cd_reduction_minutes = get_case_cd_reduction(case_cd_upgrade)
+    cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction_minutes)
+    cooldown = timedelta(minutes=cooldown_minutes)
+    
+    now = datetime.now()
+    
+    if not last_time:
+        # Первый раз - даём 1 кейс
+        cases = data.get('cases_dict', {}).copy()
+        cases["daily"] = cases.get("daily", 0) + 1
+        update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=now)
+        print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
+    else:
+        if isinstance(last_time, str):
+            last_time = datetime.fromisoformat(last_time)
+        
+        diff = now - last_time
+        if diff >= cooldown:
+            intervals = int(diff.total_seconds() // cooldown.total_seconds())
+            if intervals > 0:
+                cases = data.get('cases_dict', {}).copy()
+                cases["daily"] = cases.get("daily", 0) + intervals
+                new_last_time = last_time + cooldown * intervals
+                update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=new_last_time)
+                print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
+    
+    # Обновляем данные после начисления
+    data = get_user_data(guild_id, user_id, user_name)
+    cases_dict = data.get('cases_dict', {}).copy()
+    
+    # Проверка активного кейса
     if data.get('active_case_message_id'):
         try:
             channel = bot.get_channel(int(data['active_case_channel_id'])) if data.get('active_case_channel_id') else None
@@ -1614,14 +1649,16 @@ async def fat_case_command(ctx):
         except:
             pass
     
-    cases_dict = data.get('cases_dict', {}).copy()
+    # Выбираем кейс для открытия
     case_to_open = None
     case = None
     
+    # Сначала проверяем ежедневные кейсы
     if cases_dict.get("daily", 0) > 0:
         case_to_open = "daily"
         case = CASES["daily"]
     else:
+        # Потом платные кейсы
         for case_id, count in cases_dict.items():
             if case_id != "daily" and count > 0:
                 case_to_open = case_id
@@ -1633,8 +1670,10 @@ async def fat_case_command(ctx):
         await ctx.send(embed=embed)
         return
     
+    # Запоминаем, какой кейс собираемся открыть
     update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=case_to_open)
     
+    # Собираем эмодзи для анимации
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -1690,6 +1729,7 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=cancel_embed)
             return
         
+        # Списываем кейс из инвентаря
         current_data = get_user_data(guild_id, user_id, user_name)
         current_cases = current_data.get('cases_dict', {}).copy()
         if case_to_open == "daily":
@@ -1713,11 +1753,13 @@ async def fat_case_command(ctx):
         except:
             pass
         
+        # Получаем приз
         prestige_luck = get_prestige_luck(current_data.get('prestige', 0))
         luck_upgrade = current_data.get('luck_upgrade', 0)
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
         update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
         
+        # Анимация
         line = [random.choice(prize_emojis) for _ in range(100)]
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
@@ -1762,6 +1804,7 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(1)
         
+        # Обработка приза и опыта
         current_data = get_user_data(guild_id, user_id, user_name)
         items_dict = get_user_items(current_data['item_counts'])
         prize_value = prize["value"]
