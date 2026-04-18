@@ -2867,9 +2867,18 @@ async def show_inventory(ctx, member: discord.Member = None):
     target = member or ctx.author
     data = get_user_data(ctx.guild.id, str(target.id), target.name)
     embed = discord.Embed(title=f"🎒 Инвентарь - {target.display_name}", color=0x3498db)
+    
+    # Ежедневные кейсы
+    daily_count = data.get('daily_case_count', 0)
+    if daily_count > 0:
+        embed.add_field(name="📦 Ежедневные кейсы", value=f"{daily_count} шт", inline=True)
+    
+    # Авто-жир
     if data.get('auto_fat_level', 0) > 0:
         interval = get_auto_fat_interval(data['auto_fat_level'])
         embed.add_field(name="🤖 Авто-жир", value=f"{data['auto_fat_level']} уровень (каждые {interval} ч)", inline=True)
+    
+    # Платные кейсы
     cases_dict = data.get('cases_dict', {})
     cases_text = ""
     for case_id, count in cases_dict.items():
@@ -2877,6 +2886,8 @@ async def show_inventory(ctx, member: discord.Member = None):
             cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
     if cases_text:
         embed.add_field(name="📦 Кейсы", value=cases_text, inline=False)
+    
+    # Предметы
     items_dict = get_user_items(data['item_counts'])
     if items_dict:
         items_text = ""
@@ -2894,6 +2905,7 @@ async def show_inventory(ctx, member: discord.Member = None):
         if legendary_items:
             items_text += "**✨ Легендарные предметы:**\n" + "\n".join(legendary_items)
         embed.add_field(name="📦 Предметы", value=items_text, inline=False)
+    
     embed.set_footer(text="💪 Жир, кейсы и предметы!")
     await ctx.send(embed=embed)
 
