@@ -1619,7 +1619,7 @@ async def fat_case_command(ctx):
                     if old_msg:
                         time_since = datetime.now() - old_msg.created_at.replace(tzinfo=None)
                         if time_since.total_seconds() < 120:
-                            embed = discord.Embed(title="⚠️ Кейс уже открыт!", description=f"{member.mention}, у вас уже есть активный кейс!", color=0xffaa00)
+                            embed = discord.Embed(title="⚠️ Кейс уже открыт!", description=f"{member.mention}, у вас уже есть активный кейс!\nСначала завершите или дождитесь таймаута предыдущего.", color=0xffaa00)
                             await ctx.send(embed=embed)
                             return
                 except:
@@ -1627,7 +1627,7 @@ async def fat_case_command(ctx):
         except:
             pass
     
-    # Получаем количество ежедневных кейсов
+    # Получаем количество кейсов
     daily_count = data.get('daily_case_count', 0)
     cases_dict = data.get('cases_dict', {}).copy()
     
@@ -1651,10 +1651,10 @@ async def fat_case_command(ctx):
         await ctx.send(embed=embed)
         return
     
-    # Запоминаем
+    # Запоминаем, какой кейс собираемся открыть
     update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=case_to_open)
     
-    # Собираем эмодзи
+    # Собираем эмодзи для анимации
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -1689,7 +1689,7 @@ async def fat_case_command(ctx):
         description=f"{member.mention}, у вас есть кейс!\n\n**Нажмите на 🖱️ чтобы открыть**\n**Нажмите на ❌ чтобы отменить**",
         color=0xffaa00
     )
-    case_embed.set_footer(text="У вас 30 секунд!")
+    case_embed.set_footer(text="У вас 30 секунд чтобы открыть кейс!")
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
     await case_msg.add_reaction("❌")
@@ -1700,13 +1700,15 @@ async def fat_case_command(ctx):
     
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
+        
+        # Отмена
         if str(reaction.emoji) == "❌":
             update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None)
             try:
                 await case_msg.clear_reactions()
             except:
                 pass
-            cancel_embed = discord.Embed(title="❌ Отмена", description=f"{member.mention}, вы отменили открытие. Кейс сохранён!", color=0xffaa00)
+            cancel_embed = discord.Embed(title="❌ Отмена", description=f"{member.mention}, вы отменили открытие кейса. Кейс сохранён в инвентаре!", color=0xffaa00)
             await case_msg.edit(embed=cancel_embed)
             return
         
@@ -1740,9 +1742,11 @@ async def fat_case_command(ctx):
         prestige_luck = get_prestige_luck(current_data.get('prestige', 0))
         luck_upgrade = current_data.get('luck_upgrade', 0)
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
+        update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
         
         # Анимация
         line = [random.choice(prize_emojis) for _ in range(100)]
+        
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
         elif prize["value"] == "rotten_leg":
@@ -1766,6 +1770,7 @@ async def fat_case_command(ctx):
                 prize_emoji = "💥"
         else:
             prize_emoji = "🎁"
+        
         line[56] = prize_emoji
         anim_embed = discord.Embed(title=f"🎰 **{case['name']}** 🎰", description="", color=0xffaa00)
         animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 55), (16, 55), (17, 56), (18, 56)]
@@ -1786,13 +1791,14 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(1)
         
-        # Обработка приза
+        # Обработка приза и опыта
         current_data = get_user_data(guild_id, user_id, user_name)
         items_dict = get_user_items(current_data['item_counts'])
         prize_value = prize["value"]
         prestige_bonus = get_prestige_bonus(current_data.get('prestige', 0))
         has_water = items_dict.get("Стакан воды", 0) > 0
         
+        # Начисляем опыт (может повысить уровень)
         levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_CASE)
         after_xp_data = get_user_data(guild_id, user_id, user_name)
         after_xp_weight = after_xp_data['current_number']
@@ -1825,15 +1831,36 @@ async def fat_case_command(ctx):
         await update_user_nick(guild_id, user_id, user_name)
         
         rank_name, rank_emoji = get_rank(new_number)
-        final_embed = discord.Embed(title=f"{case['emoji']} Открытие {case['name']}", description=f"**{member.mention}** открыл кейс и получил:", color=result_color)
+        
+        final_embed = discord.Embed(
+            title=f"{case['emoji']} Открытие {case['name']}",
+            description=f"**{member.mention}** открыл кейс и получил:",
+            color=result_color
+        )
         final_embed.add_field(name="🎁 Приз", value=result_display, inline=True)
+        
         if not isinstance(prize_value, str) and prize_value not in ["rotten_leg", "water"]:
             final_embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
             final_embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
-        if levels_gained > 0:
-            final_embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", inline=False)
         
-        final_embed.set_footer(text=f"{case['emoji']} Удачи!")
+        if levels_gained > 0:
+            final_embed.add_field(
+                name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐",
+                value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!",
+                inline=False
+            )
+        
+        # Показываем остаток кейсов
+        if case_to_open == "daily":
+            remaining = after_xp_data.get('daily_case_count', 0)
+            if remaining > 0:
+                final_embed.add_field(name="📦 Осталось ежедневных кейсов", value=f"{remaining} шт", inline=False)
+        else:
+            remaining = after_xp_data.get('cases_dict', {}).get(case_to_open, 0)
+            if remaining > 0:
+                final_embed.add_field(name="📦 Осталось кейсов", value=f"{case['emoji']} {case['name']}: {remaining} шт", inline=False)
+        
+        final_embed.set_footer(text=f"{case['emoji']} Удачи в следующий раз!")
         await ctx.send(embed=final_embed)
         
     except asyncio.TimeoutError:
@@ -1842,7 +1869,11 @@ async def fat_case_command(ctx):
             await case_msg.clear_reactions()
         except:
             pass
-        timeout_embed = discord.Embed(title="⏰ Время вышло", description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён!", color=0xff0000)
+        timeout_embed = discord.Embed(
+            title="⏰ Время вышло",
+            description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён в инвентаре!",
+            color=0xff0000
+        )
         await case_msg.edit(embed=timeout_embed)
         
 @bot.command(name='профиль')
