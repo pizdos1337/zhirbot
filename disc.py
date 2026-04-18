@@ -16,7 +16,7 @@ import json
 # ----- ОСНОВНЫЕ НАСТРОЙКИ -----
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 PREFIX = "!"
-DB_FOLDER = "./guild_databases"
+DB_FOLDER = "./data/guild_databases"
 COOLDOWN_HOURS = 1
 CASE_COOLDOWN_HOURS = 24
 
