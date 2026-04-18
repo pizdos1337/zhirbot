@@ -341,6 +341,7 @@ def add_missing_columns(db_path, existing_columns):
         'last_passive_income': "TIMESTAMP",
         'last_hourly_income': "TIMESTAMP",
         'daily_last_added': "TIMESTAMP",
+        'daily_case_count': "INTEGER DEFAULT 0",
     }
     for col_name, col_type in required_columns.items():
         if col_name not in existing_columns:
