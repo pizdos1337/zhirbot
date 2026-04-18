@@ -339,7 +339,8 @@ def add_missing_columns(db_path, existing_columns):
         'next_auto_fat_time': "TIMESTAMP",
         'animations_enabled': "INTEGER DEFAULT 1",
         'last_passive_income': "TIMESTAMP",
-        'last_hourly_income': "TIMESTAMP"
+        'last_hourly_income': "TIMESTAMP",
+        'daily_last_added': "TIMESTAMP",
     }
     for col_name, col_type in required_columns.items():
         if col_name not in existing_columns:
