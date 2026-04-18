@@ -3193,6 +3193,7 @@ async def on_ready():
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
     bot.loop.create_task(apply_hourly_effects())
+    bot.loop.create_task(daily_case_accumulation_loop())  # <-- добавить эту строку
 
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
