@@ -1595,41 +1595,8 @@ async def fat_case_command(ctx):
     user_id = str(member.id)
     user_name = member.name
     
-    # ===== ПРИНУДИТЕЛЬНОЕ НАЧИСЛЕНИЕ КЕЙСОВ ПРЯМО СЕЙЧАС =====
+    # Получаем данные
     data = get_user_data(guild_id, user_id, user_name)
-    last_time = data.get('daily_case_last_time')
-    
-    # Получаем кулдаун с учётом прокачки
-    case_cd_upgrade = data.get('case_cd_upgrade', 0)
-    cd_reduction_minutes = get_case_cd_reduction(case_cd_upgrade)
-    cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction_minutes)
-    cooldown = timedelta(minutes=cooldown_minutes)
-    
-    now = datetime.now()
-    
-    if not last_time:
-        # Первый раз - даём 1 кейс
-        cases = data.get('cases_dict', {}).copy()
-        cases["daily"] = cases.get("daily", 0) + 1
-        update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=now)
-        print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
-    else:
-        if isinstance(last_time, str):
-            last_time = datetime.fromisoformat(last_time)
-        
-        diff = now - last_time
-        if diff >= cooldown:
-            intervals = int(diff.total_seconds() // cooldown.total_seconds())
-            if intervals > 0:
-                cases = data.get('cases_dict', {}).copy()
-                cases["daily"] = cases.get("daily", 0) + intervals
-                new_last_time = last_time + cooldown * intervals
-                update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=new_last_time)
-                print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
-    
-    # Обновляем данные после начисления
-    data = get_user_data(guild_id, user_id, user_name)
-    cases_dict = data.get('cases_dict', {}).copy()
     
     # Проверка активного кейса
     if data.get('active_case_message_id'):
@@ -1649,6 +1616,38 @@ async def fat_case_command(ctx):
         except:
             pass
     
+    # ===== НАЧИСЛЯЕМ НАКОПЛЕННЫЕ ЕЖЕДНЕВНЫЕ КЕЙСЫ =====
+    last_time = data.get('daily_case_last_time')
+    case_cd_upgrade = data.get('case_cd_upgrade', 0)
+    cd_reduction_minutes = get_case_cd_reduction(case_cd_upgrade)
+    cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction_minutes)
+    cooldown = timedelta(minutes=cooldown_minutes)
+    now = datetime.now()
+    
+    cases_dict = data.get('cases_dict', {}).copy()
+    
+    if not last_time:
+        # Первый раз - даём 1 кейс
+        cases_dict["daily"] = cases_dict.get("daily", 0) + 1
+        update_user_data(guild_id, user_id, cases_dict=cases_dict, daily_case_last_time=now)
+        print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
+    else:
+        if isinstance(last_time, str):
+            last_time = datetime.fromisoformat(last_time)
+        
+        diff = now - last_time
+        if diff >= cooldown:
+            intervals = int(diff.total_seconds() // cooldown.total_seconds())
+            if intervals > 0:
+                cases_dict["daily"] = cases_dict.get("daily", 0) + intervals
+                new_last_time = last_time + cooldown * intervals
+                update_user_data(guild_id, user_id, cases_dict=cases_dict, daily_case_last_time=new_last_time)
+                print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
+    
+    # Обновляем данные после начисления
+    data = get_user_data(guild_id, user_id, user_name)
+    cases_dict = data.get('cases_dict', {}).copy()
+    
     # Выбираем кейс для открытия
     case_to_open = None
     case = None
@@ -1666,6 +1665,7 @@ async def fat_case_command(ctx):
                 break
     
     if not case_to_open:
+        # Если нет кейсов - показываем сообщение
         embed = discord.Embed(title="📭 Нет кейсов!", description=f"{member.mention}, у вас нет кейсов для открытия!\n\nКупить кейсы можно в магазине (`!магазин`)", color=0xff0000)
         await ctx.send(embed=embed)
         return
