@@ -4,8 +4,6 @@ import random
 import sqlite3
 import os
 from datetime import datetime, timedelta
-import time
-import math
 import asyncio
 import shutil
 import glob
@@ -18,7 +16,7 @@ import json
 # ----- ОСНОВНЫЕ НАСТРОЙКИ -----
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 PREFIX = "!"
-DB_FOLDER = "/app/data/guild_databases"
+DB_FOLDER = "./guild_databases"
 COOLDOWN_HOURS = 1
 CASE_COOLDOWN_HOURS = 24
 
@@ -236,8 +234,6 @@ def add_xp(guild_id, user_id, xp_amount):
         total_kg_reward += LEVEL_UP_REWARD_PER_LEVEL * level
     new_weight = data['current_number'] + total_kg_reward
     update_user_data(guild_id, user_id, user_xp=new_total_xp, user_level=new_level, number=new_weight)
-    if total_kg_reward > 0:
-        asyncio.create_task(update_user_nick(guild_id, user_id, data.get('user_name')))
     return new_level - old_level, total_kg_reward, new_level
 
 def format_nick_with_prestige(prestige, weight, user_name):
@@ -311,17 +307,39 @@ def add_missing_columns(db_path, existing_columns):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     required_columns = {
-        'item_counts': "TEXT DEFAULT '{}'", 'last_command': "TEXT", 'last_command_target': "TEXT",
-        'last_command_use_time': "TIMESTAMP", 'fat_cooldown_time': "TIMESTAMP", 'active_case_message_id': "TEXT",
-        'active_case_channel_id': "TEXT", 'daily_case_last_time': "TIMESTAMP", 'snatcher_last_time': "TIMESTAMP",
-        'duel_active': "INTEGER DEFAULT 0", 'duel_opponent': "TEXT", 'duel_amount': "INTEGER DEFAULT 0",
-        'duel_message_id': "TEXT", 'duel_channel_id': "TEXT", 'duel_initiator': "INTEGER DEFAULT 0",
-        'last_case_type': "TEXT", 'last_case_prize': "TEXT", 'upgrade_active': "INTEGER DEFAULT 0",
-        'upgrade_data': "TEXT", 'duel_start_time': "TIMESTAMP", 'shadow_upgrade_chance': "INTEGER DEFAULT 0",
-        'user_xp': "INTEGER DEFAULT 0", 'user_level': "INTEGER DEFAULT 0", 'fat_cd_upgrade': "INTEGER DEFAULT 0",
-        'case_cd_upgrade': "INTEGER DEFAULT 0", 'luck_upgrade': "INTEGER DEFAULT 0", 'income_upgrade': "INTEGER DEFAULT 0",
-        'prestige': "INTEGER DEFAULT 0", 'auto_fat_level': "INTEGER DEFAULT 0", 'next_auto_fat_time': "TIMESTAMP",
-        'animations_enabled': "INTEGER DEFAULT 1", 'daily_case_last_time': "TIMESTAMP",
+        'item_counts': "TEXT DEFAULT '{}'",
+        'last_command': "TEXT",
+        'last_command_target': "TEXT",
+        'last_command_use_time': "TIMESTAMP",
+        'fat_cooldown_time': "TIMESTAMP",
+        'active_case_message_id': "TEXT",
+        'active_case_channel_id': "TEXT",
+        'daily_case_last_time': "TIMESTAMP",
+        'snatcher_last_time': "TIMESTAMP",
+        'duel_active': "INTEGER DEFAULT 0",
+        'duel_opponent': "TEXT",
+        'duel_amount': "INTEGER DEFAULT 0",
+        'duel_message_id': "TEXT",
+        'duel_channel_id': "TEXT",
+        'duel_initiator': "INTEGER DEFAULT 0",
+        'last_case_type': "TEXT",
+        'last_case_prize': "TEXT",
+        'upgrade_active': "INTEGER DEFAULT 0",
+        'upgrade_data': "TEXT",
+        'duel_start_time': "TIMESTAMP",
+        'shadow_upgrade_chance': "INTEGER DEFAULT 0",
+        'user_xp': "INTEGER DEFAULT 0",
+        'user_level': "INTEGER DEFAULT 0",
+        'fat_cd_upgrade': "INTEGER DEFAULT 0",
+        'case_cd_upgrade': "INTEGER DEFAULT 0",
+        'luck_upgrade': "INTEGER DEFAULT 0",
+        'income_upgrade': "INTEGER DEFAULT 0",
+        'prestige': "INTEGER DEFAULT 0",
+        'auto_fat_level': "INTEGER DEFAULT 0",
+        'next_auto_fat_time': "TIMESTAMP",
+        'animations_enabled': "INTEGER DEFAULT 1",
+        'last_passive_income': "TIMESTAMP",
+        'last_hourly_income': "TIMESTAMP"
     }
     for col_name, col_type in required_columns.items():
         if col_name not in existing_columns:
@@ -379,7 +397,8 @@ def create_new_database(db_path, guild_id, guild_name):
         shadow_upgrade_chance INTEGER DEFAULT 0, user_xp INTEGER DEFAULT 0, user_level INTEGER DEFAULT 0,
         fat_cd_upgrade INTEGER DEFAULT 0, case_cd_upgrade INTEGER DEFAULT 0, luck_upgrade INTEGER DEFAULT 0,
         income_upgrade INTEGER DEFAULT 0, prestige INTEGER DEFAULT 0, auto_fat_level INTEGER DEFAULT 0,
-        next_auto_fat_time TIMESTAMP, animations_enabled INTEGER DEFAULT 1)''')
+        next_auto_fat_time TIMESTAMP, animations_enabled INTEGER DEFAULT 1,
+        last_passive_income TIMESTAMP, last_hourly_income TIMESTAMP)''')
     for case_id in CASES.keys():
         if case_id != "daily":
             try:
@@ -432,7 +451,7 @@ def get_user_data(guild_id, user_id, user_name=None):
             'duel_initiator': 0, 'last_case_type': None, 'last_case_prize': None, 'upgrade_active': 0, 'upgrade_data': None,
             'duel_start_time': None, 'shadow_upgrade_chance': 0, 'user_xp': 0, 'user_level': 0, 'fat_cd_upgrade': 0,
             'case_cd_upgrade': 0, 'luck_upgrade': 0, 'income_upgrade': 0, 'prestige': 0, 'auto_fat_level': 0,
-            'next_auto_fat_time': None, 'animations_enabled': 1, 'cases_dict': {}
+            'next_auto_fat_time': None, 'animations_enabled': 1, 'cases_dict': {}, 'daily_case_last_time',
         }
         for case_id in CASES.keys():
             if case_id != "daily":
@@ -729,16 +748,12 @@ async def apply_auto_fat(user_id, guild_id, user_name):
         
         update_user_data(guild_id, user_id, **update_data)
         
-        # Начисляем опыт (как за обычный !жир)
         levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
         
-        # Обновляем ник
         await update_user_nick(guild_id, user_id, user_name)
         
-        # Только лог в консоль, без сообщений в каналы
         print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг, опыт +{XP_PER_FAT}")
         
-        # Если было повышение уровня - тоже только в консоль
         if levels_gained > 0:
             print(f"🌟 {user_name} повысил уровень до {new_level} (+{kg_reward} кг)")
             
@@ -746,7 +761,6 @@ async def apply_auto_fat(user_id, guild_id, user_name):
         print(f"❌ Ошибка в авто-жире: {e}")
 
 async def daily_case_accumulation_loop():
-    """Фоновая задача: каждую минуту добавляет ежедневные кейсы в инвентарь с учётом КД"""
     await bot.wait_until_ready()
     print("🟢 Запущен цикл накопления ежедневных кейсов")
     while not bot.is_closed():
@@ -760,24 +774,20 @@ async def daily_case_accumulation_loop():
                 try:
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
-                    # Проверяем наличие колонки daily_case_last_time
                     cursor.execute("PRAGMA table_info(user_fat)")
                     columns = [col[1] for col in cursor.fetchall()]
                     if 'daily_case_last_time' not in columns:
-                        print(f"⚠️ Нет колонки daily_case_last_time на сервере {guild.name}, создаём...")
                         cursor.execute("ALTER TABLE user_fat ADD COLUMN daily_case_last_time TIMESTAMP")
                         conn.commit()
                         conn.close()
                         continue
                     
-                    # Получаем всех пользователей
                     cursor.execute("SELECT user_id, user_name, daily_case_last_time, case_cd_upgrade FROM user_fat")
                     users = cursor.fetchall()
                     conn.close()
                     
                     for user_id, user_name, last_time_str, case_cd_upgrade in users:
                         try:
-                            # Расчёт текущего кулдауна в минутах
                             cd_reduction = get_case_cd_reduction(case_cd_upgrade or 0)
                             cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction)
                             cooldown = timedelta(minutes=cooldown_minutes)
@@ -790,15 +800,12 @@ async def daily_case_accumulation_loop():
                                     last_time = last_time_str
                             
                             if not last_time:
-                                # Первый раз: даём 1 кейс и ставим текущее время
                                 data = get_user_data(guild_id, user_id, user_name)
                                 cases = data.get('cases_dict', {}).copy()
                                 cases["daily"] = cases.get("daily", 0) + 1
                                 update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=current_time)
-                                print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
                                 continue
                             
-                            # Сколько времени прошло
                             diff = current_time - last_time
                             if diff >= cooldown:
                                 intervals = int(diff.total_seconds() // cooldown.total_seconds())
@@ -808,14 +815,12 @@ async def daily_case_accumulation_loop():
                                     cases["daily"] = cases.get("daily", 0) + intervals
                                     new_last_time = last_time + cooldown * intervals
                                     update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=new_last_time)
-                                    print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
                         except Exception as e:
-                            print(f"❌ Ошибка обработки пользователя {user_id}: {e}")
+                            pass
                 except Exception as e:
-                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
+                    pass
             await asyncio.sleep(60)
         except Exception as e:
-            print(f"❌ Ошибка в цикле накопления кейсов: {e}")
             await asyncio.sleep(60)
 
 async def auto_fat_loop():
@@ -862,11 +867,11 @@ async def auto_fat_loop():
                                         conn2.commit()
                                         conn2.close()
                         except Exception as e:
-                            print(f"❌ Ошибка обработки авто-жира для {user_id}: {e}")
+                            pass
                 except Exception as e:
-                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
+                    pass
         except Exception as e:
-            print(f"❌ Ошибка в цикле авто-жира: {e}")
+            pass
         await asyncio.sleep(60)
 
 async def passive_income_loop():
@@ -940,7 +945,6 @@ async def passive_income_loop():
                                                 await member.edit(nick=new_nick)
                                     except:
                                         pass
-                                    print(f"💰 {user_name} получил {final_gain}кг от предметов")
                             else:
                                 conn2 = sqlite3.connect(db_path)
                                 c = conn2.cursor()
@@ -948,11 +952,11 @@ async def passive_income_loop():
                                 conn2.commit()
                                 conn2.close()
                         except Exception as e:
-                            print(f"❌ Ошибка при начислении дохода для {user_id}: {e}")
+                            pass
                 except Exception as e:
-                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
+                    pass
         except Exception as e:
-            print(f"❌ Ошибка в цикле пассивного дохода: {e}")
+            pass
         await asyncio.sleep(24 * 60 * 60)
 
 async def apply_snatcher_effect(guild_id, user_id, user_name):
@@ -1008,7 +1012,7 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
         except:
             pass
     except Exception as e:
-        print(f"❌ Ошибка в работе Снатчера: {e}")
+        pass
 
 async def snatcher_loop():
     await bot.wait_until_ready()
@@ -1035,11 +1039,11 @@ async def snatcher_loop():
                             await apply_snatcher_effect(guild_id, user_id, user_name)
                             await asyncio.sleep(1)
                         except Exception as e:
-                            print(f"❌ Ошибка при обработке Снатчера для {user_id}: {e}")
+                            pass
                 except Exception as e:
-                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
+                    pass
         except Exception as e:
-            print(f"❌ Ошибка в цикле Снатчера: {e}")
+            pass
         await asyncio.sleep(1800)
 
 async def apply_hourly_effects():
@@ -1098,7 +1102,6 @@ async def apply_hourly_effects():
                                     c.execute('''UPDATE user_fat SET current_number = ?, last_hourly_income = ? WHERE user_id = ?''', (new_number, current_time, user_id))
                                     conn2.commit()
                                     conn2.close()
-                                    print(f"💊 {user_name} получил {final_gain}кг от почасовых предметов")
                             else:
                                 conn2 = sqlite3.connect(db_path)
                                 c = conn2.cursor()
@@ -1106,11 +1109,11 @@ async def apply_hourly_effects():
                                 conn2.commit()
                                 conn2.close()
                         except Exception as e:
-                            print(f"❌ Ошибка при начислении почасового дохода для {user_id}: {e}")
+                            pass
                 except Exception as e:
-                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
+                    pass
         except Exception as e:
-            print(f"❌ Ошибка в цикле почасовых эффектов: {e}")
+            pass
         await asyncio.sleep(3600)
 
 def can_duel(user_data):
@@ -1120,7 +1123,6 @@ def get_duel_info(user_data):
     return {'active': user_data.get('duel_active', 0), 'opponent': user_data.get('duel_opponent'), 'amount': user_data.get('duel_amount', 0), 'message_id': user_data.get('duel_message_id'), 'channel_id': user_data.get('duel_channel_id'), 'initiator': user_data.get('duel_initiator', 0), 'start_time': user_data.get('duel_start_time')}
 
 async def migrate_old_burgers_to_prestige():
-    print("\n🔄 КОНВЕРТАЦИЯ ЛЕГЕНДАРНЫХ БУРГЕРОВ В ПРЕСТИЖ...")
     burger_to_prestige = {0: 1, 1: 2, 2: 3, 3: 4}
     converted = 0
     for guild in bot.guilds:
@@ -1141,15 +1143,12 @@ async def migrate_old_burgers_to_prestige():
                         prestige_amount = burger_to_prestige[burger_level]
                         cursor.execute("UPDATE user_fat SET prestige = ?, legendary_burger = -1 WHERE user_id = ?", (prestige_amount, user_id))
                         converted += 1
-                        print(f"  ✅ {user_name}: бургер {burger_level} -> {prestige_amount} престижа")
                 conn.commit()
             conn.close()
         except Exception as e:
-            print(f"❌ Ошибка при конвертации на сервере {guild.name}: {e}")
-    print(f"✅ Конвертация завершена! Обработано пользователей: {converted}")
+            pass
 
 async def migrate_old_autoburgers_to_auto_fat():
-    print("\n🔄 КОНВЕРТАЦИЯ АВТОБУРГЕРОВ В АВТО-ЖИР...")
     converted = 0
     for guild in bot.guilds:
         guild_id = guild.id
@@ -1171,12 +1170,10 @@ async def migrate_old_autoburgers_to_auto_fat():
                         next_time = datetime.now() + timedelta(hours=interval) if interval else None
                         cursor.execute("UPDATE user_fat SET auto_fat_level = ?, next_auto_fat_time = ?, autoburger_count = 0 WHERE user_id = ?", (new_level, next_time, user_id))
                         converted += 1
-                        print(f"  ✅ {user_name}: {autoburger_count} автобургер(ов) -> {new_level} уровень авто-жира")
                 conn.commit()
             conn.close()
         except Exception as e:
-            print(f"❌ Ошибка при конвертации на сервере {guild.name}: {e}")
-    print(f"✅ Конвертация автобургеров завершена! Обработано пользователей: {converted}")
+            pass
 
 async def duel_animation(msg, challenger, opponent):
     c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
@@ -1295,7 +1292,6 @@ async def upgrade_animation(ctx, member, source_item, target_item, item_count, p
             await upgrade_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
     
-    # ФИНАЛЬНЫЙ КАДР - всегда берём с центром на 57 позиции
     start = 57 - 4
     end = 57 + 5
     visible = line[start:end]
@@ -1362,7 +1358,6 @@ async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0
             await upgrade_msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
     
-    # ФИНАЛЬНЫЙ КАДР - всегда берём с центром на 57 позиции
     start = 57 - 4
     end = 57 + 5
     visible = line[start:end]
@@ -1537,7 +1532,6 @@ async def update_user_nick(guild_id, user_id, user_name=None):
             await member.edit(nick=new_nick)
         return True
     except Exception as e:
-        print(f"❌ Ошибка обновления ника для {user_id}: {e}")
         return False
 
 @bot.command(name='жир')
@@ -1603,7 +1597,6 @@ async def fat_case_command(ctx):
     
     data = get_user_data(guild_id, user_id, user_name)
     
-    # Проверка активного кейса
     if data.get('active_case_message_id'):
         try:
             channel = bot.get_channel(int(data['active_case_channel_id'])) if data.get('active_case_channel_id') else None
@@ -1621,12 +1614,10 @@ async def fat_case_command(ctx):
         except:
             pass
     
-    # Выбираем кейс для открытия: сначала ежедневные, потом платные
     cases_dict = data.get('cases_dict', {}).copy()
     case_to_open = None
     case = None
     
-    # Проверяем ежедневные кейсы
     if cases_dict.get("daily", 0) > 0:
         case_to_open = "daily"
         case = CASES["daily"]
@@ -1642,10 +1633,8 @@ async def fat_case_command(ctx):
         await ctx.send(embed=embed)
         return
     
-    # Запоминаем, какой кейс собираемся открыть
     update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=case_to_open)
     
-    # Собираем эмодзи для анимации
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -1701,7 +1690,6 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=cancel_embed)
             return
         
-        # Списываем кейс из инвентаря
         current_data = get_user_data(guild_id, user_id, user_name)
         current_cases = current_data.get('cases_dict', {}).copy()
         if case_to_open == "daily":
@@ -1725,13 +1713,11 @@ async def fat_case_command(ctx):
         except:
             pass
         
-        # Получаем приз
         prestige_luck = get_prestige_luck(current_data.get('prestige', 0))
         luck_upgrade = current_data.get('luck_upgrade', 0)
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
         update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
         
-        # Анимация (как была, без изменений)
         line = [random.choice(prize_emojis) for _ in range(100)]
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
@@ -1776,7 +1762,6 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(1)
         
-        # Обработка приза и опыта
         current_data = get_user_data(guild_id, user_id, user_name)
         items_dict = get_user_items(current_data['item_counts'])
         prize_value = prize["value"]
@@ -3052,7 +3037,6 @@ async def cancel_all(ctx):
     user_id = str(member.id)
     data = get_user_data(guild_id, user_id, member.name)
     cancelled_items = []
-    # Отмена дуэли
     duel_info = get_duel_info(data)
     if duel_info['active']:
         update_user_data(guild_id, user_id, duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
@@ -3067,7 +3051,6 @@ async def cancel_all(ctx):
         except:
             pass
         cancelled_items.append("⚔️ Дуэль")
-    # Отмена апгрейда
     if data.get('upgrade_active', 0) == 1:
         last_command = data.get('last_command')
         last_target = data.get('last_command_target')
@@ -3088,7 +3071,6 @@ async def cancel_all(ctx):
         else:
             update_user_data(guild_id, user_id, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
             cancelled_items.append("🔧 Апгрейд (отменён)")
-    # Отмена открытия кейса
     if data.get('active_case_message_id'):
         try:
             channel = bot.get_channel(int(data['active_case_channel_id'])) if data.get('active_case_channel_id') else None
@@ -3110,9 +3092,6 @@ async def cancel_all(ctx):
 
 @bot.command(name='жирглобал')
 async def global_leaderboard(ctx):
-    """
-    Показывает топ серверов по общей жирности
-    """
     guild_data = []
     
     for guild in bot.guilds:
@@ -3126,7 +3105,6 @@ async def global_leaderboard(ctx):
                 'avg_weight': stats['avg_weight']
             })
         except Exception as e:
-            print(f"❌ Ошибка при получении статистики для сервера {guild.name}: {e}")
             continue
     
     if not guild_data:
@@ -3201,7 +3179,19 @@ async def on_ready():
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
     bot.loop.create_task(apply_hourly_effects())
-    bot.loop.create_task(daily_case_accumulation_loop())  # <-- добавить эту строку
+    bot.loop.create_task(daily_case_accumulation_loop())
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Не указан обязательный аргумент: {error.param.name}")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send(f"❌ Неверный формат аргумента")
+    else:
+        await ctx.send(f"❌ Произошла ошибка: {str(error)}")
+        print(f"Ошибка в команде {ctx.command}: {error}")
 
 if __name__ == "__main__":
     print("🚀 Запуск бота...")
