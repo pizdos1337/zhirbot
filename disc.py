@@ -3247,7 +3247,7 @@ async def on_ready():
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
     bot.loop.create_task(apply_hourly_effects())
-    bot.loop.create_task(daily_case_accumulation_loop())
+    bot.loop.create_task(daily_case_accumulation_loop())  # ← ЭТА СТРОКА ДОЛЖНА БЫТЬ
 
 @bot.event
 async def on_command_error(ctx, error):
