@@ -39,10 +39,10 @@ JACKPOT_MIN = 500
 JACKPOT_MAX = 1000
 
 # ===== НАСТРОЙКИ АВТО-ЖИРА =====
-AUTO_FAT_INTERVALS = {1: 6, 2: 3, 3: 1, 4: 0.5, 5: 0.25, 6: 0.1}
+AUTO_FAT_INTERVALS = {1: 12, 2: 6, 3: 3, 4: 1, 5: 0.75, 6: 0.5, 7: 0.25, 8: 0.20, 9: 0.15, 10: 0.1}
 AUTO_FAT_BASE_COST = 500
-AUTO_FAT_COST_INCREMENT = 500
-AUTO_FAT_MAX_LEVEL = 6
+AUTO_FAT_COST_INCREMENT = 1500
+AUTO_FAT_MAX_LEVEL = 10
 
 # ===== НАСТРОЙКИ ПРЕСТИЖА =====
 PRESTIGE_BONUS_PER_LEVEL = 0.10
@@ -63,14 +63,14 @@ LUCK_BASE_COST = 1000
 LUCK_COST_INCREMENT = 500
 
 # ===== НАСТРОЙКИ КД !жир =====
-FAT_CD_REDUCTION_PER_LEVEL = 5
+FAT_CD_REDUCTION_PER_LEVEL = 59 / 12
 FAT_CD_BASE_COST = 150
-FAT_CD_COST_INCREMENT = 50
+FAT_CD_COST_INCREMENT = 100
 
 # ===== НАСТРОЙКИ КД кейса =====
-CASE_CD_REDUCTION_PER_LEVEL = 60
-CASE_CD_BASE_COST = 100
-CASE_CD_COST_INCREMENT = 100
+CASE_CD_REDUCTION_PER_LEVEL = 1430 / 24
+CASE_CD_BASE_COST = 200
+CASE_CD_COST_INCREMENT = 150
 
 # ===== НАСТРОЙКИ МАГАЗИНА =====
 SHOP_SLOTS = 10
@@ -641,6 +641,12 @@ def can_get_daily_case(guild_id, user_id, custom_cooldown=None):
     else:
         remaining = cooldown_seconds - time_diff.total_seconds()
         return False, remaining
+
+def get_fat_cd_reduction(upgrade_count):
+    return upgrade_count * (59 / 12)
+
+def get_case_cd_reduction(upgrade_count):
+    return upgrade_count * (1430 / 24)
 
 def update_daily_case_time(guild_id, user_id):
     update_user_data(guild_id, user_id, daily_case_last_time=datetime.now())
