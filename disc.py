@@ -1601,7 +1601,6 @@ async def fat_case_command(ctx):
     user_id = str(member.id)
     user_name = member.name
     
-    # Получаем данные (фоновая задача уже добавила накопленные кейсы)
     data = get_user_data(guild_id, user_id, user_name)
     
     # Проверка активного кейса
@@ -1627,6 +1626,7 @@ async def fat_case_command(ctx):
     case_to_open = None
     case = None
     
+    # Проверяем ежедневные кейсы
     if cases_dict.get("daily", 0) > 0:
         case_to_open = "daily"
         case = CASES["daily"]
@@ -1731,7 +1731,7 @@ async def fat_case_command(ctx):
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
         update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
         
-        # Анимация
+        # Анимация (как была, без изменений)
         line = [random.choice(prize_emojis) for _ in range(100)]
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
@@ -1783,7 +1783,6 @@ async def fat_case_command(ctx):
         prestige_bonus = get_prestige_bonus(current_data.get('prestige', 0))
         has_water = items_dict.get("Стакан воды", 0) > 0
         
-        # Начисляем опыт (может повысить уровень)
         levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_CASE)
         after_xp_data = get_user_data(guild_id, user_id, user_name)
         after_xp_weight = after_xp_data['current_number']
