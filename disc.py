@@ -451,7 +451,7 @@ def get_user_data(guild_id, user_id, user_name=None):
             'duel_initiator': 0, 'last_case_type': None, 'last_case_prize': None, 'upgrade_active': 0, 'upgrade_data': None,
             'duel_start_time': None, 'shadow_upgrade_chance': 0, 'user_xp': 0, 'user_level': 0, 'fat_cd_upgrade': 0,
             'case_cd_upgrade': 0, 'luck_upgrade': 0, 'income_upgrade': 0, 'prestige': 0, 'auto_fat_level': 0,
-            'next_auto_fat_time': None, 'animations_enabled': 1, 'cases_dict': {}, 'daily_case_last_time',
+            'next_auto_fat_time': None, 'animations_enabled': 1, 'daily_case_last_time': None, 'cases_dict': {}
         }
         for case_id in CASES.keys():
             if case_id != "daily":
