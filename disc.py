@@ -321,7 +321,7 @@ def add_missing_columns(db_path, existing_columns):
         'user_xp': "INTEGER DEFAULT 0", 'user_level': "INTEGER DEFAULT 0", 'fat_cd_upgrade': "INTEGER DEFAULT 0",
         'case_cd_upgrade': "INTEGER DEFAULT 0", 'luck_upgrade': "INTEGER DEFAULT 0", 'income_upgrade': "INTEGER DEFAULT 0",
         'prestige': "INTEGER DEFAULT 0", 'auto_fat_level': "INTEGER DEFAULT 0", 'next_auto_fat_time': "TIMESTAMP",
-        'animations_enabled': "INTEGER DEFAULT 1"
+        'animations_enabled': "INTEGER DEFAULT 1", 'daily_case_last_time': "TIMESTAMP",
     }
     for col_name, col_type in required_columns.items():
         if col_name not in existing_columns:
