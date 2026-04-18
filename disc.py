@@ -745,6 +745,70 @@ async def apply_auto_fat(user_id, guild_id, user_name):
     except Exception as e:
         print(f"❌ Ошибка в авто-жире: {e}")
 
+async def daily_case_accumulation_loop():
+    """Фоновая задача: каждую минуту добавляет ежедневные кейсы в инвентарь с учётом КД"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            current_time = datetime.now()
+            for guild in bot.guilds:
+                guild_id = guild.id
+                db_path = get_db_path(guild_id)
+                if not os.path.exists(db_path):
+                    continue
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("PRAGMA table_info(user_fat)")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    if 'daily_case_last_time' not in columns or 'case_cd_upgrade' not in columns:
+                        conn.close()
+                        continue
+                    cursor.execute("SELECT user_id, user_name, daily_case_last_time, case_cd_upgrade FROM user_fat")
+                    users = cursor.fetchall()
+                    conn.close()
+                    
+                    for user_id, user_name, last_time_str, case_cd_upgrade in users:
+                        try:
+                            # Расчёт текущего кулдауна в минутах
+                            cd_reduction = get_case_cd_reduction(case_cd_upgrade or 0)
+                            cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction)
+                            cooldown = timedelta(minutes=cooldown_minutes)
+                            
+                            last_time = None
+                            if last_time_str:
+                                if isinstance(last_time_str, str):
+                                    last_time = datetime.fromisoformat(last_time_str)
+                                else:
+                                    last_time = last_time_str
+                            
+                            if not last_time:
+                                # Первый раз: даём 1 кейс и ставим текущее время
+                                data = get_user_data(guild_id, user_id, user_name)
+                                cases = data.get('cases_dict', {}).copy()
+                                cases["daily"] = cases.get("daily", 0) + 1
+                                update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=current_time)
+                                continue
+                            
+                            # Сколько времени прошло
+                            diff = current_time - last_time
+                            if diff >= cooldown:
+                                intervals = int(diff.total_seconds() // cooldown.total_seconds())
+                                if intervals > 0:
+                                    data = get_user_data(guild_id, user_id, user_name)
+                                    cases = data.get('cases_dict', {}).copy()
+                                    cases["daily"] = cases.get("daily", 0) + intervals
+                                    new_last_time = last_time + cooldown * intervals
+                                    update_user_data(guild_id, user_id, cases_dict=cases, daily_case_last_time=new_last_time)
+                        except Exception as e:
+                            print(f"❌ Ошибка обработки пользователя {user_id}: {e}")
+                except Exception as e:
+                    print(f"❌ Ошибка при работе с БД сервера {guild_id}: {e}")
+            await asyncio.sleep(60)  # проверяем каждую минуту
+        except Exception as e:
+            print(f"❌ Ошибка в цикле накопления кейсов: {e}")
+            await asyncio.sleep(60)
+
 async def auto_fat_loop():
     await bot.wait_until_ready()
     while not bot.is_closed():
