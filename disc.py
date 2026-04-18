@@ -1604,7 +1604,6 @@ async def fat_case_command(ctx):
     user_id = str(member.id)
     user_name = member.name
     
-    # Получаем данные
     data = get_user_data(guild_id, user_id, user_name)
     
     # Проверка активного кейса
@@ -1617,7 +1616,7 @@ async def fat_case_command(ctx):
                     if old_msg:
                         time_since = datetime.now() - old_msg.created_at.replace(tzinfo=None)
                         if time_since.total_seconds() < 120:
-                            embed = discord.Embed(title="⚠️ Кейс уже открыт!", description=f"{member.mention}, у вас уже есть активный кейс!\nСначала завершите или дождитесь таймаута предыдущего.", color=0xffaa00)
+                            embed = discord.Embed(title="⚠️ Кейс уже открыт!", description=f"{member.mention}, у вас уже есть активный кейс!", color=0xffaa00)
                             await ctx.send(embed=embed)
                             return
                 except:
@@ -1625,64 +1624,34 @@ async def fat_case_command(ctx):
         except:
             pass
     
-    # ===== НАЧИСЛЯЕМ НАКОПЛЕННЫЕ ЕЖЕДНЕВНЫЕ КЕЙСЫ =====
-    last_time = data.get('daily_case_last_time')
-    case_cd_upgrade = data.get('case_cd_upgrade', 0)
-    cd_reduction_minutes = get_case_cd_reduction(case_cd_upgrade)
-    cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction_minutes)
-    cooldown = timedelta(minutes=cooldown_minutes)
-    now = datetime.now()
-    
+    # Получаем количество ежедневных кейсов
+    daily_count = data.get('daily_case_count', 0)
     cases_dict = data.get('cases_dict', {}).copy()
     
-    if not last_time:
-        # Первый раз - даём 1 кейс
-        cases_dict["daily"] = cases_dict.get("daily", 0) + 1
-        update_user_data(guild_id, user_id, cases_dict=cases_dict, daily_case_last_time=now)
-        print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
-    else:
-        if isinstance(last_time, str):
-            last_time = datetime.fromisoformat(last_time)
-        
-        diff = now - last_time
-        if diff >= cooldown:
-            intervals = int(diff.total_seconds() // cooldown.total_seconds())
-            if intervals > 0:
-                cases_dict["daily"] = cases_dict.get("daily", 0) + intervals
-                new_last_time = last_time + cooldown * intervals
-                update_user_data(guild_id, user_id, cases_dict=cases_dict, daily_case_last_time=new_last_time)
-                print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
-    
-    # Обновляем данные после начисления
-    data = get_user_data(guild_id, user_id, user_name)
-    cases_dict = data.get('cases_dict', {}).copy()
-    
-    # Выбираем кейс для открытия
     case_to_open = None
     case = None
     
     # Сначала проверяем ежедневные кейсы
-    if cases_dict.get("daily", 0) > 0:
+    if daily_count > 0:
         case_to_open = "daily"
         case = CASES["daily"]
     else:
         # Потом платные кейсы
         for case_id, count in cases_dict.items():
-            if case_id != "daily" and count > 0:
+            if count > 0:
                 case_to_open = case_id
                 case = CASES[case_id]
                 break
     
     if not case_to_open:
-        # Если нет кейсов - показываем сообщение
         embed = discord.Embed(title="📭 Нет кейсов!", description=f"{member.mention}, у вас нет кейсов для открытия!\n\nКупить кейсы можно в магазине (`!магазин`)", color=0xff0000)
         await ctx.send(embed=embed)
         return
     
-    # Запоминаем, какой кейс собираемся открыть
+    # Запоминаем
     update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=case_to_open)
     
-    # Собираем эмодзи для анимации
+    # Собираем эмодзи
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -1717,7 +1686,7 @@ async def fat_case_command(ctx):
         description=f"{member.mention}, у вас есть кейс!\n\n**Нажмите на 🖱️ чтобы открыть**\n**Нажмите на ❌ чтобы отменить**",
         color=0xffaa00
     )
-    case_embed.set_footer(text="У вас 30 секунд чтобы открыть кейс!")
+    case_embed.set_footer(text="У вас 30 секунд!")
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
     await case_msg.add_reaction("❌")
@@ -1734,28 +1703,30 @@ async def fat_case_command(ctx):
                 await case_msg.clear_reactions()
             except:
                 pass
-            cancel_embed = discord.Embed(title="❌ Отмена", description=f"{member.mention}, вы отменили открытие кейса. Кейс сохранён в инвентаре!", color=0xffaa00)
+            cancel_embed = discord.Embed(title="❌ Отмена", description=f"{member.mention}, вы отменили открытие. Кейс сохранён!", color=0xffaa00)
             await case_msg.edit(embed=cancel_embed)
             return
         
-        # Списываем кейс из инвентаря
+        # Списываем кейс
         current_data = get_user_data(guild_id, user_id, user_name)
-        current_cases = current_data.get('cases_dict', {}).copy()
+        
         if case_to_open == "daily":
-            if current_cases.get("daily", 0) <= 0:
+            current_daily = current_data.get('daily_case_count', 0)
+            if current_daily <= 0:
                 await ctx.send(f"{member.mention}, у вас нет ежедневных кейсов!")
                 await case_msg.delete()
                 update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None)
                 return
-            current_cases["daily"] -= 1
+            update_user_data(guild_id, user_id, daily_case_count=current_daily - 1)
         else:
+            current_cases = current_data.get('cases_dict', {}).copy()
             if current_cases.get(case_to_open, 0) <= 0:
                 await ctx.send(f"{member.mention}, у вас больше нет этого кейса!")
                 await case_msg.delete()
                 update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None)
                 return
             current_cases[case_to_open] -= 1
-        update_user_data(guild_id, user_id, cases_dict=current_cases)
+            update_user_data(guild_id, user_id, cases_dict=current_cases)
         
         try:
             await case_msg.clear_reactions()
@@ -1766,7 +1737,6 @@ async def fat_case_command(ctx):
         prestige_luck = get_prestige_luck(current_data.get('prestige', 0))
         luck_upgrade = current_data.get('luck_upgrade', 0)
         prize = open_case(case_to_open, prestige_luck, luck_upgrade)
-        update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
         
         # Анимация
         line = [random.choice(prize_emojis) for _ in range(100)]
@@ -1813,7 +1783,7 @@ async def fat_case_command(ctx):
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(1)
         
-        # Обработка приза и опыта
+        # Обработка приза
         current_data = get_user_data(guild_id, user_id, user_name)
         items_dict = get_user_items(current_data['item_counts'])
         prize_value = prize["value"]
@@ -1859,16 +1829,8 @@ async def fat_case_command(ctx):
             final_embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
         if levels_gained > 0:
             final_embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", inline=False)
-        if case_to_open != "daily":
-            remaining = after_xp_data.get('cases_dict', {}).get(case_to_open, 0)
-            if remaining > 0:
-                final_embed.add_field(name="📦 Осталось кейсов", value=f"{case['emoji']} {case['name']}: {remaining} шт", inline=False)
-        else:
-            remaining_daily = after_xp_data.get('cases_dict', {}).get("daily", 0)
-            if remaining_daily > 0:
-                final_embed.add_field(name="📦 Осталось ежедневных кейсов", value=f"{remaining_daily} шт", inline=False)
         
-        final_embed.set_footer(text=f"{case['emoji']} Удачи в следующий раз!")
+        final_embed.set_footer(text=f"{case['emoji']} Удачи!")
         await ctx.send(embed=final_embed)
         
     except asyncio.TimeoutError:
@@ -1877,7 +1839,7 @@ async def fat_case_command(ctx):
             await case_msg.clear_reactions()
         except:
             pass
-        timeout_embed = discord.Embed(title="⏰ Время вышло", description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён в инвентаре!", color=0xff0000)
+        timeout_embed = discord.Embed(title="⏰ Время вышло", description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён!", color=0xff0000)
         await case_msg.edit(embed=timeout_embed)
         
 @bot.command(name='профиль')
