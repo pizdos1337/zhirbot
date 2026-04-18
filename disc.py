@@ -1934,13 +1934,12 @@ async def profile_command(ctx, member: discord.Member = None):
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
         
         can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
-        
         fat_status = f"✅ Доступен" if can_use_fat else f"⏳ {format_time(fat_remaining)}"
         
-        # ===== СТАТУС ЕЖЕДНЕВНЫХ КЕЙСОВ (на основе инвентаря) =====
-        daily_stock = data.get('cases_dict', {}).get("daily", 0)
-        if daily_stock > 0:
-            case_status = f"✅ {daily_stock} шт в инвентаре"
+        # Статус ежедневных кейсов
+        daily_count = data.get('daily_case_count', 0)
+        if daily_count > 0:
+            case_status = f"✅ {daily_count} шт в инвентаре"
         else:
             last_time = data.get('daily_case_last_time')
             if last_time:
@@ -2022,11 +2021,17 @@ async def profile_command(ctx, member: discord.Member = None):
         if pity_emojis:
             embed.add_field(name="📊 **СЧЁТЧИКИ**", value=" ".join(pity_emojis), inline=True)
         
-        cases_dict = data.get('cases_dict', {})
+        # Отображение кейсов в инвентаре
         cases_text = ""
+        daily_count = data.get('daily_case_count', 0)
+        if daily_count > 0:
+            cases_text += f"📦 Ежедневный кейс: {daily_count} шт\n"
+        
+        cases_dict = data.get('cases_dict', {})
         for case_id, count in cases_dict.items():
             if count > 0 and case_id in CASES:
                 cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
+        
         if cases_text:
             embed.add_field(name="📦 **КЕЙСЫ**", value=cases_text, inline=False)
         
@@ -2148,6 +2153,7 @@ async def profile_command(ctx, member: discord.Member = None):
                     current_number=0,
                     item_counts='{}',
                     cases_dict={},
+                    daily_case_count=0,
                     prestige=new_prestige,
                     user_xp=current_xp,
                     user_level=current_user_level,
