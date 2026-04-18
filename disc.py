@@ -1895,7 +1895,8 @@ async def profile_command(ctx, member: discord.Member = None):
         rank_name, rank_emoji = get_rank(data['current_number'])
         
         fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
-        actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
+        fat_cd_reduction = get_fat_cd_reduction(fat_cd_upgrade)
+        actual_fat_cooldown = max(0, COOLDOWN_HOURS * 60 - fat_cd_reduction) / 60
         
         items_dict = get_user_items(data['item_counts'])
         
@@ -1903,7 +1904,7 @@ async def profile_command(ctx, member: discord.Member = None):
             if item_name in ["Яблоко", "Золотое Яблоко"]:
                 actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
         
-        actual_fat_cooldown = max(0.1, actual_fat_cooldown)
+        actual_fat_cooldown = max(0, actual_fat_cooldown)
         
         total_passive_income = 0
         for item_name, count in items_dict.items():
@@ -1936,8 +1937,8 @@ async def profile_command(ctx, member: discord.Member = None):
         prestige_cost = get_upgrade_cost("prestige", prestige_level)
         auto_fat_cost = get_upgrade_cost("auto_fat", auto_fat_level)
         
-        fat_cd_bonus = get_fat_cd_reduction(fat_cd_level)
-        case_cd_bonus = get_case_cd_reduction(case_cd_level)
+        fat_cd_bonus = int(get_fat_cd_reduction(fat_cd_level))
+        case_cd_bonus = int(get_case_cd_reduction(case_cd_level))
         auto_fat_interval = get_auto_fat_interval(auto_fat_level)
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
         
@@ -1954,7 +1955,8 @@ async def profile_command(ctx, member: discord.Member = None):
                 if isinstance(last_time, str):
                     last_time = datetime.fromisoformat(last_time)
                 cd_up = data.get('case_cd_upgrade', 0)
-                cd_min = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(cd_up))
+                cd_reduction = get_case_cd_reduction(cd_up)
+                cd_min = max(10, CASE_COOLDOWN_HOURS * 60 - cd_reduction)
                 next_time = last_time + timedelta(minutes=cd_min)
                 if next_time > datetime.now():
                     remaining = (next_time - datetime.now()).total_seconds()
@@ -2000,10 +2002,12 @@ async def profile_command(ctx, member: discord.Member = None):
         stats_text = ""
         
         fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
-        stats_text += f"{fat_cd_color} **⏰ КД !жир** — ур.{fat_cd_level} (-{fat_cd_bonus} мин)\n   Стоимость: `{fat_cd_cost} кг`\n\n"
+        fat_cd_max_text = " (МАКС)" if fat_cd_level >= FAT_CD_MAX_LEVEL else ""
+        stats_text += f"{fat_cd_color} **⏰ КД !жир** — ур.{fat_cd_level}{fat_cd_max_text} (-{fat_cd_bonus} мин)\n   Стоимость: `{fat_cd_cost} кг`\n\n"
         
         case_cd_color = "🟢" if data['current_number'] >= case_cd_cost else "🔴"
-        stats_text += f"{case_cd_color} **📦 КД кейса** — ур.{case_cd_level} (-{case_cd_bonus} мин)\n   Стоимость: `{case_cd_cost} кг`\n\n"
+        case_cd_max_text = " (МАКС)" if case_cd_level >= CASE_CD_MAX_LEVEL else ""
+        stats_text += f"{case_cd_color} **📦 КД кейса** — ур.{case_cd_level}{case_cd_max_text} (-{case_cd_bonus} мин)\n   Стоимость: `{case_cd_cost} кг`\n\n"
         
         luck_color = "🟢" if data['current_number'] >= luck_cost else "🔴"
         stats_text += f"{luck_color} **🍀 Удача** — ур.{luck_level} (+{luck_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким, +{luck_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам)\n   Стоимость: `{luck_cost} кг`\n\n"
@@ -2015,7 +2019,8 @@ async def profile_command(ctx, member: discord.Member = None):
         stats_text += f"{prestige_color} **🌟 Престиж** — ур.{prestige_level}\n   Стоимость: `{prestige_cost} кг`\n\n"
         
         auto_fat_color = "🟢" if data['current_number'] >= auto_fat_cost else "🔴"
-        stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
+        auto_fat_max_text = " (МАКС)" if auto_fat_level >= AUTO_FAT_MAX_LEVEL else ""
+        stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level}{auto_fat_max_text} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
         
         embed.add_field(name="⚡ **ПРОКАЧКА**", value=stats_text, inline=False)
         
@@ -2092,9 +2097,21 @@ async def profile_command(ctx, member: discord.Member = None):
             
             if upgrade_type == "fat_cd":
                 current_level = current_data.get('fat_cd_upgrade', 0)
+                if current_level >= FAT_CD_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"КД !жир уже на максимальном ({FAT_CD_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
                 cost = get_upgrade_cost("fat_cd", current_level)
             elif upgrade_type == "case_cd":
                 current_level = current_data.get('case_cd_upgrade', 0)
+                if current_level >= CASE_CD_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"КД кейса уже на максимальном ({CASE_CD_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
                 cost = get_upgrade_cost("case_cd", current_level)
             elif upgrade_type == "luck":
                 current_level = current_data.get('luck_upgrade', 0)
@@ -2234,10 +2251,10 @@ async def profile_command(ctx, member: discord.Member = None):
             await msg.edit(embed=new_embed)
             
             if upgrade_type == "fat_cd":
-                new_bonus = get_fat_cd_reduction(new_level)
+                new_bonus = int(get_fat_cd_reduction(new_level))
                 bonus_text = f"КД !жир уменьшен на {new_bonus} мин"
             elif upgrade_type == "case_cd":
-                new_bonus = get_case_cd_reduction(new_level)
+                new_bonus = int(get_case_cd_reduction(new_level))
                 bonus_text = f"КД кейса уменьшен на {new_bonus} мин"
             elif upgrade_type == "luck":
                 bonus_text = f"Удача увеличена до +{new_level * LUCK_CASE_BONUS_PER_LEVEL:.2f}% к редким и +{new_level * LUCK_UPGRADE_BONUS_PER_LEVEL:.2f}% к апгрейдам"
