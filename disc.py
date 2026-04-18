@@ -1884,19 +1884,13 @@ async def profile_command(ctx, member: discord.Member = None):
         fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
         actual_fat_cooldown = max(0.1, COOLDOWN_HOURS * 60 - get_fat_cd_reduction(fat_cd_upgrade)) / 60
         
-        case_cd_upgrade = data.get('case_cd_upgrade', 0)
-        actual_case_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(case_cd_upgrade)) / 60
-        
         items_dict = get_user_items(data['item_counts'])
         
         for item_name, count in items_dict.items():
             if item_name in ["Яблоко", "Золотое Яблоко"]:
                 actual_fat_cooldown *= (1 - count * (0.05 if item_name == "Яблоко" else 0.10))
-            elif item_name in ["Апельсин", "Золотой Апельсин"]:
-                actual_case_cooldown *= (1 - count * (0.05 if item_name == "Апельсин" else 0.10))
         
         actual_fat_cooldown = max(0.1, actual_fat_cooldown)
-        actual_case_cooldown = max(0.1, actual_case_cooldown)
         
         total_passive_income = 0
         for item_name, count in items_dict.items():
@@ -1935,10 +1929,28 @@ async def profile_command(ctx, member: discord.Member = None):
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
         
         can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
-        can_use_case, case_remaining = can_get_daily_case(guild_id, user_id)
         
         fat_status = f"✅ Доступен" if can_use_fat else f"⏳ {format_time(fat_remaining)}"
-        case_status = f"✅ Доступен" if can_use_case else f"⏳ {format_time(case_remaining)}"
+        
+        # ===== СТАТУС ЕЖЕДНЕВНЫХ КЕЙСОВ (на основе инвентаря) =====
+        daily_stock = data.get('cases_dict', {}).get("daily", 0)
+        if daily_stock > 0:
+            case_status = f"✅ {daily_stock} шт в инвентаре"
+        else:
+            last_time = data.get('daily_case_last_time')
+            if last_time:
+                if isinstance(last_time, str):
+                    last_time = datetime.fromisoformat(last_time)
+                cd_up = data.get('case_cd_upgrade', 0)
+                cd_min = max(1, CASE_COOLDOWN_HOURS * 60 - get_case_cd_reduction(cd_up))
+                next_time = last_time + timedelta(minutes=cd_min)
+                if next_time > datetime.now():
+                    remaining = (next_time - datetime.now()).total_seconds()
+                    case_status = f"⏳ Через {format_time(remaining)}"
+                else:
+                    case_status = "✅ Доступен (обновите инвентарь)"
+            else:
+                case_status = "✅ Доступен"
         
         embed = discord.Embed(
             title=f"⭐ **ПРОФИЛЬ** ⭐",
@@ -1963,7 +1975,7 @@ async def profile_command(ctx, member: discord.Member = None):
         embed.add_field(
             name="⏰ **КОМАНДЫ**",
             value=f"**!жир:** {fat_status} (КД {actual_fat_cooldown*60:.0f} мин)\n"
-                  f"**!жиркейс:** {case_status} (КД {actual_case_cooldown:.1f} ч)",
+                  f"**!жиркейс:** {case_status}",
             inline=False
         )
         
