@@ -648,7 +648,7 @@ def get_fat_cd_reduction(upgrade_count):
     return upgrade_count * (59 / 12)
 
 def get_case_cd_reduction(upgrade_count):
-    return upgrade_count * (1430 / 24)
+    return upgrade_count * (1380 / 24)
 
 def update_daily_case_time(guild_id, user_id):
     update_user_data(guild_id, user_id, daily_case_last_time=datetime.now())
