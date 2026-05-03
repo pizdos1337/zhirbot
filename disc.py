@@ -13,72 +13,84 @@ import json
 # ========== НАСТРОЙКИ БОТА ==========
 # ============================================
 
-# ----- ОСНОВНЫЕ НАСТРОЙКИ -----
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 PREFIX = "!"
 DB_FOLDER = "./data/guild_databases"
 COOLDOWN_HOURS = 1
 CASE_COOLDOWN_HOURS = 24
 
-# ----- РОЛИ ДЛЯ ТЕСТЕРОВ -----
 TESTER_ROLE_NAME = "тестер"
 HIGH_TESTER_ROLE_NAME = "Высший тестер"
 
-# ===== НАСТРОЙКИ ВЕРОЯТНОСТЕЙ !жир =====
 BASE_MINUS_CHANCE = 0.2
 MAX_MINUS_CHANCE = 0.6
 PITY_INCREMENT = 0.1
 CONSECUTIVE_MINUS_BOOST = 0.2
 MAX_CONSECUTIVE_MINUS_BOOST = 0.8
 
-# ===== НАСТРОЙКИ ДЖЕКПОТА =====
 BASE_JACKPOT_CHANCE = 0.001
 JACKPOT_PITY_INCREMENT = 0.001
 MAX_JACKPOT_CHANCE = 0.05
 JACKPOT_MIN = 500
 JACKPOT_MAX = 1000
 
-# ===== НАСТРОЙКИ АВТО-ЖИРА =====
 AUTO_FAT_INTERVALS = {1: 12, 2: 6, 3: 3, 4: 1, 5: 0.75, 6: 0.5, 7: 0.25, 8: 0.20, 9: 0.15, 10: 0.1}
 AUTO_FAT_BASE_COST = 500
 AUTO_FAT_COST_INCREMENT = 1500
 AUTO_FAT_MAX_LEVEL = 10
 
-# ===== НАСТРОЙКИ ПРЕСТИЖА =====
 PRESTIGE_BONUS_PER_LEVEL = 0.10
 PRESTIGE_LUCK_PER_LEVEL = 0.01
 PRESTIGE_XP_BONUS_PER_LEVEL = 0.5
 PRESTIGE_BASE_COST = 2000
 PRESTIGE_COST_INCREMENT = 1000
 
-# ===== НАСТРОЙКИ ПРИБАВКИ =====
 INCOME_BONUS_PER_LEVEL = 0.05
 INCOME_BASE_COST = 250
 INCOME_COST_INCREMENT = 100
 
-# ===== НАСТРОЙКИ УДАЧИ =====
 LUCK_CASE_BONUS_PER_LEVEL = 0.25
 LUCK_UPGRADE_BONUS_PER_LEVEL = 0.5
 LUCK_BASE_COST = 1000
 LUCK_COST_INCREMENT = 500
 
-# ===== НАСТРОЙКИ КД !жир =====
 FAT_CD_REDUCTION_PER_LEVEL = 59 / 12
 FAT_CD_BASE_COST = 150
 FAT_CD_COST_INCREMENT = 100
 FAT_CD_MAX_LEVEL = 12
 
-# ===== НАСТРОЙКИ КД кейса =====
 CASE_CD_REDUCTION_PER_LEVEL = 1380 / 24
 CASE_CD_BASE_COST = 200
 CASE_CD_COST_INCREMENT = 150
 CASE_CD_MAX_LEVEL = 24
 
-# ===== НАСТРОЙКИ МАГАЗИНА =====
+# НОВЫЕ НАСТРОЙКИ
+AUTO_OPEN_CASES_PRICE = 20000
+AUTO_OPEN_CASES_REQUIRED_PRESTIGE = 5
+
+JACKPOT_CHANCE_BONUS_PER_LEVEL = 0.0005
+JACKPOT_BASE_COST = 1000
+JACKPOT_COST_INCREMENT = 500
+JACKPOT_MAX_LEVEL = 50
+
+FAT_PLUS_BONUS_PER_LEVEL = 0.02
+FAT_PLUS_BASE_COST = 500
+FAT_PLUS_COST_INCREMENT = 200
+FAT_PLUS_MAX_LEVEL = 50
+
+CASE_PLUS_BONUS_PER_LEVEL = 0.01
+CASE_PLUS_BASE_COST = 500
+CASE_PLUS_COST_INCREMENT = 200
+CASE_PLUS_MAX_LEVEL = 50
+
+XP_MULTIPLIER_PER_LEVEL = 0.01
+XP_MULTIPLIER_BASE_COST = 300
+XP_MULTIPLIER_COST_INCREMENT = 100
+XP_MULTIPLIER_MAX_LEVEL = 50
+
 SHOP_SLOTS = 10
 SHOP_UPDATE_HOURS = 12
 
-# ===== НАСТРОЙКИ ОПЫТА =====
 XP_PER_FAT = 30
 XP_PER_UPGRADE = 50
 XP_PER_UPGRADE_KG = 40
@@ -88,7 +100,7 @@ XP_PER_SHOP_BUY = 20
 LEVEL_UP_REWARD_PER_LEVEL = 15
 
 # ============================================
-# ========== КОНЕЦ НАСТРОЕК ==========
+# ========== ПРИЗЫ КЕЙСОВ ==========
 # ============================================
 
 CASE_PRIZES = [
@@ -108,9 +120,9 @@ CASE_PRIZES = [
     {"value": 10000, "chance": 0.5, "emoji": "💥", "name": "+10000 кг"},
 ]
 
-total_chance = sum(prize["chance"] for prize in CASE_PRIZES)
-for prize in CASE_PRIZES:
-    prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
+total_chance = sum(p["chance"] for p in CASE_PRIZES)
+for p in CASE_PRIZES:
+    p["normalized_chance"] = (p["chance"] / total_chance) * 100
 
 CASES = {
     "daily": {"name": "Жиркейс", "emoji": "📦", "tradable": False, "daily": True, "prizes": CASE_PRIZES},
@@ -197,8 +209,12 @@ print("🍔 ЖИРНЫЙ БОТ - ЗАПУСК")
 print("="*60)
 
 if TOKEN is None:
-    print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не найдена переменная окружения DISCORD_BOT_TOKEN!")
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не найден токен!")
     exit(1)
+
+# ============================================
+# ========== ФУНКЦИИ ==========
+# ============================================
 
 def get_user_items(item_counts_str):
     try:
@@ -214,101 +230,121 @@ def get_xp_for_next_level(level):
 
 def get_level_and_xp(total_xp):
     level = 0
-    remaining_xp = total_xp
+    rem = total_xp
     while True:
-        needed = get_xp_for_next_level(level)
-        if remaining_xp < needed:
+        need = get_xp_for_next_level(level)
+        if rem < need:
             break
-        remaining_xp -= needed
+        rem -= need
         level += 1
-    return level, remaining_xp
+    return level, rem
+
+def get_jackpot_bonus(level):
+    return level * JACKPOT_CHANCE_BONUS_PER_LEVEL
+
+def get_fat_plus_bonus(level):
+    return 1 + (level * FAT_PLUS_BONUS_PER_LEVEL)
+
+def get_case_plus_bonus(level):
+    return 1 + (level * CASE_PLUS_BONUS_PER_LEVEL)
+
+def get_xp_multiplier_bonus(level):
+    return 1 + (level * XP_MULTIPLIER_PER_LEVEL)
 
 def add_xp(guild_id, user_id, xp_amount):
     data = get_user_data(guild_id, user_id)
     old_level = data.get('user_level', 0)
     prestige = data.get('prestige', 0)
+    xp_multiplier = get_xp_multiplier_bonus(data.get('xp_multiplier_upgrade', 0))
     xp_bonus = 1 + (prestige * 0.5)
-    xp_amount = int(xp_amount * xp_bonus)
-    new_total_xp = data.get('user_xp', 0) + xp_amount
-    new_level, current_xp = get_level_and_xp(new_total_xp)
-    total_kg_reward = 0
-    for level in range(old_level + 1, new_level + 1):
-        total_kg_reward += LEVEL_UP_REWARD_PER_LEVEL * level
-    new_weight = data['current_number'] + total_kg_reward
-    update_user_data(guild_id, user_id, user_xp=new_total_xp, user_level=new_level, number=new_weight)
-    return new_level - old_level, total_kg_reward, new_level
+    xp_amount = int(xp_amount * xp_bonus * xp_multiplier)
+    new_total = data.get('user_xp', 0) + xp_amount
+    new_level, current_xp = get_level_and_xp(new_total)
+    total_kg = 0
+    for lvl in range(old_level + 1, new_level + 1):
+        total_kg += LEVEL_UP_REWARD_PER_LEVEL * lvl
+    new_weight = data['current_number'] + total_kg
+    update_user_data(guild_id, user_id, user_xp=new_total, user_level=new_level, number=new_weight)
+    if total_kg > 0:
+        asyncio.create_task(update_user_nick(guild_id, user_id, data.get('user_name')))
+    return new_level - old_level, total_kg, new_level
 
 def format_nick_with_prestige(prestige, weight, user_name):
     if prestige > 0:
         return f"{prestige}🌟 {weight}kg {user_name}"
     return f"{weight}kg {user_name}"
 
-def get_prestige_bonus(prestige):
-    return 1 + (prestige * PRESTIGE_BONUS_PER_LEVEL)
+def get_prestige_bonus(p):
+    return 1 + (p * PRESTIGE_BONUS_PER_LEVEL)
 
-def get_prestige_luck(prestige):
-    return prestige * PRESTIGE_LUCK_PER_LEVEL
+def get_prestige_luck(p):
+    return p * PRESTIGE_LUCK_PER_LEVEL
 
-def get_income_bonus(income_upgrade):
-    return 1 + (income_upgrade * INCOME_BONUS_PER_LEVEL)
+def get_income_bonus(up):
+    return 1 + (up * INCOME_BONUS_PER_LEVEL)
 
-def get_fat_cd_reduction(upgrade_count):
-    return upgrade_count * FAT_CD_REDUCTION_PER_LEVEL
+def get_fat_cd_reduction(up):
+    return up * (59 / 12)
 
-def get_case_cd_reduction(upgrade_count):
-    return upgrade_count * CASE_CD_REDUCTION_PER_LEVEL
+def get_case_cd_reduction(up):
+    return up * (1380 / 24)
 
-def get_auto_fat_interval(auto_fat_level):
-    if auto_fat_level <= 0:
+def get_auto_fat_interval(lvl):
+    if lvl <= 0:
         return None
-    return AUTO_FAT_INTERVALS.get(auto_fat_level, 1)
+    return AUTO_FAT_INTERVALS.get(lvl, 1)
 
-def get_upgrade_cost(upgrade_type, current_level):
-    if upgrade_type == "fat_cd":
-        return FAT_CD_BASE_COST + (current_level * FAT_CD_COST_INCREMENT)
-    elif upgrade_type == "case_cd":
-        return CASE_CD_BASE_COST + (current_level * CASE_CD_COST_INCREMENT)
-    elif upgrade_type == "luck":
-        return LUCK_BASE_COST + (current_level * LUCK_COST_INCREMENT)
-    elif upgrade_type == "income":
-        return INCOME_BASE_COST + (current_level * INCOME_COST_INCREMENT)
-    elif upgrade_type == "prestige":
-        return PRESTIGE_BASE_COST + (current_level * PRESTIGE_COST_INCREMENT)
-    elif upgrade_type == "auto_fat":
-        return AUTO_FAT_BASE_COST + (current_level * AUTO_FAT_COST_INCREMENT)
+def get_upgrade_cost(typ, lvl):
+    if typ == "fat_cd":
+        return FAT_CD_BASE_COST + lvl * FAT_CD_COST_INCREMENT
+    elif typ == "case_cd":
+        return CASE_CD_BASE_COST + lvl * CASE_CD_COST_INCREMENT
+    elif typ == "luck":
+        return LUCK_BASE_COST + lvl * LUCK_COST_INCREMENT
+    elif typ == "income":
+        return INCOME_BASE_COST + lvl * INCOME_COST_INCREMENT
+    elif typ == "prestige":
+        return PRESTIGE_BASE_COST + lvl * PRESTIGE_COST_INCREMENT
+    elif typ == "auto_fat":
+        return AUTO_FAT_BASE_COST + lvl * AUTO_FAT_COST_INCREMENT
+    elif typ == "jackpot":
+        return JACKPOT_BASE_COST + lvl * JACKPOT_COST_INCREMENT
+    elif typ == "fat_plus":
+        return FAT_PLUS_BASE_COST + lvl * FAT_PLUS_COST_INCREMENT
+    elif typ == "case_plus":
+        return CASE_PLUS_BASE_COST + lvl * CASE_PLUS_COST_INCREMENT
+    elif typ == "xp_multiplier":
+        return XP_MULTIPLIER_BASE_COST + lvl * XP_MULTIPLIER_COST_INCREMENT
     return 0
 
 def repair_database(db_path):
     if not os.path.exists(db_path):
         return False
-    backup_path = db_path + f".corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    shutil.copy2(db_path, backup_path)
-    print(f"⚠️ Создан бекап повреждённой БД: {backup_path}")
+    backup = db_path + f".corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    shutil.copy2(db_path, backup)
     os.remove(db_path)
     return True
 
 def backup_and_restore_db():
-    main_db_folder = DB_FOLDER
-    backup_folder = "/tmp/guild_databases_backup"
-    if not os.path.exists(main_db_folder):
-        os.makedirs(main_db_folder)
+    main = DB_FOLDER
+    backup = "/tmp/guild_databases_backup"
+    if not os.path.exists(main):
+        os.makedirs(main)
         return
-    if os.path.exists(backup_folder):
-        for db_file in glob.glob(os.path.join(backup_folder, "*.db")):
-            dest = os.path.join(main_db_folder, os.path.basename(db_file))
-            shutil.copy2(db_file, dest)
+    if os.path.exists(backup):
+        for db in glob.glob(os.path.join(backup, "*.db")):
+            shutil.copy2(db, os.path.join(main, os.path.basename(db)))
     else:
-        os.makedirs(backup_folder, exist_ok=True)
-        for db_file in glob.glob(os.path.join(main_db_folder, "*.db")):
-            dest = os.path.join(backup_folder, os.path.basename(db_file))
-            shutil.copy2(db_file, dest)
+        os.makedirs(backup, exist_ok=True)
+        for db in glob.glob(os.path.join(main, "*.db")):
+            shutil.copy2(db, os.path.join(backup, os.path.basename(db)))
 
 backup_and_restore_db()
 
 def add_missing_columns(db_path, existing_columns):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    required_columns = {
+    required = {
         'item_counts': "TEXT DEFAULT '{}'",
         'last_command': "TEXT",
         'last_command_target': "TEXT",
@@ -344,19 +380,24 @@ def add_missing_columns(db_path, existing_columns):
         'last_hourly_income': "TIMESTAMP",
         'daily_last_added': "TIMESTAMP",
         'daily_case_count': "INTEGER DEFAULT 0",
+        'auto_open_cases': "INTEGER DEFAULT 0",
+        'jackpot_upgrade': "INTEGER DEFAULT 0",
+        'fat_plus_upgrade': "INTEGER DEFAULT 0",
+        'case_plus_upgrade': "INTEGER DEFAULT 0",
+        'xp_multiplier_upgrade': "INTEGER DEFAULT 0",
     }
-    for col_name, col_type in required_columns.items():
-        if col_name not in existing_columns:
+    for col, typ in required.items():
+        if col not in existing_columns:
             try:
-                cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} {col_type}")
+                cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col} {typ}")
             except:
                 pass
-    for case_id in CASES.keys():
+    for case_id in CASES:
         if case_id != "daily":
-            col_name = f"case_{case_id}_count"
-            if col_name not in existing_columns:
+            col = f"case_{case_id}_count"
+            if col not in existing_columns:
                 try:
-                    cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col_name} INTEGER DEFAULT 0")
+                    cursor.execute(f"ALTER TABLE user_fat ADD COLUMN {col} INTEGER DEFAULT 0")
                 except:
                     pass
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shop'")
@@ -376,9 +417,9 @@ def safe_init_guild_database(guild_id, guild_name="Unknown"):
                 conn.close()
                 return create_new_database(db_path, guild_id, guild_name)
             cursor.execute("PRAGMA table_info(user_fat)")
-            columns = [col[1] for col in cursor.fetchall()]
+            cols = [c[1] for c in cursor.fetchall()]
             conn.close()
-            add_missing_columns(db_path, columns)
+            add_missing_columns(db_path, cols)
             return True
         except sqlite3.DatabaseError:
             repair_database(db_path)
@@ -402,8 +443,11 @@ def create_new_database(db_path, guild_id, guild_name):
         fat_cd_upgrade INTEGER DEFAULT 0, case_cd_upgrade INTEGER DEFAULT 0, luck_upgrade INTEGER DEFAULT 0,
         income_upgrade INTEGER DEFAULT 0, prestige INTEGER DEFAULT 0, auto_fat_level INTEGER DEFAULT 0,
         next_auto_fat_time TIMESTAMP, animations_enabled INTEGER DEFAULT 1,
-        last_passive_income TIMESTAMP, last_hourly_income TIMESTAMP, daily_last_added TIMESTAMP, daily_case_count INTEGER DEFAULT 0)''')
-    for case_id in CASES.keys():
+        last_passive_income TIMESTAMP, last_hourly_income TIMESTAMP, daily_last_added TIMESTAMP,
+        daily_case_count INTEGER DEFAULT 0, auto_open_cases INTEGER DEFAULT 0,
+        jackpot_upgrade INTEGER DEFAULT 0, fat_plus_upgrade INTEGER DEFAULT 0,
+        case_plus_upgrade INTEGER DEFAULT 0, xp_multiplier_upgrade INTEGER DEFAULT 0)''')
+    for case_id in CASES:
         if case_id != "daily":
             try:
                 cursor.execute(f"ALTER TABLE user_fat ADD COLUMN case_{case_id}_count INTEGER DEFAULT 0")
@@ -418,33 +462,32 @@ def get_db_path(guild_id):
     return os.path.join(DB_FOLDER, f"guild_{guild_id}.db")
 
 def get_user_data(guild_id, user_id, user_name=None):
-    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
+    safe_init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("PRAGMA table_info(user_fat)")
-    all_columns = [col[1] for col in cursor.fetchall()]
-    select_cols = [col for col in ['user_id', 'user_name', 'current_number', 'last_command_time', 'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'last_case_time', 'item_counts', 'last_command', 'last_command_target', 'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id', 'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time', 'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 'duel_channel_id', 'duel_initiator', 'last_case_type', 'last_case_prize', 'upgrade_active', 'upgrade_data', 'duel_start_time', 'shadow_upgrade_chance', 'user_xp', 'user_level', 'fat_cd_upgrade', 'case_cd_upgrade', 'luck_upgrade', 'income_upgrade', 'prestige', 'auto_fat_level', 'next_auto_fat_time', 'animations_enabled', 'daily_case_count'] if col in all_columns]
-    case_cols = [f"case_{case_id}_count" for case_id in CASES.keys() if case_id != "daily" and f"case_{case_id}_count" in all_columns]
-    all_select_cols = select_cols + case_cols
-    query = f"SELECT {', '.join(all_select_cols)} FROM user_fat WHERE user_id = ?"
+    all_cols = [c[1] for c in cursor.fetchall()]
+    select_cols = [c for c in ['user_id','user_name','current_number','last_command_time','consecutive_plus','consecutive_minus','jackpot_pity','last_case_time','item_counts','last_command','last_command_target','last_command_use_time','fat_cooldown_time','active_case_message_id','active_case_channel_id','daily_case_last_time','snatcher_last_time','duel_active','duel_opponent','duel_amount','duel_message_id','duel_channel_id','duel_initiator','last_case_type','last_case_prize','upgrade_active','upgrade_data','duel_start_time','shadow_upgrade_chance','user_xp','user_level','fat_cd_upgrade','case_cd_upgrade','luck_upgrade','income_upgrade','prestige','auto_fat_level','next_auto_fat_time','animations_enabled','daily_case_count','auto_open_cases','jackpot_upgrade','fat_plus_upgrade','case_plus_upgrade','xp_multiplier_upgrade'] if c in all_cols]
+    case_cols = [f"case_{cid}_count" for cid in CASES if cid != "daily" and f"case_{cid}_count" in all_cols]
+    query = f"SELECT {', '.join(select_cols + case_cols)} FROM user_fat WHERE user_id = ?"
     cursor.execute(query, (str(user_id),))
-    result = cursor.fetchone()
-    if result:
-        data = list(result)
-        idx = 0
+    row = cursor.fetchone()
+    if row:
+        data = list(row)
         user_data = {}
-        for col in select_cols:
-            user_data[col] = data[idx]
-            idx += 1
-        cases_dict = {}
-        for i, case_col in enumerate(case_cols):
-            case_id = case_col.replace("case_", "").replace("_count", "")
-            cases_dict[case_id] = data[idx + i] or 0
-        if 'shop' in cases_dict:
-            cases_dict['shop_case'] = cases_dict.get('shop_case', 0) + cases_dict['shop']
-            del cases_dict['shop']
-        user_data['cases_dict'] = cases_dict
+        for i, col in enumerate(select_cols):
+            user_data[col] = data[i]
+        cases = {}
+        for i, col in enumerate(case_cols):
+            cid = col.replace("case_","").replace("_count","")
+            cases[cid] = data[len(select_cols)+i] or 0
+        if 'shop' in cases:
+            cases['shop_case'] = cases.get('shop_case',0) + cases['shop']
+            del cases['shop']
+        user_data['cases_dict'] = cases
+        conn.close()
+        return user_data
     else:
         user_data = {
             'user_id': str(user_id), 'user_name': user_name or "Unknown", 'current_number': 0, 'last_command_time': None,
@@ -455,80 +498,240 @@ def get_user_data(guild_id, user_id, user_name=None):
             'duel_initiator': 0, 'last_case_type': None, 'last_case_prize': None, 'upgrade_active': 0, 'upgrade_data': None,
             'duel_start_time': None, 'shadow_upgrade_chance': 0, 'user_xp': 0, 'user_level': 0, 'fat_cd_upgrade': 0,
             'case_cd_upgrade': 0, 'luck_upgrade': 0, 'income_upgrade': 0, 'prestige': 0, 'auto_fat_level': 0,
-            'next_auto_fat_time': None, 'animations_enabled': 1, 'daily_case_last_time': None, 'cases_dict': {}
+            'next_auto_fat_time': None, 'animations_enabled': 1, 'daily_case_count': 0, 'auto_open_cases': 0,
+            'jackpot_upgrade': 0, 'fat_plus_upgrade': 0, 'case_plus_upgrade': 0, 'xp_multiplier_upgrade': 0,
+            'cases_dict': {}
         }
-        for case_id in CASES.keys():
-            if case_id != "daily":
-                user_data['cases_dict'][case_id] = 0
-        create_new_user(cursor, user_data, all_columns)
+        for cid in CASES:
+            if cid != "daily":
+                user_data['cases_dict'][cid] = 0
+        create_new_user(cursor, user_data, all_cols)
         conn.commit()
-    conn.close()
-    return user_data
+        conn.close()
+        return user_data
 
 def create_new_user(cursor, user_data, all_columns):
     cols = []
-    values = []
-    base_fields = ['user_id', 'user_name', 'current_number', 'last_command_time', 'consecutive_plus', 'consecutive_minus', 'jackpot_pity', 'last_case_time', 'item_counts', 'last_command', 'last_command_target', 'last_command_use_time', 'fat_cooldown_time', 'active_case_message_id', 'active_case_channel_id', 'daily_case_last_time', 'snatcher_last_time', 'duel_active', 'duel_opponent', 'duel_amount', 'duel_message_id', 'duel_channel_id', 'duel_initiator', 'last_case_type', 'last_case_prize', 'upgrade_active', 'upgrade_data', 'duel_start_time', 'shadow_upgrade_chance', 'user_xp', 'user_level', 'fat_cd_upgrade', 'case_cd_upgrade', 'luck_upgrade', 'income_upgrade', 'prestige', 'auto_fat_level', 'next_auto_fat_time', 'animations_enabled']
-    for field in base_fields:
-        if field in all_columns:
-            cols.append(field)
-            values.append(user_data.get(field))
-    for case_id, count in user_data['cases_dict'].items():
-        col_name = f"case_{case_id}_count"
-        if col_name in all_columns:
-            cols.append(col_name)
-            values.append(count)
-    placeholders = ["?"] * len(cols)
-    query = f"INSERT INTO user_fat ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
-    cursor.execute(query, values)
+    vals = []
+    base = ['user_id','user_name','current_number','last_command_time','consecutive_plus','consecutive_minus','jackpot_pity','last_case_time','item_counts','last_command','last_command_target','last_command_use_time','fat_cooldown_time','active_case_message_id','active_case_channel_id','daily_case_last_time','snatcher_last_time','duel_active','duel_opponent','duel_amount','duel_message_id','duel_channel_id','duel_initiator','last_case_type','last_case_prize','upgrade_active','upgrade_data','duel_start_time','shadow_upgrade_chance','user_xp','user_level','fat_cd_upgrade','case_cd_upgrade','luck_upgrade','income_upgrade','prestige','auto_fat_level','next_auto_fat_time','animations_enabled','daily_case_count','auto_open_cases','jackpot_upgrade','fat_plus_upgrade','case_plus_upgrade','xp_multiplier_upgrade']
+    for f in base:
+        if f in all_columns:
+            cols.append(f)
+            vals.append(user_data.get(f))
+    for cid, cnt in user_data['cases_dict'].items():
+        col = f"case_{cid}_count"
+        if col in all_columns:
+            cols.append(col)
+            vals.append(cnt)
+    q = f"INSERT INTO user_fat ({', '.join(cols)}) VALUES ({', '.join(['?']*len(cols))})"
+    cursor.execute(q, vals)
 
 def update_user_data(guild_id, user_id, **kwargs):
-    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
+    safe_init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("PRAGMA table_info(user_fat)")
-    existing_columns = [col[1] for col in cursor.fetchall()]
+    cols = [c[1] for c in cursor.fetchall()]
     updates = []
-    values = []
-    for key, value in kwargs.items():
-        if key == 'number':
-            if 'current_number' in existing_columns:
+    vals = []
+    for k, v in kwargs.items():
+        if k == 'number':
+            if 'current_number' in cols:
                 updates.append("current_number = ?")
-                values.append(value)
-        elif key == 'cases_dict' and isinstance(value, dict):
-            for case_id, count in value.items():
-                col_name = f"case_{case_id}_count"
-                if col_name in existing_columns:
-                    updates.append(f"{col_name} = ?")
-                    values.append(count)
-        elif key in existing_columns:
-            updates.append(f"{key} = ?")
-            values.append(value)
+                vals.append(v)
+        elif k == 'cases_dict' and isinstance(v, dict):
+            for cid, cnt in v.items():
+                col = f"case_{cid}_count"
+                if col in cols:
+                    updates.append(f"{col} = ?")
+                    vals.append(cnt)
+        elif k in cols:
+            updates.append(f"{k} = ?")
+            vals.append(v)
     if not updates:
         conn.close()
         return
-    values.append(str(user_id))
-    query = f"UPDATE user_fat SET {', '.join(updates)} WHERE user_id = ?"
+    vals.append(str(user_id))
+    q = f"UPDATE user_fat SET {', '.join(updates)} WHERE user_id = ?"
     try:
-        cursor.execute(query, values)
-    except sqlite3.OperationalError as e:
-        print(f"❌ Ошибка SQL: {e}")
+        cursor.execute(q, vals)
+    except Exception as e:
+        print(f"❌ update error: {e}")
         conn.close()
         return
     conn.commit()
     conn.close()
     try:
-        backup_folder = "/tmp/guild_databases_backup"
-        os.makedirs(backup_folder, exist_ok=True)
-        db_name = os.path.basename(db_path)
-        backup_path = os.path.join(backup_folder, db_name)
-        shutil.copy2(db_path, backup_path)
+        os.makedirs("/tmp/guild_databases_backup", exist_ok=True)
+        shutil.copy2(db_path, f"/tmp/guild_databases_backup/{os.path.basename(db_path)}")
     except:
         pass
 
+def get_rank(weight):
+    for r in RANKS:
+        if r["min"] <= weight <= r["max"]:
+            return r["name"], r["emoji"]
+    if weight > 99999999:
+        return "🌀 Бесконечность", "🌀"
+    if weight < -999:
+        return "Черная дыра", "💀"
+    return "❓ Неопределённый", "❓"
+
+# ============================================
+# ========== БОТ ==========
+# ============================================
+
+if not os.path.exists(DB_FOLDER):
+    os.makedirs(DB_FOLDER)
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.guilds = True
+bot = commands.Bot(command_prefix=PREFIX, intents=intents)
+
+def get_user_cases(guild_id, user_id):
+    return get_user_data(guild_id, user_id).get('cases_dict', {})
+
+def get_all_users_sorted(guild_id):
+    safe_init_guild_database(guild_id)
+    db_path = get_db_path(guild_id)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(user_fat)")
+    cols = [c[1] for c in cursor.fetchall()]
+    sel = ['user_name','current_number','last_command_time','consecutive_plus','consecutive_minus','jackpot_pity']
+    if 'prestige' in cols:
+        sel.append('prestige')
+    cursor.execute(f"SELECT {', '.join(sel)} FROM user_fat ORDER BY current_number DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_guild_stats(guild_id):
+    users = get_all_users_sorted(guild_id)
+    total_users = len(users)
+    total_weight = sum(u[1] for u in users)
+    avg = total_weight / total_users if total_users else 0
+    pos = sum(1 for u in users if u[1] > 0)
+    neg = sum(1 for u in users if u[1] < 0)
+    zero = sum(1 for u in users if u[1] == 0)
+    return {'total_users': total_users, 'total_weight': total_weight, 'avg_weight': avg, 'positive': pos, 'negative': neg, 'zero': zero}
+
+def check_cooldown(last_time, hours):
+    if not last_time:
+        return True, 0
+    if isinstance(last_time, str):
+        last_time = datetime.fromisoformat(last_time)
+    diff = (datetime.now() - last_time).total_seconds()
+    cd = hours * 3600
+    if diff >= cd:
+        return True, 0
+    return False, cd - diff
+
+def format_time(sec):
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = int(sec % 60)
+    if h > 0:
+        return f"{h} ч {m} мин"
+    if m > 0:
+        return f"{m} мин {s} сек"
+    return f"{s} сек"
+
+def has_tester_role(m):
+    if not m:
+        return False
+    return any(r.name.lower() == TESTER_ROLE_NAME.lower() for r in m.roles)
+
+def has_high_tester_role(m):
+    if not m:
+        return False
+    return any(r.name.lower() == HIGH_TESTER_ROLE_NAME.lower() for r in m.roles)
+
+def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, luck_upgrade=0, prestige_bonus=1.0, fat_plus_bonus=1.0, jackpot_bonus=0, items_dict=None, current_weight=None):
+    if items_dict is None:
+        items_dict = {}
+    has_rotten_leg = items_dict.get("Гнилая ножка KFC", 0) > 0
+    has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
+    has_water = items_dict.get("Стакан воды", 0) > 0
+    minus_boost = min(consecutive_minus * CONSECUTIVE_MINUS_BOOST, MAX_CONSECUTIVE_MINUS_BOOST)
+    minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - minus_boost
+    minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
+    jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT) + jackpot_bonus
+    if has_holy_sandwich:
+        sandwich_count = items_dict.get("Святой сэндвич", 0)
+        sandwich_bonus = 0.3 * sandwich_count
+        jackpot_chance = max(jackpot_chance, sandwich_bonus)
+        jackpot_chance = min(jackpot_chance, 0.9)
+    else:
+        jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
+    if has_water:
+        if random.random() < jackpot_chance:
+            change = random.randint(JACKPOT_MIN, JACKPOT_MAX) // 3
+            change = int(change * prestige_bonus * fat_plus_bonus)
+            return change, False, consecutive_plus+1, 0, 0, True
+        else:
+            change = random.randint(1,20)//3
+            change = int(change * prestige_bonus * fat_plus_bonus)
+            return change, False, consecutive_plus+1, 0, jackpot_pity+1, False
+    if has_rotten_leg:
+        if random.random() < 0.6:
+            if current_weight:
+                change = -int(current_weight*0.5)
+            else:
+                change = -int(consecutive_plus*0.5)
+            change = int(change * prestige_bonus * fat_plus_bonus)
+            return change, True, 0, consecutive_minus+1, jackpot_pity+1, False
+        else:
+            change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
+            change = int(change * prestige_bonus * fat_plus_bonus)
+            return change, False, consecutive_plus+1, 0, 0, True
+    # normal
+    if random.random() < jackpot_chance:
+        change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
+        change = int(change * prestige_bonus * fat_plus_bonus)
+        return change, False, consecutive_plus+1, 0, 0, True
+    if random.random() < minus_chance:
+        change = random.randint(-20,-1)
+        change = int(change * prestige_bonus * fat_plus_bonus)
+        return change, True, 0, consecutive_minus+1, jackpot_pity+1, False
+    else:
+        change = random.randint(1,20)
+        change = int(change * prestige_bonus * fat_plus_bonus)
+        return change, False, consecutive_plus+1, 0, jackpot_pity+1, False
+
+def open_case(case_id, prestige_luck=0, luck_upgrade=0, case_plus_bonus=1.0):
+    case = CASES[case_id]
+    prizes = case["prizes"]
+    total = sum(p["chance"] for p in prizes)
+    for p in prizes:
+        p["norm"] = (p["chance"] / total) * 100
+    bonus = (prestige_luck * 100) + (luck_upgrade * LUCK_CASE_BONUS_PER_LEVEL)
+    modified = []
+    for p in prizes:
+        np = p.copy()
+        if (isinstance(np["value"], int) and np["value"] >= 100) or np["value"] in ["rotten_leg","water"]:
+            np["norm"] = p["norm"] + bonus
+        modified.append(np)
+    total_norm = sum(p["norm"] for p in modified)
+    for p in modified:
+        p["norm"] = (p["norm"] / total_norm) * 100
+    r = random.random() * 100
+    cum = 0
+    for p in modified:
+        cum += p["norm"]
+        if r < cum:
+            if isinstance(p["value"], int):
+                p["value"] = int(p["value"] * case_plus_bonus)
+            return p
+    return modified[-1]
+
+def are_animations_enabled(user_data):
+    return user_data.get('animations_enabled', 1) == 1
+
 async def daily_case_accumulation_loop():
-    """Фоновая задача: каждую минуту добавляет ежедневные кейсы"""
     await bot.wait_until_ready()
     print("🟢 Запущен цикл накопления ежедневных кейсов")
     while not bot.is_closed():
@@ -542,8 +745,6 @@ async def daily_case_accumulation_loop():
                 try:
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
-                    
-                    # Проверяем и добавляем колонки если нужно
                     cursor.execute("PRAGMA table_info(user_fat)")
                     columns = [col[1] for col in cursor.fetchall()]
                     if 'daily_case_count' not in columns:
@@ -554,33 +755,24 @@ async def daily_case_accumulation_loop():
                         conn.commit()
                         conn.close()
                         continue
-                    
-                    # Получаем всех пользователей
                     cursor.execute("SELECT user_id, user_name, daily_case_last_time, case_cd_upgrade FROM user_fat")
                     users = cursor.fetchall()
                     conn.close()
-                    
                     for user_id, user_name, last_time_str, case_cd_upgrade in users:
                         try:
                             cd_reduction = get_case_cd_reduction(case_cd_upgrade or 0)
-                            cooldown_minutes = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction)
-                            
+                            cooldown_minutes = max(10, CASE_COOLDOWN_HOURS * 60 - cd_reduction)
                             last_time = None
                             if last_time_str:
                                 if isinstance(last_time_str, str):
                                     last_time = datetime.fromisoformat(last_time_str)
                                 else:
                                     last_time = last_time_str
-                            
-                            # Подключаемся к БД напрямую для обновления
                             conn2 = sqlite3.connect(db_path)
                             c2 = conn2.cursor()
-                            
                             if not last_time:
-                                # Первый раз: даём 1 кейс
                                 c2.execute("UPDATE user_fat SET daily_case_count = daily_case_count + 1, daily_case_last_time = ? WHERE user_id = ?", (current_time, user_id))
                                 conn2.commit()
-                                print(f"📦 Первое начисление для {user_name}: +1 daily кейс")
                             else:
                                 diff_minutes = (current_time - last_time).total_seconds() / 60
                                 if diff_minutes >= cooldown_minutes:
@@ -589,259 +781,14 @@ async def daily_case_accumulation_loop():
                                         new_last_time = last_time + timedelta(minutes=cooldown_minutes * intervals)
                                         c2.execute("UPDATE user_fat SET daily_case_count = daily_case_count + ?, daily_case_last_time = ? WHERE user_id = ?", (intervals, new_last_time, user_id))
                                         conn2.commit()
-                                        print(f"📦 Начисление для {user_name}: +{intervals} daily кейсов (КД {cooldown_minutes} мин)")
                             conn2.close()
                         except Exception as e:
-                            print(f"❌ Ошибка пользователя {user_id}: {e}")
+                            pass
                 except Exception as e:
-                    print(f"❌ Ошибка сервера {guild_id}: {e}")
+                    pass
             await asyncio.sleep(60)
         except Exception as e:
-            print(f"❌ Ошибка цикла: {e}")
             await asyncio.sleep(60)
-
-def get_rank(weight):
-    for rank in RANKS:
-        if rank["min"] <= weight <= rank["max"]:
-            return rank["name"], rank["emoji"]
-    if weight > 99999999:
-        return "🌀 Бесконечность", "🌀"
-    if weight < -999:
-        return "Черная дыра", "💀"
-    return "❓ Неопределённый", "❓"
-
-if not os.path.exists(DB_FOLDER):
-    os.makedirs(DB_FOLDER)
-
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-intents.guilds = True
-
-bot = commands.Bot(command_prefix=PREFIX, intents=intents)
-
-def get_user_cases(guild_id, user_id):
-    data = get_user_data(guild_id, user_id)
-    return data.get('cases_dict', {})
-
-def can_get_daily_case(guild_id, user_id, custom_cooldown=None):
-    data = get_user_data(guild_id, user_id)
-    daily_case_last_time = data.get('daily_case_last_time')
-    if not daily_case_last_time:
-        return True, 0
-    if isinstance(daily_case_last_time, str):
-        last_time = datetime.fromisoformat(daily_case_last_time)
-    else:
-        last_time = daily_case_last_time
-    time_diff = datetime.now() - last_time
-    case_cd_upgrade = data.get('case_cd_upgrade', 0)
-    cd_reduction_minutes = get_case_cd_reduction(case_cd_upgrade)
-    actual_cooldown = max(1, CASE_COOLDOWN_HOURS * 60 - cd_reduction_minutes) / 60
-    cooldown_seconds = actual_cooldown * 3600
-    if time_diff.total_seconds() >= cooldown_seconds:
-        return True, 0
-    else:
-        remaining = cooldown_seconds - time_diff.total_seconds()
-        return False, remaining
-
-def get_fat_cd_reduction(upgrade_count):
-    return upgrade_count * (59 / 12)
-
-def get_case_cd_reduction(upgrade_count):
-    return upgrade_count * (1380 / 24)
-
-def update_daily_case_time(guild_id, user_id):
-    update_user_data(guild_id, user_id, daily_case_last_time=datetime.now())
-
-def get_all_users_sorted(guild_id):
-    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
-    db_path = get_db_path(guild_id)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(user_fat)")
-    columns = [col[1] for col in cursor.fetchall()]
-    select_cols = ['user_name', 'current_number', 'last_command_time', 'consecutive_plus', 'consecutive_minus', 'jackpot_pity']
-    if 'prestige' in columns:
-        select_cols.append('prestige')
-    query = f"SELECT {', '.join(select_cols)} FROM user_fat ORDER BY current_number DESC"
-    cursor.execute(query)
-    results = cursor.fetchall()
-    conn.close()
-    return results
-
-def get_guild_stats(guild_id):
-    users = get_all_users_sorted(guild_id)
-    total_users = len(users)
-    total_weight = sum(u[1] for u in users)
-    avg_weight = total_weight / total_users if total_users > 0 else 0
-    positive = sum(1 for u in users if u[1] > 0)
-    negative = sum(1 for u in users if u[1] < 0)
-    zero = sum(1 for u in users if u[1] == 0)
-    return {'total_users': total_users, 'total_weight': total_weight, 'avg_weight': avg_weight, 'positive': positive, 'negative': negative, 'zero': zero}
-
-def check_cooldown(last_command_time, cooldown_hours):
-    if last_command_time is None:
-        return True, 0
-    try:
-        if isinstance(last_command_time, str):
-            last_time = datetime.fromisoformat(last_command_time)
-        else:
-            last_time = last_command_time
-        time_diff = datetime.now() - last_time
-        cooldown_seconds = cooldown_hours * 3600
-        if time_diff.total_seconds() >= cooldown_seconds:
-            return True, 0
-        else:
-            remaining = cooldown_seconds - time_diff.total_seconds()
-            return False, remaining
-    except:
-        return True, 0
-
-def format_time(seconds):
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds = int(seconds % 60)
-    if hours > 0:
-        return f"{hours} ч {minutes} мин"
-    elif minutes > 0:
-        return f"{minutes} мин {seconds} сек"
-    else:
-        return f"{seconds} сек"
-
-def has_tester_role(member):
-    if not member:
-        return False
-    for role in member.roles:
-        if role.name.lower() == TESTER_ROLE_NAME.lower():
-            return True
-    return False
-
-def has_high_tester_role(member):
-    if not member:
-        return False
-    for role in member.roles:
-        if role.name.lower() == HIGH_TESTER_ROLE_NAME.lower():
-            return True
-    return False
-
-def get_change_with_pity_and_jackpot(consecutive_plus, consecutive_minus, jackpot_pity, luck_upgrade=0, prestige_bonus=1.0, items_dict=None, current_weight=None):
-    if items_dict is None:
-        items_dict = {}
-    has_rotten_leg = items_dict.get("Гнилая ножка KFC", 0) > 0
-    has_holy_sandwich = items_dict.get("Святой сэндвич", 0) > 0
-    has_water = items_dict.get("Стакан воды", 0) > 0
-    minus_boost = min(consecutive_minus * CONSECUTIVE_MINUS_BOOST, MAX_CONSECUTIVE_MINUS_BOOST)
-    minus_chance = BASE_MINUS_CHANCE + (consecutive_plus * PITY_INCREMENT) - minus_boost
-    minus_chance = max(0.1, min(minus_chance, MAX_MINUS_CHANCE))
-    jackpot_chance = BASE_JACKPOT_CHANCE + (jackpot_pity * JACKPOT_PITY_INCREMENT)
-    if has_holy_sandwich:
-        sandwich_count = items_dict.get("Святой сэндвич", 0)
-        sandwich_bonus = 0.3 * sandwich_count
-        jackpot_chance = max(jackpot_chance, sandwich_bonus)
-        jackpot_chance = min(jackpot_chance, 0.9)
-    else:
-        jackpot_chance = min(jackpot_chance, MAX_JACKPOT_CHANCE)
-    if has_water:
-        jackpot_roll = random.random()
-        if jackpot_roll < jackpot_chance:
-            change = random.randint(JACKPOT_MIN, JACKPOT_MAX) // 3
-            change = int(change * prestige_bonus)
-            return change, False, consecutive_plus + 1, 0, 0, True
-        else:
-            change = random.randint(1, 20) // 3
-            change = int(change * prestige_bonus)
-            return change, False, consecutive_plus + 1, 0, jackpot_pity + 1, False
-    elif has_rotten_leg:
-        if random.random() < 0.6:
-            if current_weight is not None:
-                loss = int(current_weight * 0.5)
-                change = -loss
-            else:
-                change = -int(consecutive_plus * 0.5)
-            change = int(change * prestige_bonus)
-            return change, True, 0, consecutive_minus + 1, jackpot_pity + 1, False
-        else:
-            change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
-            change = int(change * prestige_bonus)
-            return change, False, consecutive_plus + 1, 0, 0, True
-    else:
-        jackpot_roll = random.random()
-        if jackpot_roll < jackpot_chance:
-            change = random.randint(JACKPOT_MIN, JACKPOT_MAX)
-            change = int(change * prestige_bonus)
-            return change, False, consecutive_plus + 1, 0, 0, True
-        roll = random.random()
-        if roll < minus_chance:
-            change = random.randint(-20, -1)
-            change = int(change * prestige_bonus)
-            return change, True, 0, consecutive_minus + 1, jackpot_pity + 1, False
-        else:
-            change = random.randint(1, 20)
-            change = int(change * prestige_bonus)
-            return change, False, consecutive_plus + 1, 0, jackpot_pity + 1, False
-
-def open_case(case_id, prestige_luck=0, luck_upgrade=0):
-    case = CASES[case_id]
-    prizes = case["prizes"]
-    total_chance = sum(p["chance"] for p in prizes)
-    for prize in prizes:
-        prize["normalized_chance"] = (prize["chance"] / total_chance) * 100
-    bonus = (prestige_luck * 100) + (luck_upgrade * LUCK_CASE_BONUS_PER_LEVEL)
-    modified_prizes = []
-    for prize in prizes:
-        p = prize.copy()
-        if (isinstance(p["value"], int) and p["value"] >= 100) or p["value"] in ["rotten_leg", "water"]:
-            p["normalized_chance"] = prize["normalized_chance"] + bonus
-        modified_prizes.append(p)
-    total = sum(p["normalized_chance"] for p in modified_prizes)
-    for p in modified_prizes:
-        p["normalized_chance"] = (p["normalized_chance"] / total) * 100
-    prizes = modified_prizes
-    roll = random.random() * 100
-    cumulative = 0
-    for prize in prizes:
-        cumulative += prize["normalized_chance"]
-        if roll < cumulative:
-            return prize
-    return prizes[-1]
-
-def are_animations_enabled(user_data):
-    return user_data.get('animations_enabled', 1) == 1
-
-async def apply_auto_fat(user_id, guild_id, user_name):
-    try:
-        data = get_user_data(guild_id, user_id, user_name)
-        items_dict = get_user_items(data['item_counts'])
-        prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
-        
-        change, was_minus, new_plus, new_minus, new_pity, was_jackpot = get_change_with_pity_and_jackpot(
-            data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
-            data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
-        
-        new_number = data['current_number'] + change
-        
-        update_data = {
-            'number': new_number,
-            'user_name': user_name,
-            'consecutive_plus': new_plus,
-            'consecutive_minus': new_minus,
-            'jackpot_pity': new_pity,
-            'fat_cooldown_time': datetime.now()
-        }
-        
-        update_user_data(guild_id, user_id, **update_data)
-        
-        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
-        
-        await update_user_nick(guild_id, user_id, user_name)
-        
-        print(f"🤖 Авто-жир сработал для {user_name}: {change:+d} кг, опыт +{XP_PER_FAT}")
-        
-        if levels_gained > 0:
-            print(f"🌟 {user_name} повысил уровень до {new_level} (+{kg_reward} кг)")
-            
-    except Exception as e:
-        print(f"❌ Ошибка в авто-жире: {e}")
 
 async def auto_fat_loop():
     await bot.wait_until_ready()
@@ -853,7 +800,6 @@ async def auto_fat_loop():
                 db_path = get_db_path(guild_id)
                 if not os.path.exists(db_path):
                     continue
-                
                 try:
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
@@ -862,12 +808,9 @@ async def auto_fat_loop():
                     if 'auto_fat_level' not in columns or 'next_auto_fat_time' not in columns:
                         conn.close()
                         continue
-                    
-                    cursor.execute('''SELECT user_id, user_name, auto_fat_level, next_auto_fat_time 
-                                    FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL''')
+                    cursor.execute('SELECT user_id, user_name, auto_fat_level, next_auto_fat_time FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL')
                     users = cursor.fetchall()
                     conn.close()
-                    
                     for user_id, user_name, auto_fat_level, next_time_str in users:
                         try:
                             if next_time_str:
@@ -876,14 +819,24 @@ async def auto_fat_loop():
                                 else:
                                     next_time = next_time_str
                                 if current_time >= next_time:
-                                    await apply_auto_fat(user_id, guild_id, user_name)
+                                    data = get_user_data(guild_id, user_id, user_name)
+                                    items_dict = get_user_items(data['item_counts'])
+                                    prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
+                                    fat_plus_bonus = get_fat_plus_bonus(data.get('fat_plus_upgrade', 0))
+                                    jackpot_bonus = get_jackpot_bonus(data.get('jackpot_upgrade', 0))
+                                    change, was_minus, new_plus, new_minus, new_pity, was_jackpot = get_change_with_pity_and_jackpot(
+                                        data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
+                                        data.get('luck_upgrade', 0), prestige_bonus, fat_plus_bonus, jackpot_bonus, items_dict, data['current_number'])
+                                    new_number = data['current_number'] + change
+                                    update_user_data(guild_id, user_id, number=new_number, consecutive_plus=new_plus, consecutive_minus=new_minus, jackpot_pity=new_pity, fat_cooldown_time=datetime.now())
+                                    add_xp(guild_id, user_id, XP_PER_FAT)
+                                    await update_user_nick(guild_id, user_id, user_name)
                                     interval = get_auto_fat_interval(auto_fat_level)
                                     if interval:
                                         new_next_time = current_time + timedelta(hours=interval)
                                         conn2 = sqlite3.connect(db_path)
                                         c2 = conn2.cursor()
-                                        c2.execute('''UPDATE user_fat SET next_auto_fat_time = ? WHERE user_id = ?''', 
-                                                  (new_next_time.isoformat(), user_id))
+                                        c2.execute('UPDATE user_fat SET next_auto_fat_time = ? WHERE user_id = ?', (new_next_time.isoformat(), user_id))
                                         conn2.commit()
                                         conn2.close()
                         except Exception as e:
@@ -912,125 +865,103 @@ async def passive_income_loop():
                     if 'item_counts' not in columns or 'last_passive_income' not in columns:
                         conn.close()
                         continue
-                    cursor.execute('''SELECT user_id, user_name, current_number, item_counts, income_upgrade, prestige, last_passive_income FROM user_fat WHERE item_counts != '{}' AND item_counts IS NOT NULL''')
+                    cursor.execute('SELECT user_id, user_name, current_number, item_counts, income_upgrade, prestige, last_passive_income FROM user_fat WHERE item_counts != "{}" AND item_counts IS NOT NULL')
                     users = cursor.fetchall()
                     conn.close()
                     for user_id, user_name, current_number, item_counts_str, income_upgrade, prestige, last_income in users:
                         try:
-                            should_pay = False
-                            if not last_income:
-                                should_pay = False
-                            else:
+                            pay = False
+                            if last_income:
                                 if isinstance(last_income, str):
-                                    last_time = datetime.fromisoformat(last_income)
-                                else:
-                                    last_time = last_income
-                                time_diff = current_time - last_time
-                                if time_diff.total_seconds() >= 24 * 60 * 60:
-                                    should_pay = True
-                            if should_pay:
-                                items_dict = get_user_items(item_counts_str)
-                                if not items_dict:
+                                    last_income = datetime.fromisoformat(last_income)
+                                if (current_time - last_income).total_seconds() >= 86400:
+                                    pay = True
+                            if pay:
+                                items = get_user_items(item_counts_str)
+                                if not items:
                                     continue
-                                total_gain = 0
-                                for item_name, count in items_dict.items():
-                                    for shop_item in SHOP_ITEMS:
-                                        if shop_item["name"] == item_name:
-                                            gain = shop_item.get("gain_per_24h", 0) * count
+                                total = 0
+                                for name, cnt in items.items():
+                                    for si in SHOP_ITEMS:
+                                        if si["name"] == name:
+                                            gain = si.get("gain_per_24h", 0) * cnt
                                             if gain > 0:
-                                                total_gain += gain
+                                                total += gain
                                             break
-                                if total_gain > 0:
-                                    income_bonus = get_income_bonus(income_upgrade or 0)
-                                    prestige_bonus = get_prestige_bonus(prestige or 0)
-                                    final_gain = int(total_gain * income_bonus * prestige_bonus)
-                                    new_number = current_number + final_gain
+                                if total > 0:
+                                    inc_bonus = get_income_bonus(income_upgrade or 0)
+                                    pres_bonus = get_prestige_bonus(prestige or 0)
+                                    final = int(total * inc_bonus * pres_bonus)
+                                    new_weight = current_number + final
                                     conn2 = sqlite3.connect(db_path)
-                                    c = conn2.cursor()
-                                    c.execute('''UPDATE user_fat SET current_number = ?, last_passive_income = ? WHERE user_id = ?''', (new_number, current_time, user_id))
+                                    c2 = conn2.cursor()
+                                    c2.execute('UPDATE user_fat SET current_number = ?, last_passive_income = ? WHERE user_id = ?', (new_weight, current_time, user_id))
                                     conn2.commit()
                                     conn2.close()
-                                    try:
-                                        guild_obj = bot.get_guild(guild_id)
-                                        if guild_obj:
-                                            member = guild_obj.get_member(int(user_id))
-                                            if member:
-                                                display_name = member.display_name
-                                                clean_name = display_name.split("kg", 1)[-1].strip() if "kg" in display_name else display_name
-                                                if not clean_name or len(clean_name) > 30:
-                                                    clean_name = user_name
-                                                new_nick = format_nick_with_prestige(prestige or 0, new_number, clean_name)
-                                                if len(new_nick) > 32:
-                                                    new_nick = new_nick[:32]
-                                                await member.edit(nick=new_nick)
-                                    except:
-                                        pass
+                                    await update_user_nick(guild.id, user_id, user_name)
                             else:
-                                conn2 = sqlite3.connect(db_path)
-                                c = conn2.cursor()
-                                c.execute('''UPDATE user_fat SET last_passive_income = ? WHERE user_id = ? AND last_passive_income IS NULL''', (current_time, user_id))
-                                conn2.commit()
-                                conn2.close()
+                                if not last_income:
+                                    conn2 = sqlite3.connect(db_path)
+                                    c2 = conn2.cursor()
+                                    c2.execute('UPDATE user_fat SET last_passive_income = ? WHERE user_id = ?', (current_time, user_id))
+                                    conn2.commit()
+                                    conn2.close()
                         except Exception as e:
                             pass
                 except Exception as e:
                     pass
         except Exception as e:
             pass
-        await asyncio.sleep(24 * 60 * 60)
+        await asyncio.sleep(86400)
 
 async def apply_snatcher_effect(guild_id, user_id, user_name):
     try:
         data = get_user_data(guild_id, user_id, user_name)
-        items_dict = get_user_items(data['item_counts'])
-        snatcher_count = items_dict.get("Снатчер", 0)
-        if snatcher_count == 0:
+        items = get_user_items(data['item_counts'])
+        if items.get("Снатчер", 0) == 0:
             return
-        current_time = datetime.now()
-        if data.get('snatcher_last_time'):
-            last_time = data['snatcher_last_time']
-            if isinstance(last_time, str):
-                last_time = datetime.fromisoformat(last_time)
-            if (current_time - last_time).total_seconds() < 6 * 3600:
+        now = datetime.now()
+        last = data.get('snatcher_last_time')
+        if last:
+            if isinstance(last, str):
+                last = datetime.fromisoformat(last)
+            if (now - last).total_seconds() < 21600:
                 return
         if random.random() > 0.2:
-            update_user_data(guild_id, user_id, snatcher_last_time=current_time)
+            update_user_data(guild_id, user_id, snatcher_last_time=now)
             return
-        virtual_slots = []
-        used_indices = set()
+        used = set()
+        slots = []
         for _ in range(10):
-            chosen_item = None
+            chosen = None
             for _ in range(50):
-                item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
-                if item_idx in used_indices:
+                idx = random.randint(0, len(SHOP_ITEMS)-1)
+                if idx in used:
                     continue
-                item = SHOP_ITEMS[item_idx]
+                item = SHOP_ITEMS[idx]
                 if random.random() < item["chance"]:
-                    chosen_item = item
-                    used_indices.add(item_idx)
+                    chosen = item
+                    used.add(idx)
                     break
-            if chosen_item:
-                amount = random.randint(chosen_item["min_amount"], chosen_item["max_amount"])
-                virtual_slots.append({"name": chosen_item["name"], "amount": amount, "price": chosen_item["price"], "description": chosen_item["description"], "gain_per_24h": chosen_item.get("gain_per_24h", 0)})
+            if chosen:
+                amt = random.randint(chosen["min_amount"], chosen["max_amount"])
+                slots.append({"name": chosen["name"], "amount": amt})
             else:
-                virtual_slots.append(None)
-        chosen_slot = random.randint(0, 9)
-        selected_item = virtual_slots[chosen_slot]
-        if not selected_item:
-            update_user_data(guild_id, user_id, snatcher_last_time=current_time)
+                slots.append(None)
+        chosen_slot = random.randint(0,9)
+        sel = slots[chosen_slot]
+        if not sel:
+            update_user_data(guild_id, user_id, snatcher_last_time=now)
             return
-        items_dict[selected_item["name"]] = items_dict.get(selected_item["name"], 0) + 1
-        update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), snatcher_last_time=current_time)
-        try:
-            guild = bot.get_guild(guild_id)
-            if guild:
-                member = guild.get_member(int(user_id))
-                if member:
-                    embed = discord.Embed(title="👾 **Снатчер сработал!**", description=f"Ваш **Снатчер** сгенерировал предмет из {chosen_slot + 1} слота!", color=0x9b59b6)
-                    embed.add_field(name="📦 Получено", value=f"**+1 {selected_item['name']}**", inline=False)
-                    await member.send(embed=embed)
-        except:
-            pass
+        items[sel["name"]] = items.get(sel["name"], 0) + 1
+        update_user_data(guild_id, user_id, item_counts=save_user_items(items), snatcher_last_time=now)
+        guild = bot.get_guild(guild_id)
+        if guild:
+            member = guild.get_member(int(user_id))
+            if member:
+                embed = discord.Embed(title="👾 Снатчер сработал!", description=f"Сгенерирован предмет из {chosen_slot+1} слота!", color=0x9b59b6)
+                embed.add_field(name="📦 Получено", value=f"+1 {sel['name']}", inline=False)
+                await member.send(embed=embed)
     except Exception as e:
         pass
 
@@ -1047,19 +978,16 @@ async def snatcher_loop():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     cursor.execute("PRAGMA table_info(user_fat)")
-                    columns = [col[1] for col in cursor.fetchall()]
-                    if 'snatcher_last_time' not in columns or 'item_counts' not in columns:
+                    cols = [col[1] for col in cursor.fetchall()]
+                    if 'snatcher_last_time' not in cols or 'item_counts' not in cols:
                         conn.close()
                         continue
-                    cursor.execute('''SELECT user_id, user_name FROM user_fat WHERE item_counts LIKE '%"Снатчер"%' ''')
-                    users = cursor.fetchall()
+                    cursor.execute("SELECT user_id, user_name FROM user_fat WHERE item_counts LIKE '%Снатчер%'")
+                    rows = cursor.fetchall()
                     conn.close()
-                    for user_id, user_name in users:
-                        try:
-                            await apply_snatcher_effect(guild_id, user_id, user_name)
-                            await asyncio.sleep(1)
-                        except Exception as e:
-                            pass
+                    for uid, uname in rows:
+                        await apply_snatcher_effect(guild.id, uid, uname)
+                        await asyncio.sleep(1)
                 except Exception as e:
                     pass
         except Exception as e:
@@ -1070,7 +998,7 @@ async def apply_hourly_effects():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
-            current_time = datetime.now()
+            now = datetime.now()
             for guild in bot.guilds:
                 guild_id = guild.id
                 db_path = get_db_path(guild_id)
@@ -1080,54 +1008,49 @@ async def apply_hourly_effects():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     cursor.execute("PRAGMA table_info(user_fat)")
-                    columns = [col[1] for col in cursor.fetchall()]
-                    if 'item_counts' not in columns or 'last_hourly_income' not in columns:
+                    cols = [col[1] for col in cursor.fetchall()]
+                    if 'item_counts' not in cols or 'last_hourly_income' not in cols:
                         conn.close()
                         continue
-                    cursor.execute('''SELECT user_id, user_name, current_number, item_counts, income_upgrade, prestige, last_hourly_income FROM user_fat''')
-                    users = cursor.fetchall()
+                    cursor.execute('SELECT user_id, user_name, current_number, item_counts, income_upgrade, prestige, last_hourly_income FROM user_fat')
+                    rows = cursor.fetchall()
                     conn.close()
-                    for user_id, user_name, current_number, item_counts_str, income_upgrade, prestige, last_hourly in users:
+                    for uid, uname, cur, items_str, inc_up, pres, last_hour in rows:
                         try:
-                            should_pay = False
-                            if not last_hourly:
-                                should_pay = False
-                            else:
-                                if isinstance(last_hourly, str):
-                                    last_time = datetime.fromisoformat(last_hourly)
-                                else:
-                                    last_time = last_hourly
-                                time_diff = current_time - last_time
-                                if time_diff.total_seconds() >= 3600:
-                                    should_pay = True
-                            if should_pay:
-                                items_dict = get_user_items(item_counts_str)
-                                if not items_dict:
+                            pay = False
+                            if last_hour:
+                                if isinstance(last_hour, str):
+                                    last_hour = datetime.fromisoformat(last_hour)
+                                if (now - last_hour).total_seconds() >= 3600:
+                                    pay = True
+                            if pay:
+                                items = get_user_items(items_str)
+                                if not items:
                                     continue
-                                total_gain = 0
-                                for item_name, count in items_dict.items():
-                                    if item_name == "Автохолестерол":
-                                        gain = random.randint(1, 10) * count
-                                        total_gain += gain
-                                    elif item_name == "Холестеринимус":
-                                        gain = random.randint(1, 5) * count
-                                        total_gain += gain
-                                if total_gain > 0:
-                                    income_bonus = get_income_bonus(income_upgrade or 0)
-                                    prestige_bonus = get_prestige_bonus(prestige or 0)
-                                    final_gain = int(total_gain * income_bonus * prestige_bonus)
-                                    new_number = current_number + final_gain
+                                total = 0
+                                for name, cnt in items.items():
+                                    if name == "Автохолестерол":
+                                        total += random.randint(1,10) * cnt
+                                    elif name == "Холестеринимус":
+                                        total += random.randint(1,5) * cnt
+                                if total > 0:
+                                    inc_bonus = get_income_bonus(inc_up or 0)
+                                    pres_bonus = get_prestige_bonus(pres or 0)
+                                    final = int(total * inc_bonus * pres_bonus)
+                                    new_weight = cur + final
                                     conn2 = sqlite3.connect(db_path)
-                                    c = conn2.cursor()
-                                    c.execute('''UPDATE user_fat SET current_number = ?, last_hourly_income = ? WHERE user_id = ?''', (new_number, current_time, user_id))
+                                    c2 = conn2.cursor()
+                                    c2.execute('UPDATE user_fat SET current_number = ?, last_hourly_income = ? WHERE user_id = ?', (new_weight, now, uid))
                                     conn2.commit()
                                     conn2.close()
+                                    await update_user_nick(guild.id, uid, uname)
                             else:
-                                conn2 = sqlite3.connect(db_path)
-                                c = conn2.cursor()
-                                c.execute('''UPDATE user_fat SET last_hourly_income = ? WHERE user_id = ? AND last_hourly_income IS NULL''', (current_time, user_id))
-                                conn2.commit()
-                                conn2.close()
+                                if not last_hour:
+                                    conn2 = sqlite3.connect(db_path)
+                                    c2 = conn2.cursor()
+                                    c2.execute('UPDATE user_fat SET last_hourly_income = ? WHERE user_id = ?', (now, uid))
+                                    conn2.commit()
+                                    conn2.close()
                         except Exception as e:
                             pass
                 except Exception as e:
@@ -1143,7 +1066,7 @@ def get_duel_info(user_data):
     return {'active': user_data.get('duel_active', 0), 'opponent': user_data.get('duel_opponent'), 'amount': user_data.get('duel_amount', 0), 'message_id': user_data.get('duel_message_id'), 'channel_id': user_data.get('duel_channel_id'), 'initiator': user_data.get('duel_initiator', 0), 'start_time': user_data.get('duel_start_time')}
 
 async def migrate_old_burgers_to_prestige():
-    burger_to_prestige = {0: 1, 1: 2, 2: 3, 3: 4}
+    burger_to_prestige = {0:1,1:2,2:3,3:4}
     converted = 0
     for guild in bot.guilds:
         guild_id = guild.id
@@ -1154,14 +1077,13 @@ async def migrate_old_burgers_to_prestige():
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(user_fat)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'legendary_burger' in columns and 'prestige' in columns:
+            cols = [col[1] for col in cursor.fetchall()]
+            if 'legendary_burger' in cols and 'prestige' in cols:
                 cursor.execute("SELECT user_id, user_name, legendary_burger FROM user_fat WHERE legendary_burger >= 0")
-                users = cursor.fetchall()
-                for user_id, user_name, burger_level in users:
-                    if burger_level in burger_to_prestige:
-                        prestige_amount = burger_to_prestige[burger_level]
-                        cursor.execute("UPDATE user_fat SET prestige = ?, legendary_burger = -1 WHERE user_id = ?", (prestige_amount, user_id))
+                rows = cursor.fetchall()
+                for uid, uname, lvl in rows:
+                    if lvl in burger_to_prestige:
+                        cursor.execute("UPDATE user_fat SET prestige = ?, legendary_burger = -1 WHERE user_id = ?", (burger_to_prestige[lvl], uid))
                         converted += 1
                 conn.commit()
             conn.close()
@@ -1179,16 +1101,16 @@ async def migrate_old_autoburgers_to_auto_fat():
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(user_fat)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'autoburger_count' in columns and 'auto_fat_level' in columns:
+            cols = [col[1] for col in cursor.fetchall()]
+            if 'autoburger_count' in cols and 'auto_fat_level' in cols:
                 cursor.execute("SELECT user_id, user_name, autoburger_count FROM user_fat WHERE autoburger_count > 0")
-                users = cursor.fetchall()
-                for user_id, user_name, autoburger_count in users:
-                    if autoburger_count > 0:
-                        new_level = min(autoburger_count, AUTO_FAT_MAX_LEVEL)
-                        interval = get_auto_fat_interval(new_level)
+                rows = cursor.fetchall()
+                for uid, uname, cnt in rows:
+                    if cnt > 0:
+                        new_lvl = min(cnt, AUTO_FAT_MAX_LEVEL)
+                        interval = get_auto_fat_interval(new_lvl)
                         next_time = datetime.now() + timedelta(hours=interval) if interval else None
-                        cursor.execute("UPDATE user_fat SET auto_fat_level = ?, next_auto_fat_time = ?, autoburger_count = 0 WHERE user_id = ?", (new_level, next_time, user_id))
+                        cursor.execute("UPDATE user_fat SET auto_fat_level = ?, next_auto_fat_time = ?, autoburger_count = 0 WHERE user_id = ?", (new_lvl, next_time, uid))
                         converted += 1
                 conn.commit()
             conn.close()
@@ -1201,31 +1123,30 @@ async def duel_animation(msg, challenger, opponent):
     max_len = max(len(c_name), len(o_name))
     c_name = c_name.ljust(max_len)
     o_name = o_name.ljust(max_len)
-    duel_emojis = ["⬆️", "⬇️", "⚔️"]
-    line = [random.choice(duel_emojis) for _ in range(100)]
-    result = random.randint(0, 2)
+    emojis = ["⬆️", "⬇️", "⚔️"]
+    line = [random.choice(emojis) for _ in range(100)]
+    result = random.randint(0,2)
     if result == 0:
-        result_emoji = "⬆️"
-        result_text = f"🏆 **Победитель:** {challenger.mention}"
-        result_color = 0xffd700
+        line[57] = "⬆️"
+        result_text = f"🏆 Победитель: {challenger.mention}"
+        color = 0xffd700
     elif result == 1:
-        result_emoji = "⬇️"
-        result_text = f"🏆 **Победитель:** {opponent.mention}"
-        result_color = 0xc0c0c0
+        line[57] = "⬇️"
+        result_text = f"🏆 Победитель: {opponent.mention}"
+        color = 0xc0c0c0
     else:
-        result_emoji = "⚔️"
-        result_text = "🤝 **НИЧЬЯ!** 🤝"
-        result_color = 0x9b59b6
-    line[57] = result_emoji
-    anim_embed = discord.Embed(title="⚔️ **ДУЭЛЬ** ⚔️", description="", color=0xff5500)
-    animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 56), (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)]
-    for frame_num, center_pos in animation_frames:
-        visible = line[center_pos-4:center_pos+5]
-        display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-        anim_embed.description = f"**{c_name}**\n**{display_line}**\n**{o_name}**"
+        line[57] = "⚔️"
+        result_text = "🤝 НИЧЬЯ! 🤝"
+        color = 0x9b59b6
+    frames = [(1,5),(2,10),(3,15),(4,20),(5,25),(6,30),(7,35),(8,39),(9,43),(10,47),(11,50),(12,52),(13,54),(14,55),(15,56),(16,56),(17,57),(18,57),(19,57),(20,57)]
+    anim_embed = discord.Embed(title="⚔️ ДУЭЛЬ ⚔️", color=0xff5500)
+    for _, pos in frames:
+        visible = line[pos-4:pos+5]
+        disp = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
+        anim_embed.description = f"**{c_name}**\n**{disp}**\n**{o_name}**"
         await msg.edit(embed=anim_embed)
         await asyncio.sleep(0.5)
-    result_embed = discord.Embed(title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️", description=f"**{c_name}**\n**{display_line}**\n**{o_name}**\n\n{result_text}", color=result_color)
+    result_embed = discord.Embed(title="⚔️ ДУЭЛЬ ЗАВЕРШЕНА! ⚔️", description=f"**{c_name}**\n**{disp}**\n**{o_name}**\n\n{result_text}", color=color)
     await msg.edit(embed=result_embed)
     await asyncio.sleep(1.5)
     return result
@@ -1233,294 +1154,276 @@ async def duel_animation(msg, challenger, opponent):
 def get_item_price(item_name):
     if item_name in LEGENDARY_UPGRADE_PRICES:
         return LEGENDARY_UPGRADE_PRICES[item_name]
-    for shop_item in SHOP_ITEMS:
-        if shop_item["name"] == item_name:
-            return shop_item["price"]
+    for si in SHOP_ITEMS:
+        if si["name"] == item_name:
+            return si["price"]
     return 0
 
 def get_possible_upgrades(item_name, item_count):
     if item_count <= 0:
         return []
-    current_price = get_item_price(item_name)
-    if current_price == 0:
+    cur_price = get_item_price(item_name)
+    if cur_price == 0:
         return []
-    possible_upgrades = []
-    seen_items = set()
-    all_items = set([item["name"] for item in SHOP_ITEMS] + list(LEGENDARY_UPGRADE_PRICES.keys()))
-    for shop_item in SHOP_ITEMS:
-        item_name_check = shop_item["name"]
-        if item_name_check in seen_items:
+    upgrades = []
+    seen = set()
+    all_items = set(i["name"] for i in SHOP_ITEMS) | set(LEGENDARY_UPGRADE_PRICES.keys())
+    for si in SHOP_ITEMS:
+        name = si["name"]
+        if name in seen:
             continue
-        target_price = get_item_price(item_name_check)
-        if target_price <= current_price:
+        tgt = get_item_price(name)
+        if tgt <= cur_price:
             continue
-        chance = current_price / target_price
+        chance = cur_price / tgt
         if chance < 0.01:
             continue
-        possible_upgrades.append({"name": item_name_check, "price": target_price, "chance": chance, "emoji": ITEM_EMOJIS.get(item_name_check, "🎁")})
-        seen_items.add(item_name_check)
-    if current_price >= 1000:
-        for leg_name, leg_price in LEGENDARY_UPGRADE_PRICES.items():
-            if leg_name in seen_items:
+        upgrades.append({"name": name, "price": tgt, "chance": chance, "emoji": ITEM_EMOJIS.get(name, "🎁")})
+        seen.add(name)
+    if cur_price >= 1000:
+        for leg, leg_price in LEGENDARY_UPGRADE_PRICES.items():
+            if leg in seen:
                 continue
-            if leg_name not in all_items:
+            if leg not in all_items:
                 continue
-            if leg_price <= current_price:
+            if leg_price <= cur_price:
                 continue
-            chance = current_price / leg_price
+            chance = cur_price / leg_price
             if chance < 0.01:
                 continue
-            possible_upgrades.append({"name": leg_name, "price": leg_price, "chance": chance, "emoji": ITEM_EMOJIS.get(leg_name, "✨")})
-            seen_items.add(leg_name)
-    possible_upgrades.sort(key=lambda x: x["price"])
-    return possible_upgrades
+            upgrades.append({"name": leg, "price": leg_price, "chance": chance, "emoji": ITEM_EMOJIS.get(leg, "✨")})
+            seen.add(leg)
+    upgrades.sort(key=lambda x: x["price"])
+    return upgrades
 
 async def upgrade_animation(ctx, member, source_item, target_item, item_count, prestige_luck=0, luck_upgrade=0, animations_enabled=True):
     guild_id = ctx.guild.id
     user_id = str(member.id)
     data = get_user_data(guild_id, user_id, member.name)
-    shadow_chance = data.get('shadow_upgrade_chance', 0)
+    shadow = data.get('shadow_upgrade_chance', 0)
     prestige_bonus = 1 + prestige_luck
     luck_bonus = 1 + (luck_upgrade * LUCK_UPGRADE_BONUS_PER_LEVEL / 100)
-    base_chance = target_item['chance']
-    real_chance = min(base_chance * prestige_bonus * luck_bonus + shadow_chance / 100, 1.0)
-    display_chance = base_chance * prestige_bonus * luck_bonus * 100
-    upgrade_emojis = ["🟥", "🟩"]
-    line = [random.choice(upgrade_emojis) for _ in range(100)]
+    base = target_item['chance']
+    real = min(base * prestige_bonus * luck_bonus + shadow/100, 1.0)
+    display = base * prestige_bonus * luck_bonus * 100
+    line = [random.choice(["🟥","🟩"]) for _ in range(100)]
     roll = random.random()
-    success = roll < real_chance
+    success = roll < real
     if success:
-        new_shadow = max(0, shadow_chance - 8)
-        result_emoji = "🟩"
-        result_text = f"✅ **УСПЕХ!** ✅"
-        result_color = 0x00ff00
+        new_shadow = max(0, shadow - 8)
+        res_emoji = "🟩"
+        res_text = "✅ УСПЕХ! ✅"
+        res_color = 0x00ff00
     else:
-        new_shadow = min(32, shadow_chance + 4)
-        result_emoji = "🟥"
-        result_text = f"❌ **НЕУДАЧА!** ❌"
-        result_color = 0xff0000
-    line[57] = result_emoji
-    anim_embed = discord.Embed(title="🔧 **АПГРЕЙД** 🔧", description=f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nШанс: **{display_chance:.1f}%**", color=0xff5500)
-    upgrade_msg = await ctx.send(embed=anim_embed)
-    animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 56), (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)]
-    
+        new_shadow = min(32, shadow + 4)
+        res_emoji = "🟥"
+        res_text = "❌ НЕУДАЧА! ❌"
+        res_color = 0xff0000
+    line[57] = res_emoji
+    anim_embed = discord.Embed(title="🔧 АПГРЕЙД 🔧", description=f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item,'📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nШанс: {display:.1f}%", color=0xff5500)
+    msg = await ctx.send(embed=anim_embed)
+    frames = [(1,5),(2,10),(3,15),(4,20),(5,25),(6,30),(7,35),(8,39),(9,43),(10,47),(11,50),(12,52),(13,54),(14,55),(15,56),(16,56),(17,57),(18,57),(19,57),(20,57)]
     if animations_enabled:
-        for frame_num, center_pos in animation_frames:
-            visible = line[center_pos-4:center_pos+5]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\nШанс: **{display_chance:.1f}%**"
-            await upgrade_msg.edit(embed=anim_embed)
+        for _, pos in frames:
+            vis = line[pos-4:pos+5]
+            disp = "".join(vis[:4]) + "|" + vis[4] + "|" + "".join(vis[5:])
+            anim_embed.description = f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item,'📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n**{disp}**\n\nШанс: {display:.1f}%"
+            await msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
-    
-    start = 57 - 4
-    end = 57 + 5
-    visible = line[start:end]
-    display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-    
+    start = 57-4
+    end = 57+5
+    vis = line[start:end]
+    disp = "".join(vis[:4]) + "|" + vis[4] + "|" + "".join(vis[5:])
     if not animations_enabled:
-        anim_embed.description = f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
-        await upgrade_msg.edit(embed=anim_embed)
-    
-    current_data = get_user_data(guild_id, user_id, member.name)
-    items_dict = get_user_items(current_data['item_counts'])
+        anim_embed.description = f"**{member.display_name}** улучшает:\n{ITEM_EMOJIS.get(source_item,'📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\n**{disp}**\n\n**РЕЗУЛЬТАТ!**"
+        await msg.edit(embed=anim_embed)
+    cur_data = get_user_data(guild_id, user_id, member.name)
+    items = get_user_items(cur_data['item_counts'])
     if success:
-        items_dict[target_item['name']] = items_dict.get(target_item['name'], 0) + 1
-        update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
-        result_description = f"✅ **Поздравляем!**\n\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно улучшен!"
-        
-        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_UPGRADE)
-        if levels_gained > 0:
-            result_description += f"\n\n⭐ **ПОВЫШЕНИЕ УРОВНЯ!** +{kg_reward} кг! Теперь у вас **{new_level}** уровень!"
-        
+        items[target_item['name']] = items.get(target_item['name'],0)+1
+        update_user_data(guild_id, user_id, item_counts=save_user_items(items), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
+        desc = f"✅ Поздравляем!\n\n{ITEM_EMOJIS.get(source_item,'📦')} **{source_item}** → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно улучшен!"
+        lvl_gained, kg_reward, new_lvl = add_xp(guild_id, user_id, XP_PER_UPGRADE)
+        if lvl_gained > 0:
+            desc += f"\n\n⭐ ПОВЫШЕНИЕ УРОВНЯ! +{kg_reward} кг! Теперь у вас {new_lvl} уровень!"
         await update_user_nick(guild_id, user_id, member.name)
     else:
-        update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
-        result_description = f"❌ **Неудача!**\n\n{ITEM_EMOJIS.get(source_item, '📦')} **{source_item}** был утерян в процессе улучшения!"
-    
-    result_embed = discord.Embed(title="🔧 **РЕЗУЛЬТАТ АПГРЕЙДА** 🔧", description=f"**{display_line}**\n\n{result_text}\n\n{result_description}", color=result_color)
-    result_embed.set_footer(text=f"Шанс был: {display_chance:.1f}%")
-    await upgrade_msg.edit(embed=result_embed)
-    
+        update_user_data(guild_id, user_id, item_counts=save_user_items(items), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None, last_command=None, last_command_target=None, last_command_use_time=None)
+        desc = f"❌ Неудача!\n\n{ITEM_EMOJIS.get(source_item,'📦')} **{source_item}** был утерян в процессе улучшения!"
+    result_embed = discord.Embed(title="🔧 РЕЗУЛЬТАТ АПГРЕЙДА 🔧", description=f"**{disp}**\n\n{res_text}\n\n{desc}", color=res_color)
+    result_embed.set_footer(text=f"Шанс был: {display:.1f}%")
+    await msg.edit(embed=result_embed)
+
 async def upgrade_kg_animation(ctx, member, amount, target_item, prestige_luck=0, luck_upgrade=0, animations_enabled=True):
     guild_id = ctx.guild.id
     user_id = str(member.id)
     data = get_user_data(guild_id, user_id, member.name)
-    shadow_chance = data.get('shadow_upgrade_chance', 0)
+    shadow = data.get('shadow_upgrade_chance', 0)
     prestige_bonus = 1 + prestige_luck
     luck_bonus = 1 + (luck_upgrade * LUCK_UPGRADE_BONUS_PER_LEVEL / 100)
-    base_chance = target_item['chance']
-    real_chance = min(base_chance * prestige_bonus * luck_bonus + shadow_chance / 100, 1.0)
-    display_chance = base_chance * prestige_bonus * luck_bonus * 100
-    upgrade_emojis = ["🟥", "🟩"]
-    line = [random.choice(upgrade_emojis) for _ in range(100)]
+    base = target_item['chance']
+    real = min(base * prestige_bonus * luck_bonus + shadow/100, 1.0)
+    display = base * prestige_bonus * luck_bonus * 100
+    line = [random.choice(["🟥","🟩"]) for _ in range(100)]
     roll = random.random()
-    success = roll < real_chance
+    success = roll < real
     if success:
-        new_shadow = max(0, shadow_chance - 8)
-        result_emoji = "🟩"
-        result_text = f"✅ **УСПЕХ!** ✅"
-        result_color = 0x00ff00
+        new_shadow = max(0, shadow - 8)
+        res_emoji = "🟩"
+        res_text = "✅ УСПЕХ! ✅"
+        res_color = 0x00ff00
     else:
-        new_shadow = min(32, shadow_chance + 4)
-        result_emoji = "🟥"
-        result_text = f"❌ **НЕУДАЧА!** ❌"
-        result_color = 0xff0000
-    line[57] = result_emoji
-    anim_embed = discord.Embed(title="💱 **АПГРЕЙД КГ** 💱", description=f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\nШанс: **{display_chance:.1f}%**", color=0xff5500)
-    upgrade_msg = await ctx.send(embed=anim_embed)
-    animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 56), (16, 56), (17, 57), (18, 57), (19, 57), (20, 57)]
-    
+        new_shadow = min(32, shadow + 4)
+        res_emoji = "🟥"
+        res_text = "❌ НЕУДАЧА! ❌"
+        res_color = 0xff0000
+    line[57] = res_emoji
+    anim_embed = discord.Embed(title="💱 АПГРЕЙД КГ 💱", description=f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\nШанс: {display:.1f}%", color=0xff5500)
+    msg = await ctx.send(embed=anim_embed)
+    frames = [(1,5),(2,10),(3,15),(4,20),(5,25),(6,30),(7,35),(8,39),(9,43),(10,47),(11,50),(12,52),(13,54),(14,55),(15,56),(16,56),(17,57),(18,57),(19,57),(20,57)]
     if animations_enabled:
-        for frame_num, center_pos in animation_frames:
-            visible = line[center_pos-4:center_pos+5]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\nШанс: **{display_chance:.1f}%**"
-            await upgrade_msg.edit(embed=anim_embed)
+        for _, pos in frames:
+            vis = line[pos-4:pos+5]
+            disp = "".join(vis[:4]) + "|" + vis[4] + "|" + "".join(vis[5:])
+            anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{disp}**\n\nШанс: {display:.1f}%"
+            await msg.edit(embed=anim_embed)
             await asyncio.sleep(0.5)
-    
-    start = 57 - 4
-    end = 57 + 5
-    visible = line[start:end]
-    display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-    
+    start = 57-4
+    end = 57+5
+    vis = line[start:end]
+    disp = "".join(vis[:4]) + "|" + vis[4] + "|" + "".join(vis[5:])
     if not animations_enabled:
-        anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
-        await upgrade_msg.edit(embed=anim_embed)
-    
-    current_data = get_user_data(guild_id, user_id, member.name)
+        anim_embed.description = f"**{member.display_name}** улучшает {amount} кг в:\n{target_item['emoji']} **{target_item['name']}**\n\n**{disp}**\n\n**РЕЗУЛЬТАТ!**"
+        await msg.edit(embed=anim_embed)
+    cur_data = get_user_data(guild_id, user_id, member.name)
     if success:
         if target_item.get("is_case", False):
-            cases_dict = current_data.get('cases_dict', {}).copy()
-            cases_dict[target_item["case_id"]] = cases_dict.get(target_item["case_id"], 0) + 1
-            update_user_data(guild_id, user_id, cases_dict=cases_dict, shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
-            result_description = f"✅ **Поздравляем!**\n\n{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно получен!"
+            cases = cur_data.get('cases_dict', {}).copy()
+            cases[target_item["case_id"]] = cases.get(target_item["case_id"],0)+1
+            update_user_data(guild_id, user_id, cases_dict=cases, shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
         else:
-            items_dict = get_user_items(current_data['item_counts'])
-            items_dict[target_item["name"]] = items_dict.get(target_item["name"], 0) + 1
-            update_user_data(guild_id, user_id, item_counts=save_user_items(items_dict), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
-            result_description = f"✅ **Поздравляем!**\n\n{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно получен!"
-        
-        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_UPGRADE_KG)
-        if levels_gained > 0:
-            result_description += f"\n\n⭐ **ПОВЫШЕНИЕ УРОВНЯ!** +{kg_reward} кг! Теперь у вас **{new_level}** уровень!"
-        
+            items = get_user_items(cur_data['item_counts'])
+            items[target_item["name"]] = items.get(target_item["name"],0)+1
+            update_user_data(guild_id, user_id, item_counts=save_user_items(items), shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
+        desc = f"✅ Поздравляем!\n\n{amount} кг → {target_item['emoji']} **{target_item['name']}**\n\nПредмет успешно получен!"
+        lvl_gained, kg_reward, new_lvl = add_xp(guild_id, user_id, XP_PER_UPGRADE_KG)
+        if lvl_gained > 0:
+            desc += f"\n\n⭐ ПОВЫШЕНИЕ УРОВНЯ! +{kg_reward} кг! Теперь у вас {new_lvl} уровень!"
         await update_user_nick(guild_id, user_id, member.name)
     else:
         update_user_data(guild_id, user_id, shadow_upgrade_chance=new_shadow, upgrade_active=0, upgrade_data=None)
-        result_description = f"❌ **Неудача!**\n\n{amount} кг сгорели в процессе улучшения!"
-    
-    result_embed = discord.Embed(title="💱 **РЕЗУЛЬТАТ АПГРЕЙДА** 💱", description=f"**{display_line}**\n\n{result_text}\n\n{result_description}", color=result_color)
-    result_embed.set_footer(text=f"Шанс был: {display_chance:.1f}%")
-    await upgrade_msg.edit(embed=result_embed)
-    
+        desc = f"❌ Неудача!\n\n{amount} кг сгорели в процессе улучшения!"
+    result_embed = discord.Embed(title="💱 РЕЗУЛЬТАТ АПГРЕЙДА 💱", description=f"**{disp}**\n\n{res_text}\n\n{desc}", color=res_color)
+    result_embed.set_footer(text=f"Шанс был: {display:.1f}%")
+    await msg.edit(embed=result_embed)
+
 def generate_shop_items():
     slots = []
-    used_indices = set()
-    available_cases = [cid for cid, case in CASES.items() if cid != "daily" and case.get("shop_chance", 0) > 0]
+    used = set()
+    available_cases = [cid for cid, c in CASES.items() if cid != "daily" and c.get("shop_chance",0)>0]
     for _ in range(4):
         if random.random() < 0.7 and available_cases:
-            case_choices = []
+            choices = []
             for cid in available_cases:
-                case = CASES[cid]
-                weight = case["shop_chance"] * 100
-                case_choices.extend([cid] * int(weight))
-            if case_choices:
-                chosen_id = random.choice(case_choices)
-                case = CASES[chosen_id]
-                amount = random.randint(case["min_shop"], case["max_shop"])
-                min_prize = min([p["value"] for p in case["prizes"] if isinstance(p["value"], int)] + [0])
-                max_prize = max([p["value"] for p in case["prizes"] if isinstance(p["value"], int)] + [0])
-                slots.append({"type": "case", "case_id": chosen_id, "name": case["name"], "amount": amount, "price": case["price"], "description": f"{case['emoji']} Содержит случайные призы!\nОт {min_prize}кг до {max_prize}кг", "emoji": case['emoji']})
+                w = int(CASES[cid]["shop_chance"] * 100)
+                choices.extend([cid]*w)
+            if choices:
+                chosen = random.choice(choices)
+                c = CASES[chosen]
+                amt = random.randint(c["min_shop"], c["max_shop"])
+                minp = min(p["value"] for p in c["prizes"] if isinstance(p["value"], int))
+                maxp = max(p["value"] for p in c["prizes"] if isinstance(p["value"], int))
+                slots.append({"type":"case","case_id":chosen,"name":c["name"],"amount":amt,"price":c["price"],"description":f"{c['emoji']} Содержит призы от {minp} до {maxp}кг","emoji":c['emoji']})
             else:
                 slots.append(None)
         else:
             slots.append(None)
     for _ in range(6):
-        chosen_item = None
+        chosen = None
         for _ in range(50):
-            item_idx = random.randint(0, len(SHOP_ITEMS) - 1)
-            if item_idx in used_indices:
+            idx = random.randint(0,len(SHOP_ITEMS)-1)
+            if idx in used:
                 continue
-            item = SHOP_ITEMS[item_idx]
+            item = SHOP_ITEMS[idx]
             if random.random() < item["chance"]:
-                chosen_item = item
-                used_indices.add(item_idx)
+                chosen = item
+                used.add(idx)
                 break
-        if chosen_item:
-            amount = random.randint(chosen_item["min_amount"], chosen_item["max_amount"])
-            slots.append({"type": "item", "name": chosen_item["name"], "amount": amount, "price": chosen_item["price"], "description": chosen_item["description"], "gain_per_24h": chosen_item.get("gain_per_24h", 0), "emoji": ITEM_EMOJIS.get(chosen_item["name"], "📦")})
+        if chosen:
+            amt = random.randint(chosen["min_amount"], chosen["max_amount"])
+            slots.append({"type":"item","name":chosen["name"],"amount":amt,"price":chosen["price"],"description":chosen["description"],"gain_per_24h":chosen.get("gain_per_24h",0),"emoji":ITEM_EMOJIS.get(chosen["name"],"📦")})
         else:
             slots.append(None)
     random.shuffle(slots)
     return slots
 
 def get_shop_data(guild_id):
-    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
+    safe_init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('SELECT slots, last_update, next_update FROM shop WHERE guild_id = ?', (str(guild_id),))
-    result = cursor.fetchone()
+    row = cursor.fetchone()
     conn.close()
-    if result:
-        slots_json, last_update, next_update = result
+    if row:
+        slots_json, lu, nu = row
         try:
             slots = json.loads(slots_json) if slots_json else []
-            for slot in slots:
-                if slot is not None and "type" not in slot:
-                    if "case_id" in slot:
-                        slot["type"] = "case"
+            for s in slots:
+                if s and "type" not in s:
+                    if "case_id" in s:
+                        s["type"] = "case"
                     else:
-                        slot["type"] = "item"
-            return slots, last_update, next_update
+                        s["type"] = "item"
+            return slots, lu, nu
         except:
             return [], None, None
     return None, None, None
 
 def update_shop_data(guild_id, slots, last_update, next_update):
-    safe_init_guild_database(guild_id, f"Guild_{guild_id}")
+    safe_init_guild_database(guild_id)
     db_path = get_db_path(guild_id)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    clean_slots = []
-    for slot in slots:
-        if slot is not None:
-            if "type" not in slot:
-                if "case_id" in slot:
-                    slot["type"] = "case"
+    clean = []
+    for s in slots:
+        if s:
+            if "type" not in s:
+                if "case_id" in s:
+                    s["type"] = "case"
                 else:
-                    slot["type"] = "item"
-            clean_slots.append(slot)
+                    s["type"] = "item"
+            clean.append(s)
         else:
-            clean_slots.append(None)
-    slots_json = json.dumps(clean_slots)
-    last_update_str = last_update.isoformat() if last_update else None
-    next_update_str = next_update.isoformat() if next_update else None
-    cursor.execute('''INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?, ?, ?, ?)''', (str(guild_id), slots_json, last_update_str, next_update_str))
+            clean.append(None)
+    js = json.dumps(clean)
+    lu_str = last_update.isoformat() if last_update else None
+    nu_str = next_update.isoformat() if next_update else None
+    cursor.execute('INSERT OR REPLACE INTO shop (guild_id, slots, last_update, next_update) VALUES (?,?,?,?)', (str(guild_id), js, lu_str, nu_str))
     conn.commit()
     conn.close()
 
 async def ensure_shop_updated(guild_id):
-    result = get_shop_data(guild_id)
-    current_time = datetime.now()
-    if result[0] is not None:
-        slots, last_update_str, next_update_str = result
-        last_update = datetime.fromisoformat(last_update_str) if isinstance(last_update_str, str) else last_update_str if last_update_str else None
-        next_update = datetime.fromisoformat(next_update_str) if isinstance(next_update_str, str) else next_update_str if next_update_str else None
-        if next_update and current_time >= next_update:
-            new_slots = generate_shop_items()
-            last_update = current_time
-            next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
-            update_shop_data(guild_id, new_slots, last_update, next_update)
-            return new_slots, last_update, next_update
+    res = get_shop_data(guild_id)
+    now = datetime.now()
+    if res[0] is not None:
+        slots, lu_str, nu_str = res
+        lu = datetime.fromisoformat(lu_str) if isinstance(lu_str,str) else lu_str if lu_str else None
+        nu = datetime.fromisoformat(nu_str) if isinstance(nu_str,str) else nu_str if nu_str else None
+        if nu and now >= nu:
+            new = generate_shop_items()
+            lu = now
+            nu = now + timedelta(hours=SHOP_UPDATE_HOURS)
+            update_shop_data(guild_id, new, lu, nu)
+            return new, lu, nu
         else:
-            return slots, last_update, next_update
+            return slots, lu, nu
     else:
-        new_slots = generate_shop_items()
-        last_update = current_time
-        next_update = current_time + timedelta(hours=SHOP_UPDATE_HOURS)
-        update_shop_data(guild_id, new_slots, last_update, next_update)
-        return new_slots, last_update, next_update
+        new = generate_shop_items()
+        lu = now
+        nu = now + timedelta(hours=SHOP_UPDATE_HOURS)
+        update_shop_data(guild_id, new, lu, nu)
+        return new, lu, nu
 
 async def update_user_nick(guild_id, user_id, user_name=None):
     try:
@@ -1533,26 +1436,20 @@ async def update_user_nick(guild_id, user_id, user_name=None):
         data = get_user_data(guild_id, user_id, user_name)
         if not data:
             return
-        display_name = member.display_name
-        clean_name = display_name
-        if "kg" in display_name:
-            parts = display_name.split("kg", 1)
-            if len(parts) > 1:
-                clean_name = parts[1].strip()
-                if not clean_name:
-                    clean_name = data.get('user_name', str(user_id))
-        else:
-            clean_name = display_name
-        if not clean_name or len(clean_name) > 30:
-            clean_name = data.get('user_name', str(user_id))
-        new_nick = format_nick_with_prestige(data.get('prestige', 0), data['current_number'], clean_name)
-        if len(new_nick) > 32:
+        display = member.display_name
+        clean = display.split("kg",1)[-1].strip() if "kg" in display else display
+        if not clean or len(clean)>30:
+            clean = data.get('user_name', str(user_id))
+        new_nick = format_nick_with_prestige(data.get('prestige',0), data['current_number'], clean)
+        if len(new_nick)>32:
             new_nick = new_nick[:32]
         if member.nick != new_nick:
             await member.edit(nick=new_nick)
         return True
     except Exception as e:
         return False
+
+# ===== ОСНОВНЫЕ КОМАНДЫ =====
 
 @bot.command(name='жир')
 async def fat_command(ctx):
@@ -1562,15 +1459,15 @@ async def fat_command(ctx):
     user_name = member.name
     data = get_user_data(guild_id, user_id, user_name)
     fat_cd_upgrade = data.get('fat_cd_upgrade', 0)
-    cd_reduction_minutes = get_fat_cd_reduction(fat_cd_upgrade)
-    actual_cooldown = max(0.1, COOLDOWN_HOURS * 60 - cd_reduction_minutes) / 60
+    cd_reduction = get_fat_cd_reduction(fat_cd_upgrade)
+    actual_cooldown = max(0, COOLDOWN_HOURS * 60 - cd_reduction) / 60
     items_dict = get_user_items(data['item_counts'])
     for item_name, count in items_dict.items():
         if item_name == "Яблоко":
             actual_cooldown *= (1 - count * 0.05)
         elif item_name == "Золотое Яблоко":
             actual_cooldown *= (1 - count * 0.10)
-    actual_cooldown = max(0.1, actual_cooldown)
+    actual_cooldown = max(0, actual_cooldown)
     can_use, remaining = check_cooldown(data['fat_cooldown_time'], actual_cooldown)
     if not can_use:
         embed = discord.Embed(title="⏳ Подождите!", description=f"{member.mention}, вы уже использовали команду недавно!", color=0xff0000)
@@ -1579,29 +1476,26 @@ async def fat_command(ctx):
         await ctx.send(embed=embed)
         return
     prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
+    fat_plus_bonus = get_fat_plus_bonus(data.get('fat_plus_upgrade', 0))
+    jackpot_bonus = get_jackpot_bonus(data.get('jackpot_upgrade', 0))
     change, was_minus, new_plus, new_minus, new_pity, was_jackpot = get_change_with_pity_and_jackpot(
         data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
-        data.get('luck_upgrade', 0), prestige_bonus, items_dict, data['current_number'])
-    temp_number = data['current_number'] + change
-    update_user_data(guild_id, user_id, number=temp_number)
+        data.get('luck_upgrade', 0), prestige_bonus, fat_plus_bonus, jackpot_bonus, items_dict, data['current_number'])
+    new_number = data['current_number'] + change
+    update_user_data(guild_id, user_id, number=new_number, consecutive_plus=new_plus, consecutive_minus=new_minus, jackpot_pity=new_pity, fat_cooldown_time=datetime.now())
     levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
-    final_data = get_user_data(guild_id, user_id, user_name)
-    final_number = final_data['current_number']
-    update_user_data(guild_id, user_id, user_name=user_name, consecutive_plus=new_plus, consecutive_minus=new_minus, jackpot_pity=new_pity, fat_cooldown_time=datetime.now())
     await update_user_nick(guild_id, user_id, user_name)
-    rank_name, rank_emoji = get_rank(final_number)
-    embed_color = 0xffd700 if was_jackpot else (0xff9933 if final_number >= 0 else 0x66ccff)
+    rank_name, rank_emoji = get_rank(new_number)
+    embed_color = 0xffd700 if was_jackpot else (0xff9933 if new_number >= 0 else 0x66ccff)
     embed_title = "💰 ДЖЕКПОТ! 💰" if was_jackpot else "🍔 Набор массы"
-    embed = discord.Embed(title=embed_title, description=f"**{member.mention}** теперь весит **{abs(final_number)}kg** на сервере **{ctx.guild.name}**!", color=embed_color)
+    embed = discord.Embed(title=embed_title, description=f"**{member.mention}** теперь весит **{abs(new_number)}kg** на сервере **{ctx.guild.name}**!", color=embed_color)
     if was_jackpot:
         embed.add_field(name="💰 ДЖЕКПОТ!", value=f"+{change} кг", inline=True)
     elif change > 0:
         embed.add_field(name="📈 Изменение", value=f"+{change} кг", inline=True)
     elif change < 0:
         embed.add_field(name="📉 Изменение", value=f"{change} кг", inline=True)
-    else:
-        embed.add_field(name="⚖️ Изменение", value="0 кг", inline=True)
-    embed.add_field(name="🍖 Текущий вес", value=f"{final_number}kg", inline=True)
+    embed.add_field(name="🍖 Текущий вес", value=f"{new_number}kg", inline=True)
     embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
     if levels_gained > 0:
         embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", inline=False)
@@ -1614,10 +1508,7 @@ async def fat_case_command(ctx):
     member = ctx.author
     user_id = str(member.id)
     user_name = member.name
-    
     data = get_user_data(guild_id, user_id, user_name)
-    
-    # Проверка активного кейса
     if data.get('active_case_message_id'):
         try:
             channel = bot.get_channel(int(data['active_case_channel_id'])) if data.get('active_case_channel_id') else None
@@ -1627,42 +1518,31 @@ async def fat_case_command(ctx):
                     if old_msg:
                         time_since = datetime.now() - old_msg.created_at.replace(tzinfo=None)
                         if time_since.total_seconds() < 120:
-                            embed = discord.Embed(title="⚠️ Кейс уже открыт!", description=f"{member.mention}, у вас уже есть активный кейс!\nСначала завершите или дождитесь таймаута предыдущего.", color=0xffaa00)
+                            embed = discord.Embed(title="⚠️ Кейс уже открыт!", description=f"{member.mention}, у вас уже есть активный кейс!", color=0xffaa00)
                             await ctx.send(embed=embed)
                             return
                 except:
                     pass
         except:
             pass
-    
-    # Получаем количество кейсов
     daily_count = data.get('daily_case_count', 0)
     cases_dict = data.get('cases_dict', {}).copy()
-    
     case_to_open = None
     case = None
-    
-    # Сначала проверяем ежедневные кейсы
     if daily_count > 0:
         case_to_open = "daily"
         case = CASES["daily"]
     else:
-        # Потом платные кейсы
         for case_id, count in cases_dict.items():
             if count > 0:
                 case_to_open = case_id
                 case = CASES[case_id]
                 break
-    
     if not case_to_open:
         embed = discord.Embed(title="📭 Нет кейсов!", description=f"{member.mention}, у вас нет кейсов для открытия!\n\nКупить кейсы можно в магазине (`!магазин`)", color=0xff0000)
         await ctx.send(embed=embed)
         return
-    
-    # Запоминаем, какой кейс собираемся открыть
     update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=case_to_open)
-    
-    # Собираем эмодзи для анимации
     prize_emojis = []
     for prize in case["prizes"]:
         if "emoji" in prize:
@@ -1690,39 +1570,27 @@ async def fat_case_command(ctx):
             emoji = "🎁"
         if emoji not in prize_emojis:
             prize_emojis.append(emoji)
-    
     case_emoji = case["emoji"]
-    case_embed = discord.Embed(
-        title=f"{case_emoji} **{case['name']}** {case_emoji}",
-        description=f"{member.mention}, у вас есть кейс!\n\n**Нажмите на 🖱️ чтобы открыть**\n**Нажмите на ❌ чтобы отменить**",
-        color=0xffaa00
-    )
-    case_embed.set_footer(text="У вас 30 секунд чтобы открыть кейс!")
+    case_embed = discord.Embed(title=f"{case_emoji} **{case['name']}** {case_emoji}", description=f"{member.mention}, у вас есть кейс!\n\n**Нажмите на 🖱️ чтобы открыть**\n**Нажмите на ❌ чтобы отменить**", color=0xffaa00)
+    case_embed.set_footer(text="У вас 30 секунд!")
     case_msg = await ctx.send(embed=case_embed)
     await case_msg.add_reaction("🖱️")
     await case_msg.add_reaction("❌")
     update_user_data(guild_id, user_id, active_case_message_id=str(case_msg.id), active_case_channel_id=str(ctx.channel.id))
-    
     def check(reaction, user):
         return user == ctx.author and str(reaction.emoji) in ["🖱️", "❌"] and reaction.message.id == case_msg.id
-    
     try:
         reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
-        
-        # Отмена
         if str(reaction.emoji) == "❌":
             update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None)
             try:
                 await case_msg.clear_reactions()
             except:
                 pass
-            cancel_embed = discord.Embed(title="❌ Отмена", description=f"{member.mention}, вы отменили открытие кейса. Кейс сохранён в инвентаре!", color=0xffaa00)
+            cancel_embed = discord.Embed(title="❌ Отмена", description=f"{member.mention}, вы отменили открытие. Кейс сохранён!", color=0xffaa00)
             await case_msg.edit(embed=cancel_embed)
             return
-        
-        # Списываем кейс
         current_data = get_user_data(guild_id, user_id, user_name)
-        
         if case_to_open == "daily":
             current_daily = current_data.get('daily_case_count', 0)
             if current_daily <= 0:
@@ -1740,21 +1608,15 @@ async def fat_case_command(ctx):
                 return
             current_cases[case_to_open] -= 1
             update_user_data(guild_id, user_id, cases_dict=current_cases)
-        
         try:
             await case_msg.clear_reactions()
         except:
             pass
-        
-        # Получаем приз
         prestige_luck = get_prestige_luck(current_data.get('prestige', 0))
         luck_upgrade = current_data.get('luck_upgrade', 0)
-        prize = open_case(case_to_open, prestige_luck, luck_upgrade)
-        update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None, last_case_prize=None)
-        
-        # Анимация
+        case_plus_bonus = get_case_plus_bonus(current_data.get('case_plus_upgrade', 0))
+        prize = open_case(case_to_open, prestige_luck, luck_upgrade, case_plus_bonus)
         line = [random.choice(prize_emojis) for _ in range(100)]
-        
         if "emoji" in prize:
             prize_emoji = prize["emoji"]
         elif prize["value"] == "rotten_leg":
@@ -1778,39 +1640,31 @@ async def fat_case_command(ctx):
                 prize_emoji = "💥"
         else:
             prize_emoji = "🎁"
-        
         line[56] = prize_emoji
         anim_embed = discord.Embed(title=f"🎰 **{case['name']}** 🎰", description="", color=0xffaa00)
-        animation_frames = [(1, 5), (2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 39), (9, 43), (10, 47), (11, 50), (12, 52), (13, 54), (14, 55), (15, 55), (16, 55), (17, 56), (18, 56)]
-        
+        frames = [(1,5),(2,10),(3,15),(4,20),(5,25),(6,30),(7,35),(8,39),(9,43),(10,47),(11,50),(12,52),(13,54),(14,55),(15,55),(16,55),(17,56),(18,56)]
         animations_enabled = are_animations_enabled(current_data)
-        
         if animations_enabled:
-            for frame_num, center_pos in animation_frames:
-                visible = line[center_pos-4:center_pos+5]
-                display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-                anim_embed.description = f"**{display_line}**"
+            for _, pos in frames:
+                vis = line[pos-4:pos+5]
+                disp = "".join(vis[:4]) + "|" + vis[4] + "|" + "".join(vis[5:])
+                anim_embed.description = f"**{disp}**"
                 await case_msg.edit(embed=anim_embed)
                 await asyncio.sleep(0.5)
         else:
-            visible = line[52:61]
-            display_line = "".join(visible[:4]) + "|" + visible[4] + "|" + "".join(visible[5:])
-            anim_embed.description = f"**{display_line}**\n\n**РЕЗУЛЬТАТ!**"
+            vis = line[52:61]
+            disp = "".join(vis[:4]) + "|" + vis[4] + "|" + "".join(vis[5:])
+            anim_embed.description = f"**{disp}**\n\n**РЕЗУЛЬТАТ!**"
             await case_msg.edit(embed=anim_embed)
             await asyncio.sleep(1)
-        
-        # Обработка приза и опыта
         current_data = get_user_data(guild_id, user_id, user_name)
         items_dict = get_user_items(current_data['item_counts'])
         prize_value = prize["value"]
         prestige_bonus = get_prestige_bonus(current_data.get('prestige', 0))
         has_water = items_dict.get("Стакан воды", 0) > 0
-        
-        # Начисляем опыт (может повысить уровень)
         levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_CASE)
         after_xp_data = get_user_data(guild_id, user_id, user_name)
         after_xp_weight = after_xp_data['current_number']
-        
         if prize_value == "rotten_leg":
             items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
             new_number = after_xp_weight
@@ -1833,32 +1687,17 @@ async def fat_case_command(ctx):
             new_number = after_xp_weight + prize_value
             result_display = f"🎉 **{prize_value:+d} кг** {prize_emoji}"
             result_color = 0xffaa00
-        
         update_data = {'number': new_number, 'user_name': user_name, 'item_counts': save_user_items(items_dict)}
         update_user_data(guild_id, user_id, **update_data)
         await update_user_nick(guild_id, user_id, user_name)
-        
         rank_name, rank_emoji = get_rank(new_number)
-        
-        final_embed = discord.Embed(
-            title=f"{case['emoji']} Открытие {case['name']}",
-            description=f"**{member.mention}** открыл кейс и получил:",
-            color=result_color
-        )
+        final_embed = discord.Embed(title=f"{case['emoji']} Открытие {case['name']}", description=f"**{member.mention}** открыл кейс и получил:", color=result_color)
         final_embed.add_field(name="🎁 Приз", value=result_display, inline=True)
-        
         if not isinstance(prize_value, str) and prize_value not in ["rotten_leg", "water"]:
             final_embed.add_field(name="🍖 Новый вес", value=f"{new_number}kg", inline=True)
             final_embed.add_field(name="🎖️ Звание", value=f"{rank_emoji} {rank_name}", inline=True)
-        
         if levels_gained > 0:
-            final_embed.add_field(
-                name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐",
-                value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!",
-                inline=False
-            )
-        
-        # Показываем остаток кейсов
+            final_embed.add_field(name="⭐ **ПОВЫШЕНИЕ УРОВНЯ!** ⭐", value=f"+{kg_reward} кг за {levels_gained} уровень(ей)!\nТеперь у вас **{new_level}** уровень!", inline=False)
         if case_to_open == "daily":
             remaining = after_xp_data.get('daily_case_count', 0)
             if remaining > 0:
@@ -1867,23 +1706,17 @@ async def fat_case_command(ctx):
             remaining = after_xp_data.get('cases_dict', {}).get(case_to_open, 0)
             if remaining > 0:
                 final_embed.add_field(name="📦 Осталось кейсов", value=f"{case['emoji']} {case['name']}: {remaining} шт", inline=False)
-        
         final_embed.set_footer(text=f"{case['emoji']} Удачи в следующий раз!")
         await ctx.send(embed=final_embed)
-        
     except asyncio.TimeoutError:
         update_user_data(guild_id, user_id, active_case_message_id=None, active_case_channel_id=None, last_case_type=None)
         try:
             await case_msg.clear_reactions()
         except:
             pass
-        timeout_embed = discord.Embed(
-            title="⏰ Время вышло",
-            description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён в инвентаре!",
-            color=0xff0000
-        )
+        timeout_embed = discord.Embed(title="⏰ Время вышло", description=f"{member.mention}, вы не открыли кейс вовремя. Кейс сохранён в инвентаре!", color=0xff0000)
         await case_msg.edit(embed=timeout_embed)
-        
+
 @bot.command(name='профиль')
 async def profile_command(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -1929,6 +1762,11 @@ async def profile_command(ctx, member: discord.Member = None):
         income_level = data.get('income_upgrade', 0)
         prestige_level = data.get('prestige', 0)
         auto_fat_level = data.get('auto_fat_level', 0)
+        jackpot_level = data.get('jackpot_upgrade', 0)
+        fat_plus_level = data.get('fat_plus_upgrade', 0)
+        case_plus_level = data.get('case_plus_upgrade', 0)
+        xp_multiplier_level = data.get('xp_multiplier_upgrade', 0)
+        auto_open_cases = data.get('auto_open_cases', 0)
         
         fat_cd_cost = get_upgrade_cost("fat_cd", fat_cd_level)
         case_cd_cost = get_upgrade_cost("case_cd", case_cd_level)
@@ -1936,16 +1774,23 @@ async def profile_command(ctx, member: discord.Member = None):
         income_cost = get_upgrade_cost("income", income_level)
         prestige_cost = get_upgrade_cost("prestige", prestige_level)
         auto_fat_cost = get_upgrade_cost("auto_fat", auto_fat_level)
+        jackpot_cost = get_upgrade_cost("jackpot", jackpot_level)
+        fat_plus_cost = get_upgrade_cost("fat_plus", fat_plus_level)
+        case_plus_cost = get_upgrade_cost("case_plus", case_plus_level)
+        xp_multiplier_cost = get_upgrade_cost("xp_multiplier", xp_multiplier_level)
         
         fat_cd_bonus = int(get_fat_cd_reduction(fat_cd_level))
         case_cd_bonus = int(get_case_cd_reduction(case_cd_level))
         auto_fat_interval = get_auto_fat_interval(auto_fat_level)
         auto_fat_text = f"{auto_fat_interval} ч" if auto_fat_interval else "Не куплен"
+        jackpot_bonus = get_jackpot_bonus(jackpot_level) * 100
+        fat_plus_bonus = (get_fat_plus_bonus(fat_plus_level) - 1) * 100
+        case_plus_bonus = (get_case_plus_bonus(case_plus_level) - 1) * 100
+        xp_multiplier_bonus = (get_xp_multiplier_bonus(xp_multiplier_level) - 1) * 100
         
         can_use_fat, fat_remaining = check_cooldown(data['fat_cooldown_time'], actual_fat_cooldown)
         fat_status = f"✅ Доступен" if can_use_fat else f"⏳ {format_time(fat_remaining)}"
         
-        # Статус ежедневных кейсов
         daily_count = data.get('daily_case_count', 0)
         if daily_count > 0:
             case_status = f"✅ {daily_count} шт в инвентаре"
@@ -1999,6 +1844,9 @@ async def profile_command(ctx, member: discord.Member = None):
         if data.get('auto_fat_level', 0) > 0:
             embed.add_field(name="🤖 **АВТО-ЖИР**", value=f"{auto_fat_level} уровень (каждые {auto_fat_text})", inline=True)
         
+        if auto_open_cases == 1 and data.get('prestige', 0) >= AUTO_OPEN_CASES_REQUIRED_PRESTIGE:
+            embed.add_field(name="🔄 **АВТО-ОТКРЫТИЕ КЕЙСОВ**", value="✅ Включено", inline=True)
+        
         stats_text = ""
         
         fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
@@ -2022,6 +1870,26 @@ async def profile_command(ctx, member: discord.Member = None):
         auto_fat_max_text = " (МАКС)" if auto_fat_level >= AUTO_FAT_MAX_LEVEL else ""
         stats_text += f"{auto_fat_color} **🤖 Авто-жир** — ур.{auto_fat_level}{auto_fat_max_text} (каждые {auto_fat_text})\n   Стоимость: `{auto_fat_cost} кг`\n\n"
         
+        jackpot_color = "🟢" if data['current_number'] >= jackpot_cost else "🔴"
+        jackpot_max_text = " (МАКС)" if jackpot_level >= JACKPOT_MAX_LEVEL else ""
+        stats_text += f"{jackpot_color} **💰 Шанс джекпота** — ур.{jackpot_level}{jackpot_max_text} (+{jackpot_bonus:.2f}% к шансу)\n   Стоимость: `{jackpot_cost} кг`\n\n"
+        
+        fat_plus_color = "🟢" if data['current_number'] >= fat_plus_cost else "🔴"
+        fat_plus_max_text = " (МАКС)" if fat_plus_level >= FAT_PLUS_MAX_LEVEL else ""
+        stats_text += f"{fat_plus_color} **📈 Усиление !жир** — ур.{fat_plus_level}{fat_plus_max_text} (+{fat_plus_bonus:.0f}% к плюсу)\n   Стоимость: `{fat_plus_cost} кг`\n\n"
+        
+        case_plus_color = "🟢" if data['current_number'] >= case_plus_cost else "🔴"
+        case_plus_max_text = " (МАКС)" if case_plus_level >= CASE_PLUS_MAX_LEVEL else ""
+        stats_text += f"{case_plus_color} **🎁 Усиление кейсов** — ур.{case_plus_level}{case_plus_max_text} (+{case_plus_bonus:.0f}% к призам)\n   Стоимость: `{case_plus_cost} кг`\n\n"
+        
+        xp_multiplier_color = "🟢" if data['current_number'] >= xp_multiplier_cost else "🔴"
+        xp_multiplier_max_text = " (МАКС)" if xp_multiplier_level >= XP_MULTIPLIER_MAX_LEVEL else ""
+        stats_text += f"{xp_multiplier_color} **⭐ Множитель опыта** — ур.{xp_multiplier_level}{xp_multiplier_max_text} (+{xp_multiplier_bonus:.0f}% к опыту)\n   Стоимость: `{xp_multiplier_cost} кг`\n\n"
+        
+        auto_open_color = "🟢" if data['current_number'] >= AUTO_OPEN_CASES_PRICE and data.get('prestige', 0) >= AUTO_OPEN_CASES_REQUIRED_PRESTIGE else "🔴"
+        auto_open_status = "✅ Включено" if auto_open_cases == 1 else "❌ Выключено"
+        stats_text += f"{auto_open_color} **🔄 Авто-открытие кейсов** — {auto_open_status}\n   Стоимость: `{AUTO_OPEN_CASES_PRICE} кг` (требуется {AUTO_OPEN_CASES_REQUIRED_PRESTIGE}+ престиж)\n\n"
+        
         embed.add_field(name="⚡ **ПРОКАЧКА**", value=stats_text, inline=False)
         
         pity_emojis = []
@@ -2034,7 +1902,6 @@ async def profile_command(ctx, member: discord.Member = None):
         if pity_emojis:
             embed.add_field(name="📊 **СЧЁТЧИКИ**", value=" ".join(pity_emojis), inline=True)
         
-        # Отображение кейсов в инвентаре
         cases_text = ""
         daily_count = data.get('daily_case_count', 0)
         if daily_count > 0:
@@ -2056,12 +1923,16 @@ async def profile_command(ctx, member: discord.Member = None):
     embed = create_profile_embed(data, animations_status)
     msg = await ctx.send(embed=embed)
     
-    upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
-    for reaction in upgrade_reactions:
+    upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    for reaction in upgrade_reactions[:10]:
         await msg.add_reaction(reaction)
     await msg.add_reaction("🎬")
     
-    upgrade_map = {"1️⃣": "fat_cd", "2️⃣": "case_cd", "3️⃣": "luck", "4️⃣": "income", "5️⃣": "prestige", "6️⃣": "auto_fat"}
+    upgrade_map = {
+        "1️⃣": "fat_cd", "2️⃣": "case_cd", "3️⃣": "luck", "4️⃣": "income",
+        "5️⃣": "prestige", "6️⃣": "auto_fat", "7️⃣": "jackpot", "8️⃣": "fat_plus",
+        "9️⃣": "case_plus", "🔟": "xp_multiplier"
+    }
     
     def check(reaction, user):
         return user == ctx.author and reaction.message.id == msg.id and str(reaction.emoji) in upgrade_reactions + ["🎬"]
@@ -2089,10 +1960,13 @@ async def profile_command(ctx, member: discord.Member = None):
                     pass
                 continue
             
-            if emoji not in upgrade_map:
+            if emoji == "🔟":
+                upgrade_type = "xp_multiplier"
+            elif emoji in upgrade_map:
+                upgrade_type = upgrade_map[emoji]
+            else:
                 continue
             
-            upgrade_type = upgrade_map[emoji]
             current_data = get_user_data(guild_id, user_id, user_name)
             
             if upgrade_type == "fat_cd":
@@ -2131,6 +2005,44 @@ async def profile_command(ctx, member: discord.Member = None):
                     await temp_msg.delete()
                     continue
                 cost = get_upgrade_cost("auto_fat", current_level)
+            elif upgrade_type == "jackpot":
+                current_level = current_data.get('jackpot_upgrade', 0)
+                if current_level >= JACKPOT_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Шанс джекпота уже на максимальном ({JACKPOT_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                cost = get_upgrade_cost("jackpot", current_level)
+            elif upgrade_type == "fat_plus":
+                current_level = current_data.get('fat_plus_upgrade', 0)
+                if current_level >= FAT_PLUS_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Усиление !жир уже на максимальном ({FAT_PLUS_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                cost = get_upgrade_cost("fat_plus", current_level)
+            elif upgrade_type == "case_plus":
+                current_level = current_data.get('case_plus_upgrade', 0)
+                if current_level >= CASE_PLUS_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Усиление кейсов уже на максимальном ({CASE_PLUS_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                cost = get_upgrade_cost("case_plus", current_level)
+            elif upgrade_type == "xp_multiplier":
+                current_level = current_data.get('xp_multiplier_upgrade', 0)
+                if current_level >= XP_MULTIPLIER_MAX_LEVEL:
+                    error_embed = discord.Embed(title="❌ Максимальный уровень!", description=f"Множитель опыта уже на максимальном ({XP_MULTIPLIER_MAX_LEVEL}) уровне!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                cost = get_upgrade_cost("xp_multiplier", current_level)
+            else:
+                continue
             
             if current_data['current_number'] < cost:
                 error_embed = discord.Embed(title="❌ Недостаточно кг!", description=f"Для улучшения нужно **{cost} кг**, у вас: **{current_data['current_number']} кг**", color=0xff0000)
@@ -2147,7 +2059,7 @@ async def profile_command(ctx, member: discord.Member = None):
                                f"• Вес сбросится до 0\n"
                                f"• Все предметы и кейсы исчезнут\n"
                                f"• Опыт и уровень сохранятся\n"
-                               f"• Улучшения (КД, удача, прибавка, авто-жир) **СОХРАНЯТСЯ**\n"
+                               f"• Улучшения (КД, удача, прибавка, авто-жир, шанс джекпота, усиления, множитель опыта) **СОХРАНЯТСЯ**\n"
                                f"• Престиж увеличится на 1\n\n"
                                f"Напишите `да` в течение 15 секунд для подтверждения.",
                     color=0xff5500
@@ -2170,8 +2082,13 @@ async def profile_command(ctx, member: discord.Member = None):
                 current_luck = current_data.get('luck_upgrade', 0)
                 current_income = current_data.get('income_upgrade', 0)
                 current_auto_fat = current_data.get('auto_fat_level', 0)
+                current_jackpot = current_data.get('jackpot_upgrade', 0)
+                current_fat_plus = current_data.get('fat_plus_upgrade', 0)
+                current_case_plus = current_data.get('case_plus_upgrade', 0)
+                current_xp_multiplier = current_data.get('xp_multiplier_upgrade', 0)
                 current_xp = current_data.get('user_xp', 0)
                 current_user_level = current_data.get('user_level', 0)
+                current_auto_open = current_data.get('auto_open_cases', 0)
                 
                 update_user_data(
                     guild_id, user_id,
@@ -2187,6 +2104,11 @@ async def profile_command(ctx, member: discord.Member = None):
                     luck_upgrade=current_luck,
                     income_upgrade=current_income,
                     auto_fat_level=current_auto_fat,
+                    jackpot_upgrade=current_jackpot,
+                    fat_plus_upgrade=current_fat_plus,
+                    case_plus_upgrade=current_case_plus,
+                    xp_multiplier_upgrade=current_xp_multiplier,
+                    auto_open_cases=current_auto_open,
                     consecutive_plus=0,
                     consecutive_minus=0,
                     jackpot_pity=0,
@@ -2226,6 +2148,38 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
+            if upgrade_type == "auto_open":
+                if current_data.get('prestige', 0) < AUTO_OPEN_CASES_REQUIRED_PRESTIGE:
+                    error_embed = discord.Embed(title="❌ Требуется престиж!", description=f"Для покупки авто-открытия кейсов требуется {AUTO_OPEN_CASES_REQUIRED_PRESTIGE}+ уровень престижа!", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(2)
+                    await temp_msg.delete()
+                    continue
+                
+                current_auto_open = current_data.get('auto_open_cases', 0)
+                new_auto_open = 1 if current_auto_open == 0 else 0
+                new_number = current_data['current_number'] - AUTO_OPEN_CASES_PRICE
+                
+                update_user_data(guild_id, user_id, number=new_number, auto_open_cases=new_auto_open)
+                
+                fresh_data = get_user_data(guild_id, user_id, user_name)
+                current_anim = fresh_data.get('animations_enabled', 1)
+                new_embed = create_profile_embed(fresh_data, current_anim)
+                await msg.edit(embed=new_embed)
+                
+                status_text = "включено ✅" if new_auto_open == 1 else "выключено ❌"
+                success_embed = discord.Embed(
+                    title="✅ **АВТО-ОТКРЫТИЕ КЕЙСОВ**",
+                    description=f"{target.mention} {status_text}!\n\n"
+                               f"**Потрачено:** {AUTO_OPEN_CASES_PRICE} кг\n"
+                               f"**Осталось:** {new_number} кг",
+                    color=0x00ff00
+                )
+                temp_msg = await ctx.send(embed=success_embed)
+                await asyncio.sleep(2)
+                await temp_msg.delete()
+                continue
+            
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
@@ -2234,7 +2188,11 @@ async def profile_command(ctx, member: discord.Member = None):
                 next_time = datetime.now() + timedelta(hours=interval) if interval else None
                 update_user_data(guild_id, user_id, number=new_number, auto_fat_level=new_level, next_auto_fat_time=next_time)
             else:
-                update_field = {"fat_cd": "fat_cd_upgrade", "case_cd": "case_cd_upgrade", "luck": "luck_upgrade", "income": "income_upgrade"}[upgrade_type]
+                update_field = {
+                    "fat_cd": "fat_cd_upgrade", "case_cd": "case_cd_upgrade", "luck": "luck_upgrade",
+                    "income": "income_upgrade", "jackpot": "jackpot_upgrade", "fat_plus": "fat_plus_upgrade",
+                    "case_plus": "case_plus_upgrade", "xp_multiplier": "xp_multiplier_upgrade"
+                }[upgrade_type]
                 update_user_data(guild_id, user_id, number=new_number, **{update_field: new_level})
             
             try:
@@ -2264,6 +2222,18 @@ async def profile_command(ctx, member: discord.Member = None):
             elif upgrade_type == "auto_fat":
                 interval = get_auto_fat_interval(new_level)
                 bonus_text = f"Авто-жир будет срабатывать каждые {interval} час(ов)"
+            elif upgrade_type == "jackpot":
+                new_bonus = get_jackpot_bonus(new_level) * 100
+                bonus_text = f"Шанс джекпота увеличен на +{new_bonus:.2f}%"
+            elif upgrade_type == "fat_plus":
+                new_bonus = (get_fat_plus_bonus(new_level) - 1) * 100
+                bonus_text = f"Плюс от !жир увеличен на +{new_bonus:.0f}%"
+            elif upgrade_type == "case_plus":
+                new_bonus = (get_case_plus_bonus(new_level) - 1) * 100
+                bonus_text = f"Призы из кейсов увеличены на +{new_bonus:.0f}%"
+            elif upgrade_type == "xp_multiplier":
+                new_bonus = (get_xp_multiplier_bonus(new_level) - 1) * 100
+                bonus_text = f"Множитель опыта увеличен до +{new_bonus:.0f}%"
             
             success_embed = discord.Embed(
                 title="✅ **УЛУЧШЕНИЕ ПОЛУЧЕНО!** ✅",
@@ -2301,18 +2271,15 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         return
     challenger_data = get_user_data(guild_id, str(challenger.id), challenger.name)
     opponent_data = get_user_data(guild_id, str(opponent.id), opponent.name)
-    
     if not can_duel(challenger_data):
         await ctx.send(f"❌ {challenger.mention}, вы уже участвуете в дуэли!")
         return
     if not can_duel(opponent_data):
         await ctx.send(f"❌ {opponent.mention} уже участвует в дуэли!")
         return
-    
     challenger_anim = are_animations_enabled(challenger_data)
     opponent_anim = are_animations_enabled(opponent_data)
     both_animations_on = challenger_anim and opponent_anim
-    
     if amount is None or amount.lower() == "все":
         duel_amount = min(challenger_data['current_number'], opponent_data['current_number'])
         amount_text = f"**всё ({duel_amount}кг)**"
@@ -2326,35 +2293,22 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
         except ValueError:
             await ctx.send("❌ Укажите корректное число кг или 'все'!")
             return
-    
     if challenger_data['current_number'] < duel_amount:
         await ctx.send(f"❌ У вас недостаточно кг! Есть: {challenger_data['current_number']}кг, нужно: {duel_amount}кг")
         return
     if opponent_data['current_number'] < duel_amount:
         await ctx.send(f"❌ У {opponent.mention} недостаточно кг! У него: {opponent_data['current_number']}кг, нужно: {duel_amount}кг")
         return
-    
-    embed = discord.Embed(
-        title="🔫 **ВЫЗОВ НА ДУЭЛЬ!** 🔫",
-        description=f"{challenger.mention} вызывает {opponent.mention} на дуэль!\n\n"
-                   f"**Ставка:** {amount_text}\n\n"
-                   f"Оба должны нажать ✅ чтобы принять\n"
-                   f"Если кто-то нажмёт ❌ - дуэль отменяется",
-        color=0xff5500
-    )
+    embed = discord.Embed(title="🔫 **ВЫЗОВ НА ДУЭЛЬ!** 🔫", description=f"{challenger.mention} вызывает {opponent.mention} на дуэль!\n\n**Ставка:** {amount_text}\n\nОба должны нажать ✅ чтобы принять\nЕсли кто-то нажмёт ❌ - дуэль отменяется", color=0xff5500)
     embed.set_footer(text="У вас 30 секунд чтобы принять решение!")
-    
     duel_msg = await ctx.send(embed=embed)
     await duel_msg.add_reaction("✅")
     await duel_msg.add_reaction("❌")
-    
     current_time = datetime.now()
     update_user_data(guild_id, str(challenger.id), duel_active=1, duel_opponent=str(opponent.id), duel_amount=duel_amount, duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=1, duel_start_time=current_time)
     update_user_data(guild_id, str(opponent.id), duel_active=1, duel_opponent=str(challenger.id), duel_amount=duel_amount, duel_message_id=str(duel_msg.id), duel_channel_id=str(ctx.channel.id), duel_initiator=0, duel_start_time=current_time)
-    
     accepted_users = set()
     duel_cancelled = False
-    
     def check(reaction, user):
         nonlocal duel_cancelled
         if user.id not in [challenger.id, opponent.id]:
@@ -2365,7 +2319,6 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             duel_cancelled = True
             return True
         return str(reaction.emoji) == "✅"
-    
     try:
         while len(accepted_users) < 2 and not duel_cancelled:
             reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
@@ -2378,16 +2331,13 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
                 return
             if str(reaction.emoji) == "✅" and user.id not in accepted_users:
                 accepted_users.add(user.id)
-        
         if duel_cancelled:
             return
-        
         await duel_msg.clear_reactions()
-        
         if both_animations_on:
             result = await duel_animation(duel_msg, challenger, opponent)
         else:
-            result = random.randint(0, 2)
+            result = random.randint(0,2)
             c_name = challenger.display_name[:15] + "..." if len(challenger.display_name) > 15 else challenger.display_name
             o_name = opponent.display_name[:15] + "..." if len(opponent.display_name) > 15 else opponent.display_name
             if result == 0:
@@ -2399,14 +2349,9 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             else:
                 result_text = "🤝 **НИЧЬЯ!** 🤝"
                 result_color = 0x9b59b6
-            result_embed = discord.Embed(
-                title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
-                description=f"**{c_name}** ⚔️ **{o_name}**\n\n{result_text}",
-                color=result_color
-            )
+            result_embed = discord.Embed(title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️", description=f"**{c_name}** ⚔️ **{o_name}**\n\n{result_text}", color=result_color)
             await duel_msg.edit(embed=result_embed)
             await asyncio.sleep(1.5)
-        
         if result == 0:
             winner, loser = challenger, opponent
             winner_new_weight = challenger_data['current_number'] + duel_amount
@@ -2431,21 +2376,13 @@ async def duel_command(ctx, opponent: discord.Member, amount: str = None):
             update_user_data(guild_id, str(challenger.id), number=challenger_data['current_number'])
             update_user_data(guild_id, str(opponent.id), number=opponent_data['current_number'])
             result_description = f"🤝 **НИЧЬЯ!** 🤝\n\n📊 **Результаты:**\n{challenger.mention}: {challenger_data['current_number']}кг → **{challenger_data['current_number']}кг** (без изменений)\n{opponent.mention}: {opponent_data['current_number']}кг → **{opponent_data['current_number']}кг** (без изменений)"
-        
         update_user_data(guild_id, str(challenger.id), duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
         update_user_data(guild_id, str(opponent.id), duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
-        
         await update_user_nick(guild_id, str(winner.id) if result != 2 else str(challenger.id))
         await update_user_nick(guild_id, str(loser.id) if result != 2 else str(opponent.id))
-        
-        result_embed = discord.Embed(
-            title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️",
-            description=result_description,
-            color=0xffd700 if result == 0 else (0xc0c0c0 if result == 1 else 0x9b59b6)
-        )
+        result_embed = discord.Embed(title="⚔️ **ДУЭЛЬ ЗАВЕРШЕНА!** ⚔️", description=result_description, color=0xffd700 if result == 0 else (0xc0c0c0 if result == 1 else 0x9b59b6))
         result_embed.set_footer(text="⚔️ Следующая дуэль доступна!")
         await ctx.send(embed=result_embed)
-        
     except asyncio.TimeoutError:
         await duel_msg.clear_reactions()
         update_user_data(guild_id, str(challenger.id), duel_active=0, duel_opponent=None, duel_amount=0, duel_message_id=None, duel_channel_id=None, duel_initiator=0, duel_start_time=None)
@@ -2594,10 +2531,8 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
         await ctx.send("❌ Время ожидания истекло. Используйте команду заново!")
         update_user_data(guild_id, str(member.id), upgrade_active=0)
         return
-    
     user_data = get_user_data(guild_id, str(member.id), member.name)
     animations_enabled = are_animations_enabled(user_data)
-    
     if last_command == "upgrade_kg_select":
         amount = int(data['last_command_target'])
         all_items = set([item["name"] for item in SHOP_ITEMS] + list(LEGENDARY_UPGRADE_PRICES.keys()))
@@ -2625,10 +2560,7 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             return
         target_item = possible_upgrades[item_index]
         update_user_data(guild_id, str(member.id), upgrade_active=0)
-        await upgrade_kg_animation(ctx, member, amount, target_item, 
-                                  get_prestige_luck(user_data.get('prestige', 0)), 
-                                  user_data.get('luck_upgrade', 0),
-                                  animations_enabled)
+        await upgrade_kg_animation(ctx, member, amount, target_item, get_prestige_luck(user_data.get('prestige', 0)), user_data.get('luck_upgrade', 0), animations_enabled)
     elif last_command == "upgrade_select":
         source_item = data.get('last_command_target')
         if not source_item:
@@ -2652,10 +2584,7 @@ async def choose_upgrade(ctx, choice: str = None, count: int = 1):
             return
         target_item = possible_upgrades[item_index]
         update_user_data(guild_id, str(member.id), upgrade_active=0)
-        await upgrade_animation(ctx, member, source_item, target_item, 1, 
-                               get_prestige_luck(user_data.get('prestige', 0)), 
-                               user_data.get('luck_upgrade', 0),
-                               animations_enabled)
+        await upgrade_animation(ctx, member, source_item, target_item, 1, get_prestige_luck(user_data.get('prestige', 0)), user_data.get('luck_upgrade', 0), animations_enabled)
     else:
         await ctx.send("❌ Неизвестный тип апгрейда!")
         update_user_data(guild_id, str(member.id), upgrade_active=0)
@@ -2929,18 +2858,12 @@ async def show_inventory(ctx, member: discord.Member = None):
     target = member or ctx.author
     data = get_user_data(ctx.guild.id, str(target.id), target.name)
     embed = discord.Embed(title=f"🎒 Инвентарь - {target.display_name}", color=0x3498db)
-    
-    # Ежедневные кейсы
     daily_count = data.get('daily_case_count', 0)
     if daily_count > 0:
         embed.add_field(name="📦 Ежедневные кейсы", value=f"{daily_count} шт", inline=True)
-    
-    # Авто-жир
     if data.get('auto_fat_level', 0) > 0:
         interval = get_auto_fat_interval(data['auto_fat_level'])
         embed.add_field(name="🤖 Авто-жир", value=f"{data['auto_fat_level']} уровень (каждые {interval} ч)", inline=True)
-    
-    # Платные кейсы
     cases_dict = data.get('cases_dict', {})
     cases_text = ""
     for case_id, count in cases_dict.items():
@@ -2948,8 +2871,6 @@ async def show_inventory(ctx, member: discord.Member = None):
             cases_text += f"{CASES[case_id]['emoji']} {CASES[case_id]['name']}: {count}\n"
     if cases_text:
         embed.add_field(name="📦 Кейсы", value=cases_text, inline=False)
-    
-    # Предметы
     items_dict = get_user_items(data['item_counts'])
     if items_dict:
         items_text = ""
@@ -2967,7 +2888,6 @@ async def show_inventory(ctx, member: discord.Member = None):
         if legendary_items:
             items_text += "**✨ Легендарные предметы:**\n" + "\n".join(legendary_items)
         embed.add_field(name="📦 Предметы", value=items_text, inline=False)
-    
     embed.set_footer(text="💪 Жир, кейсы и предметы!")
     await ctx.send(embed=embed)
 
@@ -3009,7 +2929,7 @@ async def fat_help(ctx):
     embed.add_field(name="⚔️ **ДУЭЛИ**", value="`!дуэль @user [кг/\"все\"]` - вызвать на дуэль\n`!отмена` - отменить текущую дуэль", inline=False)
     embed.add_field(name="🔧 **АПГРЕЙДЫ**", value="`!апгрейд` - улучшить предмет\n`!апгрейдкг [кол-во]` - улучшить кг в предмет\n`!выбрать [номер]` - выбрать цель апгрейда\n`!отменавсё` - отменить все активные действия", inline=False)
     embed.add_field(name="💰 **ЭКОНОМИКА**", value="`!магазин` - магазин предметов\n`!купить [слот] [кол-во]` - купить предмет\n`!продать [предмет] [кол-во]` - продать предмет\n`!продать всё` - продать всё\n`!датьжир [@user] [кол-во]` - передать кг\n`!датьпредмет [@user] [кол-во] [предмет]` - передать предмет", inline=False)
-    embed.add_field(name="⭐ **ХАРАКТЕРИСТИКИ**", value="• **КД !жир** — уменьшает время ожидания\n• **КД кейса** — уменьшает время ожидания кейса\n• **Удача** — повышает шансы в кейсах и апгрейдах\n• **Прибавка** — +5% к доходу от предметов за уровень\n• **Престиж** — +10% ко всем кг, +1% к шансам и +50% к опыту за уровень\n• **Авто-жир** — автоматический !жир", inline=False)
+    embed.add_field(name="⭐ **ХАРАКТЕРИСТИКИ**", value="• **КД !жир** — уменьшает время ожидания\n• **КД кейса** — уменьшает время ожидания кейса\n• **Удача** — повышает шансы в кейсах и апгрейдах\n• **Прибавка** — +5% к доходу от предметов за уровень\n• **Престиж** — +10% ко всем кг, +1% к шансам и +50% к опыту за уровень\n• **Авто-жир** — автоматический !жир\n• **Усиление !жир** — +2% к плюсу за уровень\n• **Усиление кейсов** — +1% к призам за уровень\n• **Шанс джекпота** — +0.05% к шансу за уровень\n• **Множитель опыта** — +1% к опыту за уровень", inline=False)
     embed.add_field(name="🎬 **НАСТРОЙКИ АНИМАЦИЙ**", value="Анимации можно включить/выключить в `!профиль` кнопкой 🎬", inline=False)
     embed.set_footer(text="🔥❄️💰 - следите за показателями!")
     await ctx.send(embed=embed)
@@ -3196,81 +3116,37 @@ async def cancel_all(ctx):
 @bot.command(name='жирглобал')
 async def global_leaderboard(ctx):
     guild_data = []
-    
     for guild in bot.guilds:
         try:
             stats = get_guild_stats(guild.id)
-            
-            guild_data.append({
-                'name': guild.name,
-                'members': stats['total_users'],
-                'total_weight': stats['total_weight'],
-                'avg_weight': stats['avg_weight']
-            })
+            guild_data.append({'name': guild.name, 'members': stats['total_users'], 'total_weight': stats['total_weight'], 'avg_weight': stats['avg_weight']})
         except Exception as e:
             continue
-    
     if not guild_data:
         await ctx.send("📭 Нет данных по серверам!")
         return
-    
     guild_data.sort(key=lambda x: x['total_weight'], reverse=True)
-    
-    embed = discord.Embed(
-        title="🌍 **ГЛОБАЛЬНЫЙ РЕЙТИНГ СЕРВЕРОВ** 🌍",
-        description="Топ серверов по общей массе жира",
-        color=0xffaa00
-    )
-    
+    embed = discord.Embed(title="🌍 **ГЛОБАЛЬНЫЙ РЕЙТИНГ СЕРВЕРОВ** 🌍", description="Топ серверов по общей массе жира", color=0xffaa00)
     leaderboard_text = ""
     for i, guild in enumerate(guild_data[:10], 1):
-        if i == 1:
-            place_icon = "🥇"
-        elif i == 2:
-            place_icon = "🥈"
-        elif i == 3:
-            place_icon = "🥉"
-        else:
-            place_icon = "🔹"
-        
-        if guild['total_weight'] >= 1000:
-            weight_display = f"{guild['total_weight']/1000:.1f}т"
-        else:
-            weight_display = f"{guild['total_weight']}кг"
-        
-        leaderboard_text += f"{place_icon} **{i}.** {guild['name'][:30]}\n"
-        leaderboard_text += f"   📦 **{weight_display}** | 👥 {guild['members']} уч.\n"
-        leaderboard_text += f"   📊 Средний вес: {guild['avg_weight']:.0f}кг\n\n"
-        
+        place_icon = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "🔹"
+        weight_display = f"{guild['total_weight']/1000:.1f}т" if guild['total_weight'] >= 1000 else f"{guild['total_weight']}кг"
+        leaderboard_text += f"{place_icon} **{i}.** {guild['name'][:30]}\n   📦 **{weight_display}** | 👥 {guild['members']} уч.\n   📊 Средний вес: {guild['avg_weight']:.0f}кг\n\n"
         if len(leaderboard_text) > 1900:
             leaderboard_text += "... и ещё несколько серверов"
             break
-    
     embed.description = leaderboard_text
-    
     total_servers = len(guild_data)
     total_global_weight = sum(g['total_weight'] for g in guild_data)
     total_global_members = sum(g['members'] for g in guild_data)
-    
     if total_global_weight >= 1000000:
         global_display = f"{total_global_weight/1000000:.1f}млн кг"
     elif total_global_weight >= 1000:
         global_display = f"{total_global_weight/1000:.1f}т"
     else:
         global_display = f"{total_global_weight}кг"
-    
-    embed.add_field(
-        name="📊 **ГЛОБАЛЬНАЯ СТАТИСТИКА**",
-        value=(
-            f"🌍 Серверов: **{total_servers}**\n"
-            f"👥 Участников: **{total_global_members}**\n"
-            f"⚖️ Всего массы: **{global_display}**"
-        ),
-        inline=False
-    )
-    
+    embed.add_field(name="📊 **ГЛОБАЛЬНАЯ СТАТИСТИКА**", value=f"🌍 Серверов: **{total_servers}**\n👥 Участников: **{total_global_members}**\n⚖️ Всего массы: **{global_display}**", inline=False)
     embed.set_footer(text="🏆 Топ-10 серверов")
-    
     await ctx.send(embed=embed)
 
 @bot.event
@@ -3282,7 +3158,7 @@ async def on_ready():
     bot.loop.create_task(passive_income_loop())
     bot.loop.create_task(snatcher_loop())
     bot.loop.create_task(apply_hourly_effects())
-    bot.loop.create_task(daily_case_accumulation_loop())  # ← ЭТА СТРОКА ДОЛЖНА БЫТЬ
+    bot.loop.create_task(daily_case_accumulation_loop())
 
 @bot.event
 async def on_command_error(ctx, error):
