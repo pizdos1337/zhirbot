@@ -1844,9 +1844,6 @@ async def profile_command(ctx, member: discord.Member = None):
         if data.get('auto_fat_level', 0) > 0:
             embed.add_field(name="🤖 **АВТО-ЖИР**", value=f"{auto_fat_level} уровень (каждые {auto_fat_text})", inline=True)
         
-        if auto_open_cases == 1 and data.get('prestige', 0) >= AUTO_OPEN_CASES_REQUIRED_PRESTIGE:
-            embed.add_field(name="🔄 **АВТО-ОТКРЫТИЕ КЕЙСОВ**", value="✅ Включено", inline=True)
-        
         stats_text = ""
         
         fat_cd_color = "🟢" if data['current_number'] >= fat_cd_cost else "🔴"
@@ -1886,7 +1883,8 @@ async def profile_command(ctx, member: discord.Member = None):
         xp_multiplier_max_text = " (МАКС)" if xp_multiplier_level >= XP_MULTIPLIER_MAX_LEVEL else ""
         stats_text += f"{xp_multiplier_color} **⭐ Множитель опыта** — ур.{xp_multiplier_level}{xp_multiplier_max_text} (+{xp_multiplier_bonus:.0f}% к опыту)\n   Стоимость: `{xp_multiplier_cost} кг`\n\n"
         
-        auto_open_color = "🟢" if data['current_number'] >= AUTO_OPEN_CASES_PRICE and data.get('prestige', 0) >= AUTO_OPEN_CASES_REQUIRED_PRESTIGE else "🔴"
+        # Авто-открытие кейсов
+        auto_open_color = "🟢" if data['current_number'] >= AUTO_OPEN_CASES_PRICE and prestige_level >= AUTO_OPEN_CASES_REQUIRED_PRESTIGE else "🔴"
         auto_open_status = "✅ Включено" if auto_open_cases == 1 else "❌ Выключено"
         stats_text += f"{auto_open_color} **🔄 Авто-открытие кейсов** — {auto_open_status}\n   Стоимость: `{AUTO_OPEN_CASES_PRICE} кг` (требуется {AUTO_OPEN_CASES_REQUIRED_PRESTIGE}+ престиж)\n\n"
         
@@ -1915,7 +1913,7 @@ async def profile_command(ctx, member: discord.Member = None):
         if cases_text:
             embed.add_field(name="📦 **КЕЙСЫ**", value=cases_text, inline=False)
         
-        embed.set_footer(text="🟢 Нажмите на реакцию для улучшения | 🎬 Нажмите 🎬 для переключения анимаций")
+        embed.set_footer(text="🟢 Нажмите на реакцию для улучшения | 🎬 Нажмите 🎬 для переключения анимаций | 🔄 Авто-открытие кейсов")
         return embed
     
     data = get_user_data(guild_id, user_id, user_name)
@@ -1923,15 +1921,15 @@ async def profile_command(ctx, member: discord.Member = None):
     embed = create_profile_embed(data, animations_status)
     msg = await ctx.send(embed=embed)
     
-    upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    for reaction in upgrade_reactions[:10]:
+    upgrade_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔄"]
+    for reaction in upgrade_reactions:
         await msg.add_reaction(reaction)
     await msg.add_reaction("🎬")
     
     upgrade_map = {
         "1️⃣": "fat_cd", "2️⃣": "case_cd", "3️⃣": "luck", "4️⃣": "income",
         "5️⃣": "prestige", "6️⃣": "auto_fat", "7️⃣": "jackpot", "8️⃣": "fat_plus",
-        "9️⃣": "case_plus", "🔟": "xp_multiplier"
+        "9️⃣": "case_plus", "🔟": "xp_multiplier", "🔄": "auto_open"
     }
     
     def check(reaction, user):
@@ -1960,15 +1958,71 @@ async def profile_command(ctx, member: discord.Member = None):
                     pass
                 continue
             
-            if emoji == "🔟":
-                upgrade_type = "xp_multiplier"
+            if emoji == "🔄":
+                upgrade_type = "auto_open"
             elif emoji in upgrade_map:
                 upgrade_type = upgrade_map[emoji]
             else:
                 continue
             
             current_data = get_user_data(guild_id, user_id, user_name)
+            prestige_level = current_data.get('prestige', 0)
             
+            # Обработка авто-открытия кейсов
+            if upgrade_type == "auto_open":
+                if prestige_level < AUTO_OPEN_CASES_REQUIRED_PRESTIGE:
+                    error_embed = discord.Embed(title="❌ Требуется престиж!", description=f"Для покупки авто-открытия кейсов требуется {AUTO_OPEN_CASES_REQUIRED_PRESTIGE}+ уровень престижа! У вас {prestige_level} уровень.", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(3)
+                    await temp_msg.delete()
+                    continue
+                
+                if current_data['current_number'] < AUTO_OPEN_CASES_PRICE:
+                    error_embed = discord.Embed(title="❌ Недостаточно кг!", description=f"Для покупки авто-открытия кейсов нужно **{AUTO_OPEN_CASES_PRICE} кг**, у вас: **{current_data['current_number']} кг**", color=0xff0000)
+                    temp_msg = await ctx.send(embed=error_embed)
+                    await asyncio.sleep(3)
+                    await temp_msg.delete()
+                    continue
+                
+                current_auto_open = current_data.get('auto_open_cases', 0)
+                new_auto_open = 1 if current_auto_open == 0 else 0
+                new_number = current_data['current_number'] - AUTO_OPEN_CASES_PRICE
+                
+                update_user_data(guild_id, user_id, number=new_number, auto_open_cases=new_auto_open)
+                
+                try:
+                    new_nick = format_nick_with_prestige(prestige_level, new_number, user_name)
+                    if len(new_nick) > 32:
+                        new_nick = new_nick[:32]
+                    await target.edit(nick=new_nick)
+                except:
+                    pass
+                
+                fresh_data = get_user_data(guild_id, user_id, user_name)
+                current_anim = fresh_data.get('animations_enabled', 1)
+                new_embed = create_profile_embed(fresh_data, current_anim)
+                await msg.edit(embed=new_embed)
+                
+                status_text = "включено ✅" if new_auto_open == 1 else "выключено ❌"
+                success_embed = discord.Embed(
+                    title="🔄 **АВТО-ОТКРЫТИЕ КЕЙСОВ**",
+                    description=f"{target.mention} {status_text}!\n\n"
+                               f"**Потрачено:** {AUTO_OPEN_CASES_PRICE} кг\n"
+                               f"**Осталось:** {new_number} кг\n\n"
+                               f"{'Теперь все новые кейсы будут открываться автоматически!' if new_auto_open == 1 else 'Авто-открытие отключено, кейсы будут сохраняться в инвентаре.'}",
+                    color=0x00ff00
+                )
+                temp_msg = await ctx.send(embed=success_embed)
+                await asyncio.sleep(4)
+                await temp_msg.delete()
+                
+                try:
+                    await msg.remove_reaction(reaction, user)
+                except:
+                    pass
+                continue
+            
+            # Остальные улучшения (как были)
             if upgrade_type == "fat_cd":
                 current_level = current_data.get('fat_cd_upgrade', 0)
                 if current_level >= FAT_CD_MAX_LEVEL:
@@ -2051,6 +2105,7 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
+            # Обработка престижа
             if upgrade_type == "prestige":
                 confirm_embed = discord.Embed(
                     title="⚠️ **ПРЕСТИЖ** ⚠️",
@@ -2059,7 +2114,7 @@ async def profile_command(ctx, member: discord.Member = None):
                                f"• Вес сбросится до 0\n"
                                f"• Все предметы и кейсы исчезнут\n"
                                f"• Опыт и уровень сохранятся\n"
-                               f"• Улучшения (КД, удача, прибавка, авто-жир, шанс джекпота, усиления, множитель опыта) **СОХРАНЯТСЯ**\n"
+                               f"• Улучшения (КД, удача, прибавка, авто-жир, шанс джекпота, усиления, множитель опыта, авто-открытие) **СОХРАНЯТСЯ**\n"
                                f"• Престиж увеличится на 1\n\n"
                                f"Напишите `да` в течение 15 секунд для подтверждения.",
                     color=0xff5500
@@ -2086,9 +2141,9 @@ async def profile_command(ctx, member: discord.Member = None):
                 current_fat_plus = current_data.get('fat_plus_upgrade', 0)
                 current_case_plus = current_data.get('case_plus_upgrade', 0)
                 current_xp_multiplier = current_data.get('xp_multiplier_upgrade', 0)
+                current_auto_open = current_data.get('auto_open_cases', 0)
                 current_xp = current_data.get('user_xp', 0)
                 current_user_level = current_data.get('user_level', 0)
-                current_auto_open = current_data.get('auto_open_cases', 0)
                 
                 update_user_data(
                     guild_id, user_id,
@@ -2148,38 +2203,7 @@ async def profile_command(ctx, member: discord.Member = None):
                 await temp_msg.delete()
                 continue
             
-            if upgrade_type == "auto_open":
-                if current_data.get('prestige', 0) < AUTO_OPEN_CASES_REQUIRED_PRESTIGE:
-                    error_embed = discord.Embed(title="❌ Требуется престиж!", description=f"Для покупки авто-открытия кейсов требуется {AUTO_OPEN_CASES_REQUIRED_PRESTIGE}+ уровень престижа!", color=0xff0000)
-                    temp_msg = await ctx.send(embed=error_embed)
-                    await asyncio.sleep(2)
-                    await temp_msg.delete()
-                    continue
-                
-                current_auto_open = current_data.get('auto_open_cases', 0)
-                new_auto_open = 1 if current_auto_open == 0 else 0
-                new_number = current_data['current_number'] - AUTO_OPEN_CASES_PRICE
-                
-                update_user_data(guild_id, user_id, number=new_number, auto_open_cases=new_auto_open)
-                
-                fresh_data = get_user_data(guild_id, user_id, user_name)
-                current_anim = fresh_data.get('animations_enabled', 1)
-                new_embed = create_profile_embed(fresh_data, current_anim)
-                await msg.edit(embed=new_embed)
-                
-                status_text = "включено ✅" if new_auto_open == 1 else "выключено ❌"
-                success_embed = discord.Embed(
-                    title="✅ **АВТО-ОТКРЫТИЕ КЕЙСОВ**",
-                    description=f"{target.mention} {status_text}!\n\n"
-                               f"**Потрачено:** {AUTO_OPEN_CASES_PRICE} кг\n"
-                               f"**Осталось:** {new_number} кг",
-                    color=0x00ff00
-                )
-                temp_msg = await ctx.send(embed=success_embed)
-                await asyncio.sleep(2)
-                await temp_msg.delete()
-                continue
-            
+            # Обычное улучшение
             new_level = current_level + 1
             new_number = current_data['current_number'] - cost
             
