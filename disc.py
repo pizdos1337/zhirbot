@@ -1457,7 +1457,6 @@ async def apply_hourly_effects():
         await asyncio.sleep(3600)
 
 async def open_all_cases(guild_id, user_id, user_name):
-    """Открывает все кейсы в инвентаре пользователя"""
     try:
         data = get_user_data(guild_id, user_id, user_name)
         prestige_luck = get_prestige_luck(data.get('prestige', 0))
@@ -1480,19 +1479,15 @@ async def open_all_cases(guild_id, user_id, user_name):
                 
                 if prize_value == "rotten_leg":
                     items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
-                    opened_cases.append(f"💀 Гнилая ножка KFC")
                 elif prize_value == "water":
                     items_dict["Стакан воды"] = items_dict.get("Стакан воды", 0) + 1
-                    opened_cases.append(f"💧 Стакан воды")
                 elif isinstance(prize_value, str):
                     items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
-                    opened_cases.append(f"🎁 {prize_value}")
                 else:
                     if has_water:
                         prize_value = prize_value // 3
                     prize_value = int(prize_value * prestige_bonus * case_plus_bonus)
                     total_gain += prize_value
-                    opened_cases.append(f"📦 Ежедневный кейс: +{prize_value} кг")
             
             update_user_data(guild_id, user_id, daily_case_count=0)
         
@@ -1503,23 +1498,18 @@ async def open_all_cases(guild_id, user_id, user_name):
                 for _ in range(count):
                     prize = open_case(case_id, prestige_luck, luck_upgrade, case_plus_bonus)
                     prize_value = prize["value"]
-                    case_name = CASES[case_id]['name']
                     
                     if prize_value == "rotten_leg":
                         items_dict["Гнилая ножка KFC"] = items_dict.get("Гнилая ножка KFC", 0) + 1
-                        opened_cases.append(f"💀 {case_name}: Гнилая ножка KFC")
                     elif prize_value == "water":
                         items_dict["Стакан воды"] = items_dict.get("Стакан воды", 0) + 1
-                        opened_cases.append(f"💧 {case_name}: Стакан воды")
                     elif isinstance(prize_value, str):
                         items_dict[prize_value] = items_dict.get(prize_value, 0) + 1
-                        opened_cases.append(f"🎁 {case_name}: {prize_value}")
                     else:
                         if has_water:
                             prize_value = prize_value // 3
                         prize_value = int(prize_value * prestige_bonus * case_plus_bonus)
                         total_gain += prize_value
-                        opened_cases.append(f"{CASES[case_id]['emoji']} {case_name}: +{prize_value} кг")
                 
                 cases_dict[case_id] = 0
             
@@ -1530,50 +1520,14 @@ async def open_all_cases(guild_id, user_id, user_name):
         update_user_data(guild_id, user_id, number=new_number, item_counts=save_user_items(items_dict))
         await update_user_nick(guild_id, user_id, user_name)
         
-        # Отправляем результат в ЛС
-        guild = bot.get_guild(guild_id)
-        if guild:
-            member = guild.get_member(int(user_id))
-            if member and opened_cases:
-                chunks = []
-                current_chunk = []
-                current_length = 0
-                
-                for case in opened_cases:
-                    if current_length + len(case) + 1 > 1800:
-                        chunks.append("\n".join(current_chunk))
-                        current_chunk = [case]
-                        current_length = len(case)
-                    else:
-                        current_chunk.append(case)
-                        current_length += len(case) + 1
-                
-                if current_chunk:
-                    chunks.append("\n".join(current_chunk))
-                
-                for i, chunk in enumerate(chunks):
-                    embed = discord.Embed(
-                        title="📦 **ОТКРЫТИЕ КЕЙСОВ** 📦" if i == 0 else "📦 **ПРОДОЛЖЕНИЕ** 📦",
-                        description=f"**{user_name}**, при включении авто-открытия были открыты кейсы:",
-                        color=0x00ff00
-                    )
-                    embed.add_field(name="🎁 Результаты", value=chunk, inline=False)
-                    
-                    if i == len(chunks) - 1:
-                        if total_gain > 0:
-                            embed.add_field(name="💰 Всего получено кг", value=f"+{total_gain} кг", inline=True)
-                            embed.add_field(name="🍖 Итоговый вес", value=f"{new_number} кг", inline=True)
-                        embed.set_footer(text="✨ Авто-открытие активировано! Все новые кейсы будут открываться автоматически.")
-                    
-                    await member.send(embed=embed)
-                    await asyncio.sleep(0.5)
+        # ЛС ОТКЛЮЧЕНЫ - удалён весь код отправки сообщений
         
         return len(opened_cases), total_gain
         
     except Exception as e:
         print(f"❌ Ошибка открытия всех кейсов: {e}")
         return 0, 0
-
+        
 async def auto_open_new_cases_loop():
     await bot.wait_until_ready()
     print("🟢 Запущен цикл авто-открытия новых кейсов")
