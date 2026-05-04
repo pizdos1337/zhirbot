@@ -1352,13 +1352,17 @@ async def apply_snatcher_effect(guild_id, user_id, user_name):
             return
         items[sel["name"]] = items.get(sel["name"], 0) + 1
         update_user_data(guild_id, user_id, item_counts=save_user_items(items), snatcher_last_time=now)
-        guild = bot.get_guild(guild_id)
-        if guild:
-            member = guild.get_member(int(user_id))
-            if member:
-                embed = discord.Embed(title="👾 Снатчер сработал!", description=f"Сгенерирован предмет из {chosen_slot+1} слота!", color=0x9b59b6)
-                embed.add_field(name="📦 Получено", value=f"+1 {sel['name']}", inline=False)
-                await member.send(embed=embed)
+        # ЛС ОТКЛЮЧЕНЫ
+        # try:
+        #     guild = bot.get_guild(guild_id)
+        #     if guild:
+        #         member = guild.get_member(int(user_id))
+        #         if member:
+        #             embed = discord.Embed(title="👾 Снатчер сработал!", description=f"Сгенерирован предмет из {chosen_slot+1} слота!", color=0x9b59b6)
+        #             embed.add_field(name="📦 Получено", value=f"+1 {sel['name']}", inline=False)
+        #             await member.send(embed=embed)
+        # except:
+        #     pass
     except Exception as e:
         pass
 
