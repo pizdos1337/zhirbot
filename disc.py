@@ -1205,9 +1205,12 @@ async def auto_fat_loop():
                     if 'auto_fat_level' not in columns or 'next_auto_fat_time' not in columns:
                         conn.close()
                         continue
-                    cursor.execute('SELECT user_id, user_name, auto_fat_level, next_auto_fat_time FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL')
+                    
+                    cursor.execute('''SELECT user_id, user_name, auto_fat_level, next_auto_fat_time 
+                                    FROM user_fat WHERE auto_fat_level > 0 AND next_auto_fat_time IS NOT NULL''')
                     users = cursor.fetchall()
                     conn.close()
+                    
                     for user_id, user_name, auto_fat_level, next_time_str in users:
                         try:
                             if next_time_str:
@@ -1216,32 +1219,22 @@ async def auto_fat_loop():
                                 else:
                                     next_time = next_time_str
                                 if current_time >= next_time:
-                                    data = get_user_data(guild_id, user_id, user_name)
-                                    items = get_user_items(data['item_counts'])
-                                    prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
-                                    fat_plus_bonus = get_fat_plus_bonus(data.get('fat_plus_upgrade', 0))
-                                    jackpot_bonus = get_jackpot_bonus(data.get('jackpot_upgrade', 0))
-                                    change, was_minus, new_plus, new_minus, new_pity, was_jackpot = get_change_with_pity_and_jackpot(
-                                        data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
-                                        data.get('luck_upgrade', 0), prestige_bonus, fat_plus_bonus, jackpot_bonus, items, data['current_number'])
-                                    new_number = data['current_number'] + change
-                                    update_user_data(guild_id, user_id, number=new_number, consecutive_plus=new_plus, consecutive_minus=new_minus, jackpot_pity=new_pity, fat_cooldown_time=datetime.now())
-                                    add_xp(guild_id, user_id, XP_PER_FAT)
-                                    await update_user_nick(guild_id, user_id, user_name)
+                                    await apply_auto_fat(user_id, guild_id, user_name)
                                     interval = get_auto_fat_interval(auto_fat_level)
                                     if interval:
                                         new_next_time = current_time + timedelta(hours=interval)
                                         conn2 = sqlite3.connect(db_path)
                                         c2 = conn2.cursor()
-                                        c2.execute('UPDATE user_fat SET next_auto_fat_time = ? WHERE user_id = ?', (new_next_time.isoformat(), user_id))
+                                        c2.execute('''UPDATE user_fat SET next_auto_fat_time = ? WHERE user_id = ?''', 
+                                                  (new_next_time.isoformat(), user_id))
                                         conn2.commit()
                                         conn2.close()
                         except Exception as e:
-                            pass
+                            print(f"❌ Ошибка авто-жира для {user_name}: {e}")
                 except Exception as e:
-                    pass
+                    print(f"❌ Ошибка БД сервера {guild_id}: {e}")
         except Exception as e:
-            pass
+            print(f"❌ Ошибка цикла авто-жира: {e}")
         await asyncio.sleep(60)
 
 async def passive_income_loop():
