@@ -783,6 +783,7 @@ def generate_shop_items():
     slots = []
     used = set()
     available_cases = [cid for cid, c in CASES.items() if cid != "daily" and c.get("shop_chance",0)>0]
+    
     for _ in range(4):
         if random.random() < 0.7 and available_cases:
             choices = []
@@ -793,13 +794,30 @@ def generate_shop_items():
                 chosen = random.choice(choices)
                 c = CASES[chosen]
                 amt = random.randint(c["min_shop"], c["max_shop"])
-                minp = min(p["value"] for p in c["prizes"] if isinstance(p["value"], int))
-                maxp = max(p["value"] for p in c["prizes"] if isinstance(p["value"], int))
-                slots.append({"type":"case","case_id":chosen,"name":c["name"],"amount":amt,"price":c["price"],"description":f"{c['emoji']} Содержит призы от {minp} до {maxp}кг","emoji":c['emoji']})
+                
+                # Исправлено: проверяем есть ли числовые призы
+                numeric_prizes = [p["value"] for p in c["prizes"] if isinstance(p["value"], int)]
+                if numeric_prizes:
+                    minp = min(numeric_prizes)
+                    maxp = max(numeric_prizes)
+                    desc = f"{c['emoji']} Содержит призы от {minp} до {maxp}кг"
+                else:
+                    desc = f"{c['emoji']} Содержит различные предметы"
+                
+                slots.append({
+                    "type":"case",
+                    "case_id":chosen,
+                    "name":c["name"],
+                    "amount":amt,
+                    "price":c["price"],
+                    "description":desc,
+                    "emoji":c['emoji']
+                })
             else:
                 slots.append(None)
         else:
             slots.append(None)
+    
     for _ in range(6):
         chosen = None
         for _ in range(50):
@@ -813,9 +831,18 @@ def generate_shop_items():
                 break
         if chosen:
             amt = random.randint(chosen["min_amount"], chosen["max_amount"])
-            slots.append({"type":"item","name":chosen["name"],"amount":amt,"price":chosen["price"],"description":chosen["description"],"gain_per_24h":chosen.get("gain_per_24h",0),"emoji":ITEM_EMOJIS.get(chosen["name"],"📦")})
+            slots.append({
+                "type":"item",
+                "name":chosen["name"],
+                "amount":amt,
+                "price":chosen["price"],
+                "description":chosen["description"],
+                "gain_per_24h":chosen.get("gain_per_24h",0),
+                "emoji":ITEM_EMOJIS.get(chosen["name"],"📦")
+            })
         else:
             slots.append(None)
+    
     random.shuffle(slots)
     return slots
 
