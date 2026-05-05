@@ -8,7 +8,71 @@ import asyncio
 import shutil
 import glob
 import json
+import logging
+from logging.handlers import RotatingFileHandler
+import traceback
+# ============================================
+# ========== НАСТРОЙКИ ЛОГИРОВАНИЯ ==========
+# ============================================
 
+LOG_FOLDER = "./data"
+LOG_FILE = os.path.join(LOG_FOLDER, "bot.log")
+
+# Создаём папку для логов если нет
+if not os.path.exists(LOG_FOLDER):
+    os.makedirs(LOG_FOLDER)
+
+# Настройка логгера
+logger = logging.getLogger('fat_bot')
+logger.setLevel(logging.DEBUG)
+
+# Формат логов
+formatter = logging.Formatter(
+    '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Ротация файлов (10 МБ, хранить 5 файлов)
+file_handler = RotatingFileHandler(
+    LOG_FILE, 
+    maxBytes=10*1024*1024,
+    backupCount=5,
+    encoding='utf-8'
+)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+# Консольный вывод (только INFO и выше)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Функции для удобного логирования
+def log_command(ctx, command_name, **kwargs):
+    user = ctx.author
+    guild = ctx.guild
+    channel = ctx.channel
+    log_msg = f"КОМАНДА | {command_name} | Пользователь: {user.name} (ID:{user.id}) | Сервер: {guild.name if guild else 'ЛС'} (ID:{guild.id if guild else 'None'}) | Канал: {channel.name if hasattr(channel, 'name') else 'ЛС'} | Аргументы: {kwargs}"
+    logger.info(log_msg)
+
+def log_error(error, context=""):
+    error_msg = f"ОШИБКА | {context} | {str(error)}\n{traceback.format_exc()}"
+    logger.error(error_msg)
+
+def log_user_action(user_id, user_name, action, details=""):
+    log_msg = f"ДЕЙСТВИЕ | Пользователь: {user_name} (ID:{user_id}) | {action} | {details}"
+    logger.info(log_msg)
+
+def log_background(task_name, details=""):
+    log_msg = f"ФОН | {task_name} | {details}"
+    logger.info(log_msg)
+
+def log_db_change(user_id, user_name, table, changes):
+    log_msg = f"БД | Пользователь: {user_name} (ID:{user_id}) | Таблица: {table} | Изменения: {changes}"
+    logger.debug(log_msg)
 # ============================================
 # ========== НАСТРОЙКИ БОТА ==========
 # ============================================
