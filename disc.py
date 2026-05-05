@@ -1415,6 +1415,44 @@ async def snatcher_loop():
             pass
         await asyncio.sleep(1800)
 
+async def apply_auto_fat(user_id, guild_id, user_name):
+    try:
+        data = get_user_data(guild_id, user_id, user_name)
+        items_dict = get_user_items(data['item_counts'])
+        
+        prestige_bonus = get_prestige_bonus(data.get('prestige', 0))
+        fat_plus_bonus = get_fat_plus_bonus(data.get('fat_plus_upgrade', 0))
+        jackpot_bonus = get_jackpot_bonus(data.get('jackpot_upgrade', 0))
+        luck_upgrade = data.get('luck_upgrade', 0)
+        
+        change, was_minus, new_plus, new_minus, new_pity, was_jackpot = get_change_with_pity_and_jackpot(
+            data['consecutive_plus'], data['consecutive_minus'], data['jackpot_pity'], 
+            luck_upgrade, prestige_bonus, fat_plus_bonus, jackpot_bonus, items_dict, data['current_number'])
+        
+        new_number = data['current_number'] + change
+        
+        update_data = {
+            'number': new_number,
+            'user_name': user_name,
+            'consecutive_plus': new_plus,
+            'consecutive_minus': new_minus,
+            'jackpot_pity': new_pity,
+            'fat_cooldown_time': datetime.now()
+        }
+        
+        update_user_data(guild_id, user_id, **update_data)
+        
+        levels_gained, kg_reward, new_level = add_xp(guild_id, user_id, XP_PER_FAT)
+        await update_user_nick(guild_id, user_id, user_name)
+        
+        logger.debug(f"Авто-жир для {user_name}: {change:+d} кг, новый вес {new_number} кг")
+        
+        if levels_gained > 0:
+            logger.info(f"Авто-жир повысил уровень {user_name} до {new_level} (+{kg_reward} кг)")
+            
+    except Exception as e:
+        logger.error(f"Ошибка apply_auto_fat для {user_name}: {e}")
+
 async def apply_hourly_effects():
     await bot.wait_until_ready()
     while not bot.is_closed():
